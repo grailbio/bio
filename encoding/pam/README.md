@@ -4,7 +4,9 @@ PAM replaces BAM. PAM can be translated from BAM and vice versa without
 information loss. Compared to BAM, PAM is smaller and faster. Major differences
 are the following.
 
-- It uses larger compression blocks, by default 8MB. BAM uses 16KB blocks.
+- It uses larger compression blocks, by default 8MB. BAM uses 16KB blocks.  It
+  also uses zstd (https://github.com/facebook/zstd) instead of gzip. zstd gives
+  about 10% file size improvement without performance overhead.
 
 - It stores a field in a separate file. This layout has three benefits.
 
@@ -49,31 +51,31 @@ is an example:
         foo/46:1653469,-:-.seq
         foo/46:1653469,-:-.templen
 
-`foo/` is the prefix. The `0:0,46:1653469` part defines the coordinate range,
-(reference sequence IDs : alignment positions), that is stored in the files.  In
+`foo/` is the directory. The `0:0,46:1653469` part defines the coordinate range,
+(reference sequence ID : alignment position), that is stored in the files.  In
 this example, files `foo/0:0,46:1653469.*` store records whose (refid:pos) are
 in range [(0:0), (46:1653469)).  Files `foo/46:1653469,-:-.*` store records in
 coord range [(46:1653469), (∞:∞)). The refid of "-" means "unmapped", and position
 of "-" means ∞.
 
-    Note: `[a,b)' means a half-open range, inclusive of `a`, exclusive of `b`.
+*Note*: `[a,b)' means a half-open range, inclusive of `a`, exclusive of `b`.
 
 PAM always sorts reads according to BAM's "coordinate" sort order. That is,
-records are reference ID, then position, then forward reads before reverse
-reads.  Ordering of records with the same (refid:position) is unspecified.
-There is no option to sort by sequence names.  PAM file-shard boundary is always
-at a position boundary. That is, a set of records with the same (refid:position)
-are always in one shard. In particular, unmapped sequences are always in the
-last shard.
+records are sorted first by reference ID, then by position, then forward reads
+before reverse reads.  Ordering of records with the same (refid:position) is
+unspecified.  There is no option to sort by sequence names.  PAM file-shard
+boundary is always at a position boundary. That is, a set of records with the
+same (refid:position) are always in one shard. In particular, unmapped sequences
+are always in the last shard.
 
-With a well-formed set of PAM files, the coordranges of the shardfiles cover the
+With a well-formed set of PAM files, the coordinates of the shardfiles cover the
 universal range `0:0,-:-` without a gap or an overlap.
 
 # Index file
 
 File `foo/0:0,46:1653469.index` is an index file for the coordinate
 range [(0:0), (46:1653469)).
-practice, index stores an equivalent of a `sam.Header`:
+In practice, index stores an equivalent of a `sam.Header` in the following form:
 
 ```
 // Contents of the fileshard index (*.index) file. It is stored in a flate-compressed,
@@ -102,7 +104,7 @@ Files of form `dir/coordrange.field` store data for the given field. There are
 eleven fields: coord, flags, mapq, cigar, materefid, matepos, templen, name,
 seq, qual, aux.  The "coord" file stores the (refid,pos) of each record, and
 other field files store the values of the field with the same name in
-sam.Record.  Each data file is a recordio file
+`sam.Record`.  Each data file is a recordio file
 (https://github.com/grailbio/base/tree/master/recordio), with 8MB
 pre-compression block size, and using zstd for compression.
 
@@ -121,8 +123,8 @@ A field data file (e.g., `foo.pam.1:0,46:1653469.mapq.data`) is stored as a reco
 
 As the PAM writer receives records to write, it extracts their field values and
 appends them to the eleven buffers, one for each field.  Once the size of a
-field buffer a limit (8MB, pre-compression), the buffer is compressed and
-written to the corresponding recordio file. Each (8MB-pre-compression) buffer
+field buffer reaches a limit (8MB, pre-compression), the buffer is compressed and
+written to the corresponding recordio file `dir/coordrange.field`. Each 8MB-pre-compression buffer
 becomes one recordio block.  Each recordio block has the following layout:
 
              Block header length (4 bytes varint)
@@ -132,6 +134,8 @@ becomes one recordio block.  Each recordio block has the following layout:
 
 The block header is a serialized `BlockHeader` as defined below.  It encodes the
 location of each field within the recordio block.
+
+*Note*: the coordinate range of records in the block is stored separate in the data index file described later
 
 ```
 message BlockHeader {
@@ -254,9 +258,8 @@ pre-compression, allowing the compressor to do a more effective job.
 Each field-data file stores an index in the recordio trailer
 (https://github.com/grailbio/base/tree/master/recordio) part.
 
-    Note: This index is
-    unrelated to the fileshard index file (foo/coord.index) described in the
-    previous section.
+_Note_: This index is unrelated to the fileshard index file (foo/coord.index)
+described in the previous section.
 
 The index is a serialized `FieldIndex` as defined in `pam.proto`:
 
@@ -348,38 +351,38 @@ message FieldIndex {
 
 As an example a 113GB BAM file,
 s3://grail-avalon/pipeline/clinical/v2/bams/CNVS-NORM-110033752-cfDNA-WGBS-Rep1.bam,
-becomes 69GB, or 57%, in PAM. A later section discusses effects of different
-compression algorithms.
+becomes 69GB, or 57%, in PAM. One can use different compression algorithms by setting a
+PAM writer options. The below shows results of our experiments
 
-+ BAM: 122012650919 bytes
++ Original BAM file: 122012650919 bytes
 
 - PAM with default compression (zstd 3): 69920522240 bytes (57% of BAM)
 
-    Cost of conversion from BAM⟶PAM:
-    real	16m18.042s
-    user	301m7.572s
-    sys	16m29.188s
+    	Cost of conversion from BAM⟶PAM (56*Xeon E5-2690, 2.6GHz):
+        real	16m18.042s
+        user	301m7.572s
+        sys	16m29.188s
 
 - PAM with "zstd 6" compression: 67525312512 bytes (55% of BAM)
 
-    Cost of conversion from BAM⟶PAM:
-    real	17m29.566s
-    user	374m55.164s
-    sys	16m54.620s
+        Cost of conversion from BAM⟶PAM:
+        real	17m29.566s
+        user	374m55.164s
+        sys	16m54.620s
 
 - PAM with "zstd 10" compression: 67525312512 bytes (53% of BAM)
 
-    Cost of conversion from BAM⟶PAM:
-    real	23m20.641s
-    user	673m42.464s
-    sys	17m51.464s
+        Cost of conversion from BAM⟶PAM:
+        real	23m20.641s
+        user	673m42.464s
+        sys	17m51.464s
 
 - PAM with "zstd 20" compression: 57791840256 bytes (47% of BAM)
 
-    Cost of conversion from BAM⟶PAM:
-    real	150m36.767s
-    user	6637m9.440s
-    sys	624m5.760s
+        Cost of conversion from BAM⟶PAM:
+        real	150m36.767s
+        user	6637m9.440s
+        sys	624m5.760s
 
 ## Performance
 
@@ -430,30 +433,30 @@ We currently only offer Go API. We might offer a C++ API if a need arises.
 package pam
 
 type WriteOpts struct {
-	// Compression block size, by default 8MB
+    // Compression block size, by default 8MB
     MaxBufSize          int
     // Number of write ahead allowed, by default 16.
-	MaxParallelism int
+    MaxParallelism int
 
-	// WriteParallelism limits the max number of pending recordio flushes
-	// allowed. If <= 0, DefaultWriteParallelism is used.
-	WriteParallelism int
+    // WriteParallelism limits the max number of pending recordio flushes
+    // allowed. If <= 0, DefaultWriteParallelism is used.
+    WriteParallelism int
 
-	// DropFields causes the writer not to write the specified fields to file.
-	DropFields []FieldType
+    // DropFields causes the writer not to write the specified fields to file.
+    DropFields []FieldType
 
-	// Transformers defines the recordio block transformers. It can be used to
-	// change the compression algorithm, for example. The value is passed to
-	// recordio.WriteOpts.Transformers. If empty, {"zstd"} is used.
-	Transformers []string
+    // Transformers defines the recordio block transformers. It can be used to
+    // change the compression algorithm, for example. The value is passed to
+    // recordio.WriteOpts.Transformers. If empty, {"zstd"} is used.
+    Transformers []string
 
-	// Range defines the range of records that can be stored in the PAM
-	// file.  The range will be encoded in the path name. Also, Write() will
-	// cause an error if it sees a record outside the range. An empty range
-	// (default) means UniversalRange.
-	//
-	// The range bound is closed at the start, open at the limit.
-	Range RecRange
+    // Range defines the range of records that can be stored in the PAM
+    // file.  The range will be encoded in the path name. Also, Write() will
+    // cause an error if it sees a record outside the range. An empty range
+    // (default) means UniversalRange.
+    //
+    // The range bound is closed at the start, open at the limit.
+    Range RecRange
 }
 
 
@@ -493,11 +496,11 @@ Example:
 package pam
 
 type ReadOpts struct {
-	// DropFields causes the listed fields not to be filled in Read().
-	DropFields []FieldType
+    // DropFields causes the listed fields not to be filled in Read().
+    DropFields []FieldType
 
     // Coordinate range to read.
-	Range RecRange
+    Range RecRange
 }
 
 // Create a new reader. The reader is thread compatible.

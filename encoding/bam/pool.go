@@ -1,13 +1,17 @@
+// Copyright 2018 GRAIL, Inc. All rights reserved.
+// Use of this source code is governed by the Apache 2.0
+// license that can be found in the LICENSE file.
+
 package bam
 
 import (
+	"log"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	_ "unsafe" // needed to enable go:linkname
 
 	"github.com/biogo/hts/sam"
-	"log"
 )
 
 // FreePool is a variation of sync.Pool, specialized for

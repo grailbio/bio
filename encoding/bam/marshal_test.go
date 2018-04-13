@@ -1,16 +1,20 @@
+// Copyright 2018 GRAIL, Inc. All rights reserved.
+// Use of this source code is governed by the Apache 2.0
+// license that can be found in the LICENSE file.
+
 package bam_test
 
 import (
+	"bytes"
+	"encoding/binary"
+	"io"
 	"os"
 	"testing"
 
-	"bytes"
-	"encoding/binary"
 	"github.com/biogo/hts/bam"
 	grailbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"io"
 )
 
 func TestMarshal(t *testing.T) {
