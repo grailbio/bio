@@ -9,8 +9,8 @@
 // (https://godoc.org/github.com/grailbio/bio/encoding/bamprovider) read PAM
 // instead.  The bamprovider works for both BAM and PAM files transparently.
 //
-// REAMDE.md (https://github.com/grailbio/bio/encoding/pam/README.md) contains
-// More detailed information the PAM file format.
+// REAMDE.md (https://github.com/grailbio/bio/blob/master/encoding/pam/README.md) contains
+// More detailed information about the PAM file format.
 package pam
 
 import (
