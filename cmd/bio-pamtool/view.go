@@ -2,12 +2,15 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/biogo/hts/sam"
+	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/syncqueue"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
 )
@@ -78,32 +81,77 @@ func parseRegionsFlag(flag string) ([]viewRegion, error) {
 	return regions, nil
 }
 
-func readShard(provider bamprovider.Provider, shard gbam.Shard, filter *filterExpr) error {
-	iter := provider.NewIterator(shard)
-	for iter.Scan() {
-		if filter == nil || evaluateFilterExpr(filter, iter.Record()) {
-			s, err := iter.Record().MarshalText()
-			if err != nil {
-				return err
+// Scan shards in parallel, and output records matching the filter in order.
+//
+// REQUIRES: ShardIdx field of shards[] must have values 0, 1, 2, ...
+func viewShards(provider bamprovider.Provider, filter *filterExpr, shards []gbam.Shard) error {
+	shardCh := gbam.NewShardChannel(shards)
+	wgW := sync.WaitGroup{}
+	wgR := sync.WaitGroup{}
+	e := errorreporter.T{}
+	oq := syncqueue.NewOrderedQueue(len(shards))
+
+	// The reader thread
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wgW.Add(1)
+		go func() {
+			defer wgW.Done()
+			for shard := range shardCh {
+				recCh := make(chan *sam.Record, 16<<10)
+				oq.Insert(shard.ShardIdx, recCh)
+				iter := provider.NewIterator(shard)
+				for iter.Scan() {
+					if filter == nil || evaluateFilterExpr(filter, iter.Record()) {
+						recCh <- iter.Record()
+					}
+				}
+				e.Set(iter.Close())
+				close(recCh)
 			}
-			fmt.Print(string(s), "\n")
-		}
+		}()
 	}
-	return iter.Close()
+	wgR.Add(1)
+
+	// The display thread
+	go func() {
+		defer wgR.Done()
+		for {
+			val, ok, err := oq.Next()
+			if err != nil {
+				e.Set(err)
+				break
+			}
+			if !ok {
+				break
+			}
+
+			for rec := range val.(chan *sam.Record) {
+				s, err := rec.MarshalText()
+				if err != nil {
+					e.Set(err)
+					continue
+				}
+				gbam.PutInFreePool(gbam.CastDown(rec))
+				fmt.Print(string(s), "\n")
+			}
+		}
+	}()
+	wgW.Wait()
+	oq.Close(nil)
+	wgR.Wait()
+	return e.Err()
 }
 
 func viewAll(provider bamprovider.Provider, filter *filterExpr) error {
-	header, err := provider.GetHeader()
+	shards, err := provider.GenerateShards(bamprovider.GenerateShardsOpts{
+		IncludeUnmapped:     true,
+		SplitUnmappedCoords: true,
+		SplitMappedCoords:   true,
+	})
 	if err != nil {
 		return err
 	}
-	shard := gbam.Shard{
-		StartRef: header.Refs()[0],
-		EndRef:   nil, // unmapped
-		Start:    0,
-		End:      math.MaxInt32,
-	}
-	return readShard(provider, shard, filter)
+	return viewShards(provider, filter, shards)
 }
 
 func viewSubregion(provider bamprovider.Provider, region viewRegion, filter *filterExpr) error {
@@ -127,6 +175,7 @@ func viewSubregion(provider bamprovider.Provider, region viewRegion, filter *fil
 		StartSeq: region.startSeq,
 		End:      region.limitPos,
 		EndSeq:   region.limitSeq,
+		ShardIdx: 0,
 	}
 	if shard.StartRef, err = findRef(region.startRefName); err != nil {
 		return err
@@ -134,7 +183,7 @@ func viewSubregion(provider bamprovider.Provider, region viewRegion, filter *fil
 	if shard.EndRef, err = findRef(region.limitRefName); err != nil {
 		return err
 	}
-	return readShard(provider, shard, filter)
+	return viewShards(provider, filter, []gbam.Shard{shard})
 }
 
 type viewFlags struct {
