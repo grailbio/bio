@@ -7,7 +7,6 @@ package main
 import (
 	"flag"
 	"io"
-	"log"
 	"os"
 	"runtime"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/grail"
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/cmd/bio-bam-sort/sorter"
 )

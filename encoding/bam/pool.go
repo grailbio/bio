@@ -5,13 +5,13 @@
 package bam
 
 import (
-	"log"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	_ "unsafe" // needed to enable go:linkname
 
 	"github.com/biogo/hts/sam"
+	"github.com/grailbio/base/log"
 )
 
 // FreePool is a variation of sync.Pool, specialized for
@@ -166,7 +166,7 @@ func PutInFreePool(r *Record) {
 	}
 	if r.Magic != Magic {
 		if atomic.AddInt32(&nPoolWarnings, 1) < 2 {
-			log.Printf(`putSamRecord: object must be bam.Record, not sam.Record. magic %x.
+			log.Error.Printf(`putSamRecord: object must be bam.Record, not sam.Record. magic %x.
 If you see this warning in non-test code path, you MUST fix the problem`, r.Magic)
 		}
 		return
