@@ -13,7 +13,7 @@ import (
 
 	"github.com/biogo/hts/bam"
 	grailbam "github.com/grailbio/bio/encoding/bam"
-	"github.com/grailbio/internal/testutil"
+	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/require"
 )
 

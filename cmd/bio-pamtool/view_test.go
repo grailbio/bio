@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/grailbio/internal/testutil"
+	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
 	"v.io/x/lib/gosh"
 )

@@ -25,7 +25,7 @@ import (
 	"github.com/grailbio/base/grail"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
-	"github.com/grailbio/internal/testutil"
+	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"v.io/x/lib/gosh"

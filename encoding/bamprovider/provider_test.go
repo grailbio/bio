@@ -20,7 +20,7 @@ import (
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/bio/encoding/converter"
 	"github.com/grailbio/bio/encoding/pam"
-	"github.com/grailbio/internal/testutil"
+	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/require"
 	"v.io/x/lib/vlog"
 )

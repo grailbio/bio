@@ -5,7 +5,7 @@ import (
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/bio/encoding/bam"
-	"github.com/grailbio/internal/testutil"
+	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
