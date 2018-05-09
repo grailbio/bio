@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/require"
-	"grail.com/testutil"
 	"v.io/x/lib/gosh"
 )
 
