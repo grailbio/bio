@@ -3,7 +3,6 @@ package converter
 // Utility for converting BAM to PAM.
 
 import (
-	"compress/gzip"
 	"math"
 	"runtime"
 	"sort"
@@ -20,6 +19,7 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/bio/encoding/pam"
+	"github.com/klauspost/compress/gzip"
 	"github.com/pkg/errors"
 	"v.io/x/lib/vlog"
 )

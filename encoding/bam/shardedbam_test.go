@@ -2,7 +2,6 @@ package bam_test
 
 import (
 	"bytes"
-	"compress/gzip"
 	"flag"
 	"io"
 	"os"
@@ -15,6 +14,7 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/testutil"
+	"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"v.io/x/lib/vlog"
