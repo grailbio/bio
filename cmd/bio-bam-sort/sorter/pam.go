@@ -172,9 +172,13 @@ func generatePAMShard(readers []*sortShardReader,
 	errReporter.Set(pamWriter.Close())
 }
 
+type generatePAMShardRequest struct {
+	start, limit recCoord
+}
+
 // PAMFromSortShards merges a set of sortshard files into a single PAM file.
 // recordsPerShard is the goal # of reads to store in each rowshard.
-func PAMFromSortShards(paths []string, pamPath string, recordsPerShard int64) error {
+func PAMFromSortShards(paths []string, pamPath string, recordsPerShard int64, parallelism int) error {
 	if len(paths) == 0 {
 		return fmt.Errorf("No shards to merge")
 	}
@@ -190,6 +194,7 @@ func PAMFromSortShards(paths []string, pamPath string, recordsPerShard int64) er
 	allBlocks := [][]biopb.SortShardBlockIndex{}
 	for i, path := range paths {
 		baseReaders[i] = newSortShardReader(path, pool, &errReporter)
+		// TODO(saito) baseReaders is leaked.
 		allBlocks = append(allBlocks, baseReaders[i].index.Blocks)
 	}
 	if err := errReporter.Err(); err != nil {
@@ -200,7 +205,30 @@ func PAMFromSortShards(paths []string, pamPath string, recordsPerShard int64) er
 		return err
 	}
 	pamBounds := computePAMShardBounds(allBlocks, recordsPerShard)
+
+	reqCh := make(chan generatePAMShardRequest, parallelism)
 	wg := sync.WaitGroup{}
+	for i := 0; i < parallelism; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for req := range reqCh {
+				vlog.Infof("%s: starting generating PAM shard %+v", pamPath, req)
+				subReaders := make([]*sortShardReader, len(paths))
+				for i, path := range paths {
+					opts := shardReaderOpts{
+						index:       &baseReaders[i].index,
+						startOffset: startFileOffset(baseReaders[i].index.Blocks, req.start),
+						limitOffset: limitFileOffset(baseReaders[i].index.Blocks, req.limit),
+					}
+					subReaders[i] = newSortShardReader(path, pool, &errReporter, opts)
+				}
+				generatePAMShard(subReaders, pamPath, mergedHeader, req.start, req.limit, pool, &errReporter)
+				vlog.Infof("%s: finished generating PAM shard %+v", pamPath, req)
+			}
+		}()
+	}
+
 	for i := 0; i <= len(pamBounds); i++ {
 		start := recCoord(0)
 		if i > 0 {
@@ -210,27 +238,9 @@ func PAMFromSortShards(paths []string, pamPath string, recordsPerShard int64) er
 		if i < len(pamBounds) {
 			limit = pamBounds[i]
 		}
-		wg.Add(1)
-		go func(start, limit recCoord) {
-			if i == 0 {
-				// Reuse the baseReaders.
-				generatePAMShard(baseReaders, pamPath, mergedHeader, start, limit, pool, &errReporter)
-			} else {
-				// Create a new set of readers for this rowshard.
-				subReaders := make([]*sortShardReader, len(paths))
-				for i, path := range paths {
-					opts := shardReaderOpts{
-						index:       &baseReaders[i].index,
-						startOffset: startFileOffset(baseReaders[i].index.Blocks, start),
-						limitOffset: limitFileOffset(baseReaders[i].index.Blocks, limit),
-					}
-					subReaders[i] = newSortShardReader(path, pool, &errReporter, opts)
-				}
-				generatePAMShard(subReaders, pamPath, mergedHeader, start, limit, pool, &errReporter)
-			}
-			wg.Done()
-		}(start, limit)
+		reqCh <- generatePAMShardRequest{start, limit}
 	}
+	close(reqCh)
 	wg.Wait()
 	return errReporter.Err()
 }

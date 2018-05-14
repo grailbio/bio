@@ -29,7 +29,7 @@ const (
 	// DefaultMaxBufSize is the default value for WriteOpts.MaxBufSize.
 	DefaultMaxBufSize = 8 << 20
 	// DefaultWriteParallelism is the default value for WriteOpts.MaxFlushParallelism.
-	DefaultWriteParallelism = 4
+	DefaultWriteParallelism = 2
 )
 
 // fieldWriter buffers values of one field and writes them to a recordio file.
@@ -606,9 +606,10 @@ func newFieldWriter(path string, opts WriteOpts, f gbam.FieldType, bufFreePool *
 	fw.out = out
 	fw.wout = out.Writer(ctx)
 	fw.rio = recordio.NewWriter(fw.wout, recordio.WriterOpts{
-		Transformers: opts.Transformers,
-		Marshal:      fw.marshalBlock,
-		Index:        fw.indexCallback,
+		Transformers:        opts.Transformers,
+		Marshal:             fw.marshalBlock,
+		Index:               fw.indexCallback,
+		MaxFlushParallelism: 2,
 	})
 	fw.rio.AddHeader(recordio.KeyTrailer, true)
 	return fw

@@ -24,6 +24,7 @@ var (
 	shardIndexFlag         = flag.Int("shard-index", 0, "Value of bam.SorterOptions.ShardIndex")
 	bamFlag                = flag.String("bam", "", "Merge multiple sortshard files into one BAM file specified by this flag")
 	pamFlag                = flag.String("pam", "", "Merge multiple sortshard files into one PAM file specified by this flag")
+	parallelismFlag        = flag.Int("parallelism", 64, "Parallelism during PAM generation.")
 	recordsPerPAMShardFlag = flag.Int64("records-per-pam-shard", 128<<20,
 		"Approx. size of each PAM shard, in number of reads.")
 )
@@ -128,7 +129,7 @@ following three ways.
 			flag.Usage()
 			os.Exit(1)
 		}
-		err := sorter.PAMFromSortShards(args, *pamFlag, *recordsPerPAMShardFlag)
+		err := sorter.PAMFromSortShards(args, *pamFlag, *recordsPerPAMShardFlag, *parallelismFlag)
 		if err != nil {
 			log.Panicf("merge %v to %v: %v", args, *pamFlag, err)
 		}

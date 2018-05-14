@@ -337,8 +337,7 @@ func readSortShardIndex(rio recordio.Scanner) (biopb.SortShardIndex, error) {
 
 type shardReaderOpts struct {
 	// If index == nil, newSortShardReader() will load the index from the end of
-	// the shard file. If index!=nil, then indexOffset must specify the file
-	// offset of the index block, and *index must be the contents of the index.
+	// the shard file.
 	index *biopb.SortShardIndex
 
 	// Range of blocks [startOffset, limitOffset) to read from.

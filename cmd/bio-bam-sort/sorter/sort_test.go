@@ -216,7 +216,7 @@ func TestSortPAMEndToEnd(t *testing.T) {
 		log.Printf("Sorting %v to %v", bamPath, newPAMPath)
 		header, recs := shuffleRecords(t, bamPath, "")
 		shards := createSortShards(t, header, recs, tempDir, 3)
-		require.NoError(t, PAMFromSortShards(shards[:], newPAMPath, math.MaxInt64))
+		require.NoError(t, PAMFromSortShards(shards[:], newPAMPath, math.MaxInt64, 8))
 		compareFiles(t, bamPath, newPAMPath)
 
 		// Test PAM sharding using the large test file
@@ -226,11 +226,11 @@ func TestSortPAMEndToEnd(t *testing.T) {
 		newPAMPath = filepath.Join(tempDir, "sharded.pam")
 
 		// Try a few different sharding params.
-		require.NoError(t, PAMFromSortShards(shards[:], newPAMPath, 1024))
+		require.NoError(t, PAMFromSortShards(shards[:], newPAMPath, 1024, 8))
 		compareFiles(t, bamPath, newPAMPath)
-		require.NoError(t, PAMFromSortShards(shards[:], newPAMPath, 3000))
+		require.NoError(t, PAMFromSortShards(shards[:], newPAMPath, 3000, 8))
 		compareFiles(t, bamPath, newPAMPath)
-		require.NoError(t, PAMFromSortShards(shards[:], newPAMPath, 500))
+		require.NoError(t, PAMFromSortShards(shards[:], newPAMPath, 500, 8))
 		compareFiles(t, bamPath, newPAMPath)
 	}
 }
