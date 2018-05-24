@@ -117,8 +117,8 @@ func TestNewShardChannel(t *testing.T) {
 }
 
 func TestGetByteBasedShards(t *testing.T) {
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
-	baiPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam.bai")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	baiPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam.bai")
 
 	shardList, err := bam.GetByteBasedShards(bamPath, baiPath, 100000, 5000, 400, true)
 	assert.Nil(t, err)

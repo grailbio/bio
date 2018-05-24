@@ -19,7 +19,7 @@ func TestPAM(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := filepath.Join(tempDir, "test.pam")
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 
@@ -35,7 +35,7 @@ func TestBAM(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := filepath.Join(tempDir, "test.pam")
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 

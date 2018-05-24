@@ -130,7 +130,7 @@ func TestShardedBAMSmall(t *testing.T) {
 }
 
 func TestShardedBAMLarge(t *testing.T) {
-	filename := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	filename := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	f, err := os.Open(filename)
 	assert.Nil(t, err)
 	reader, err := bam.NewReader(f, 1)

@@ -30,8 +30,9 @@ read10	12	*	0	0	10M	*	0	0	ACGTACGTAC	ABCDEFGHIJ	RG:Z:NA12879
 	}
 
 	sh := gosh.NewShell(nil)
-	sort := testutil.GoExecutable(t, sh, "@grailgo//vendor/github.com/grailbio/bio/cmd/bio-bam-sort/bio-bam-sort")
-	pamtool := testutil.GoExecutable(t, sh, "@grailgo//vendor/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
+	sort := testutil.GoExecutable(t, sh, "//go/src/github.com/grailbio/bio/cmd/bio-bam-sort/bio-bam-sort")
+	pamtool := testutil.GoExecutable(t, sh, "//go/src/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
+	samtools := testutil.GetFilePath("third-party/samtools/1.4.1/samtools")
 	tempDir := sh.MakeTempDir()
 	defer sh.Cleanup()
 
@@ -50,7 +51,7 @@ read10	12	*	0	0	10M	*	0	0	ACGTACGTAC	ABCDEFGHIJ	RG:Z:NA12879
 		if ext == "bam" {
 			args = append([]string{"--bam", outPath}, shardPaths...)
 			sh.Cmd(sort, args...).Run()
-			sh.Cmd("samtools", "index", outPath).Run()
+			sh.Cmd(samtools, "index", outPath).Run()
 		} else {
 			args = append([]string{"--pam", outPath}, shardPaths...)
 			sh.Cmd(sort, args...).Run()

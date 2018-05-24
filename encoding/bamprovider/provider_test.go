@@ -58,7 +58,7 @@ func doRead(t *testing.T, path string) []string {
 func TestPAMSmall(t *testing.T) {
 	tmpDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test-unmapped.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")
 	pamPath := filepath.Join(tmpDir, "test-unmapped.pam")
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 	require.Equal(t, doRead(t, pamPath),
@@ -68,7 +68,7 @@ func TestPAMSmall(t *testing.T) {
 func TestPAMLarge(t *testing.T) {
 	tmpDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := filepath.Join(tmpDir, "large.pam")
 	// The bam file is 2.8MB, so with 1MB shard size, we expect 3 shards.
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<20))
@@ -103,19 +103,19 @@ func TestError(t *testing.T) {
 
 func TestBAM(t *testing.T) {
 	require.Equal(t,
-		doRead(t, testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test.bam")),
+		doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")),
 		[]string{"read1", "read2", "read3"})
 }
 
 func TestBAMUnmapped(t *testing.T) {
 	require.Equal(t,
-		doRead(t, testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test-unmapped.bam")),
+		doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")),
 		[]string{"read1", "read2", "read3", "read10", "read10"})
 }
 
 func TestBAMUnmappedOnly(t *testing.T) {
 	require.Equal(t,
-		doRead(t, testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test-unmapped-only.bam")),
+		doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped-only.bam")),
 		[]string{"read10", "read10"})
 }
 
@@ -124,7 +124,7 @@ func testRandom(t *testing.T, randomSeed int64) {
 	tmpDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	tester := newRandomTester(t, bamPath, randomSeed)
 	bamProvider := bamprovider.NewProvider(bamPath)
 
@@ -279,7 +279,7 @@ func BenchmarkSequentialRead(b *testing.B) {
 
 // Example of reading a BAM file in parallel.
 func Example_shardedread() {
-	path := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	path := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	provider := bamprovider.NewProvider(path)
 	shards, err := provider.GenerateShards(bamprovider.GenerateShardsOpts{})
 	if err != nil {

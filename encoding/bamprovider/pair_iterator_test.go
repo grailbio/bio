@@ -153,7 +153,7 @@ func TestGetPairs(t *testing.T) {
 
 // Example_pairiterators is an example of NewPairIterator
 func ExampleNewPairIterators() {
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	provider := bamprovider.NewProvider(bamPath)
 	iters, err := bamprovider.NewPairIterators(provider, true)
 	if err != nil {

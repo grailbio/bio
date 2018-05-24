@@ -134,7 +134,7 @@ func verifyPAMWithShardedReader(t *testing.T, opts pam.ReadOpts, pamPath, bamPat
 func TestReadWriteMultipleBlocks(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")
 	pamPath := filepath.Join(tempDir, "test")
 
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{MaxBufSize: 150}, pamPath, bamPath, "", math.MaxInt64))
@@ -144,7 +144,7 @@ func TestReadWriteMultipleBlocks(t *testing.T) {
 func TestWriteEmptyFile(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
-	rbam := mustOpenBAM(t, testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test.bam"))
+	rbam := mustOpenBAM(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam"))
 	pamPath := filepath.Join(tempDir, "test")
 	w := pam.NewWriter(pam.WriteOpts{}, rbam.Header(), pamPath)
 	require.NoError(t, w.Close())
@@ -154,7 +154,7 @@ func TestWriteEmptyFile(t *testing.T) {
 }
 
 func TestNewWriterError(t *testing.T) {
-	rbam := mustOpenBAM(t, testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test.bam"))
+	rbam := mustOpenBAM(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam"))
 	rec, err := rbam.Read()
 	require.NoError(t, err)
 	require.NoError(t, rbam.Close())
@@ -177,7 +177,7 @@ func TestNewReaderError0(t *testing.T) {
 func TestReadSubsetColumns(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
 
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
@@ -210,7 +210,7 @@ func TestReadWriteUnmapped(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test-unmapped.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
@@ -263,7 +263,7 @@ func TestReadWriteLarge(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
 
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
@@ -285,7 +285,7 @@ func newRange(ref0, pos0, ref1, pos1 int) biopb.CoordRange {
 func TestSharder0(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test-unmapped.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 
@@ -321,7 +321,7 @@ func TestConvert(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
 
 	// The bam file is 2.8MB, so with 1MB shard size, we expect three PAM
@@ -345,7 +345,7 @@ func TestSharder1(t *testing.T) {
 	defer cleanup()
 
 	// Create three PAM rowshards.
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
 
 	for _, shardRange := range []biopb.CoordRange{
@@ -382,7 +382,7 @@ type syntheticTester struct {
 }
 
 func newSyntheticTester(t *testing.T) *syntheticTester {
-	in := mustOpenBAM(t, testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test.bam"))
+	in := mustOpenBAM(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam"))
 	tmpDir, cleanup := testutil.TempDir(t, "", "")
 	return &syntheticTester{
 		t:               t,
@@ -541,7 +541,7 @@ func TestSyntheticHalfUnmapped(t *testing.T) {
 func TestShardedUnmappedReads(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := filepath.Join(tempDir, "test")
 	generatePAM(t, pam.WriteOpts{MaxBufSize: 10000}, pamPath, bamPath)
 

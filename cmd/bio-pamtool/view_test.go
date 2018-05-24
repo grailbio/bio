@@ -13,11 +13,11 @@ func TestView(t *testing.T) {
 	if !testutil.IsBazel() {
 		t.Skip("not bazel")
 	}
-	bamPath := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test.bam")
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")
 
 	sh := gosh.NewShell(nil)
 	defer sh.Cleanup()
-	pamtoolPath := testutil.GoExecutable(t, sh, "@grailgo//vendor/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
+	pamtoolPath := testutil.GoExecutable(t, sh, "//go/src/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
 	dir := sh.MakeTempDir()
 	pamPath := filepath.Join(dir, "test.pam")
 	sh.Cmd(pamtoolPath, "convert", bamPath, pamPath).Run()

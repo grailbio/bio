@@ -181,9 +181,9 @@ func compareFiles(t *testing.T, orgPath, newPath string) {
 }
 
 var testBAMFiles = []string{
-	testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test.bam"),
-	testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/test-unmapped.bam"),
-	testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam"),
+	testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam"),
+	testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam"),
+	testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam"),
 	// Sad. This file is outside the Bazel workspace.
 	// testutil.GetFilePath("/tbr/pecan/tests/data/stages/HD753_titrated_fusions.bam")
 }

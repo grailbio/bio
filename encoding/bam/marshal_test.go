@@ -18,7 +18,7 @@ import (
 )
 
 func TestMarshal(t *testing.T) {
-	path := testutil.GetFilePath("@grailgo//bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	path := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	in, err := os.Open(path)
 	require.NoErrorf(t, err, "path: %s", path)
 	r, err := bam.NewReader(in, 0)
