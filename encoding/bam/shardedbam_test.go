@@ -73,7 +73,8 @@ func writeAndVerify(t *testing.T, header *sam.Header, records []*sam.Record, com
 		}
 
 		c := shardNum % compressors
-		shardCompressors[c].StartShard(shardNum)
+		err := shardCompressors[c].StartShard(shardNum)
+		require.Nil(t, err)
 
 		for _, r := range records[shardNum*(len(records)/shards) : (shardNum+1)*(len(records)/shards)] {
 			err := shardCompressors[c].AddRecord(r)
@@ -87,7 +88,7 @@ func writeAndVerify(t *testing.T, header *sam.Header, records []*sam.Record, com
 			}
 		}
 
-		err := shardCompressors[c].CloseShard()
+		err = shardCompressors[c].CloseShard()
 		assert.Nil(t, err)
 	}
 	err = w.Close()
@@ -167,7 +168,7 @@ func processShards(b *testing.B, provider bamprovider.Provider, worker int, chan
 		iter := provider.NewIterator(shard)
 		vlog.VI(1).Infof("starting shard (%s,%d,%d,%d)", shard.StartRef.Name(), shard.Start, shard.End, shard.ShardIdx)
 		if *useShardedBAMWriter {
-			compressor.StartShard(shard.ShardIdx)
+			require.NoError(b, compressor.StartShard(shard.ShardIdx))
 		}
 
 		outlist := make([]*sam.Record, 0)

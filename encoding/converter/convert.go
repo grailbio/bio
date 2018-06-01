@@ -268,7 +268,10 @@ func ConvertToBAM(bamPath string, provider bamprovider.Provider) error {
 		go func() {
 			c := w.GetCompressor()
 			for req := range reqCh {
-				c.StartShard(req.shardIdx)
+				if e := c.StartShard(req.shardIdx); e != nil {
+					err.Set(e)
+					break
+				}
 				for _, r := range req.records {
 					c.AddRecord(r)
 					gbam.PutInFreePool(gbam.CastDown(r))

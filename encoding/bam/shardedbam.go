@@ -2,13 +2,12 @@ package bam
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"sync"
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/syncqueue"
-	"github.com/klauspost/compress/gzip"
+	"grail.com/bio/encoding/bgzf"
 	"v.io/x/lib/vlog"
 )
 
@@ -37,26 +36,26 @@ import (
 // Example use of ShardedBAMWriter:
 //
 //   f, _ := os.Create("output.bam")
-//   w,err := NewShardedBAMWriter(f, gzip.DefaultCompression, 10, header)
+//   w, err := NewShardedBAMWriter(f, gzip.DefaultCompression, 10, header)
 //   c1 := w.GetCompressor()
 //   c2 := w.GetCompressor()
 //
 //   // Each of the shards may be populated and closed concurrently.
-//   c2.StartShard(0)
-//   c2.AddRecord(record0)
-//   c2.CloseShard()
+//   if c2.StartShard(0) != nil { panic }
+//   if c2.AddRecord(record0) != nil { panic }
+//   if c2.CloseShard() != nil { panic }
 //
-//   c2.StartShard(2)
-//   c2.AddRecord(record3)
-//   c2.AddRecord(record4)
-//   c2.CloseShard()
+//   if c2.StartShard(2) != nil { panic }
+//   if c2.AddRecord(record3) != nil { panic }
+//   if c2.AddRecord(record4) != nil { panic }
+//   if c2.CloseShard() != nil { panic }
 //
-//   c1.StartShard(1)
-//   c1.AddRecord(record1)
-//   c1.AddRecord(record2)
-//   c1.CloseShard()
+//   if c1.StartShard(1) != nil { panic }
+//   if c1.AddRecord(record1) != nil { panic }
+//   if c1.AddRecord(record2) != nil { panic }
+//   if c1.CloseShard() != nil { panic }
 //
-//   w.Close()
+//   if w.Close() != nil { panic }
 
 const (
 	// uncompressedBlockSize is the maximum size of the uncompressed
@@ -95,16 +94,16 @@ var (
 // ShardedBAMCompressor can exist at once, and they can all compress
 // records in parallel with each other.
 type ShardedBAMCompressor struct {
-	writer       *ShardedBAMWriter
-	uncompressed bytes.Buffer
-	gzWriter     *gzip.Writer
-	output       *shardedBAMBuffer
+	writer *ShardedBAMWriter
+	bgzf   *bgzf.Writer
+	output *shardedBAMBuffer
+	buf    bytes.Buffer
 }
 
 // StartShard begins a new shard with the specified shard number.  If
 // the compressor still has data from the previous shard, it will
 // crash.
-func (c *ShardedBAMCompressor) StartShard(shardNum int) {
+func (c *ShardedBAMCompressor) StartShard(shardNum int) error {
 	if c.output != nil {
 		vlog.Fatalf("existing shard still in progress")
 	}
@@ -116,6 +115,9 @@ func (c *ShardedBAMCompressor) StartShard(shardNum int) {
 		shardNum: shardNum + 1,
 	}
 
+	var err error
+	c.bgzf, err = bgzf.NewWriter(&c.output.buf, c.writer.gzLevel)
+	return err
 }
 
 // addHeader adds a sam header to the current shard.  This must be
@@ -123,28 +125,16 @@ func (c *ShardedBAMCompressor) StartShard(shardNum int) {
 // be at the correct position in the bam file; NewShardedBAMWriter
 // takes care of that for users.
 func (c *ShardedBAMCompressor) addHeader(h *sam.Header) error {
-	if err := h.EncodeBinary(&c.uncompressed); err != nil {
-		return err
-	}
-	if c.uncompressed.Len() > uncompressedBlockSize {
-		if err := c.compress(false); err != nil {
-			return err
-		}
-	}
-	return nil
+	return h.EncodeBinary(c.bgzf)
 }
 
 // AddRecord adds a sam record to the current in-progress shard.
 func (c *ShardedBAMCompressor) AddRecord(r *sam.Record) error {
-	if err := Marshal(r, &c.uncompressed); err != nil {
+	if err := Marshal(r, &c.buf); err != nil {
 		return err
 	}
-	if c.uncompressed.Len() > uncompressedBlockSize {
-		if err := c.compress(false); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := c.buf.WriteTo(c.bgzf)
+	return err
 }
 
 // CloseShard finalizes the in-progress shard, and passes the
@@ -156,71 +146,12 @@ func (c *ShardedBAMCompressor) AddRecord(r *sam.Record) error {
 // the caller must be careful about how out of order it is when
 // calling CloseShard(), otherwise, calls to CloseShard() will block.
 func (c *ShardedBAMCompressor) CloseShard() error {
-	if c.uncompressed.Len() > 0 {
-		if err := c.compress(true); err != nil {
-			return err
-		}
+	if err := c.bgzf.CloseWithoutTerminator(); err != nil {
+		return err
 	}
 	f := c.output
 	c.output = nil
 	return c.writer.addShard(f)
-}
-
-// Removes a block from c.uncompressed, compresses the block, and
-// appends the compressed block to c.output.buf.
-func (c *ShardedBAMCompressor) compress(compressRemainder bool) error {
-	for c.uncompressed.Len() >= uncompressedBlockSize || (compressRemainder && c.uncompressed.Len() > 0) {
-		// Setup gzip
-		if c.gzWriter == nil {
-			w, err := gzip.NewWriterLevel(&c.output.buf, c.writer.gzLevel)
-			if err != nil {
-				return err
-			}
-			c.gzWriter = w
-		} else {
-			c.gzWriter.Reset(&c.output.buf)
-		}
-		c.gzWriter.Header = gzip.Header{
-			Extra: bgzfExtra,
-			OS:    0xff, // Unknown OS value
-		}
-
-		// Compress one block
-		count := 0
-		originalSize := c.output.buf.Len()
-		for c.uncompressed.Len() > 0 && count < uncompressedBlockSize {
-			n, err := c.gzWriter.Write(c.uncompressed.Next(uncompressedBlockSize - count))
-			if err != nil {
-				return err
-			}
-			count += n
-		}
-
-		if err := c.gzWriter.Close(); err != nil {
-			return err
-		}
-		newSize := c.output.buf.Len()
-
-		// Fix up bgzf prefix
-		sz := newSize - originalSize - 1
-		if sz >= compressedBlockSize {
-			return fmt.Errorf("bgzf compressed block is too big: %d > %d", sz, compressedBlockSize)
-		}
-		found := false
-		b := c.output.buf.Bytes()
-		for i := originalSize; i < newSize-len(bgzfExtra); i++ {
-			if bytes.Compare(b[i:i+len(bgzfExtraPrefix)], bgzfExtraPrefix) == 0 {
-				b[i+4] = byte(sz)
-				b[i+5] = byte(sz >> 8)
-				found = true
-				break
-			}
-		}
-		if !found {
-			vlog.Fatalf("could not find bgzf extra prefix")
-		}
-	}
-	return nil
 }
 
 // ShardedBAMBuffer represents a shard of the final output bam file.
