@@ -202,7 +202,7 @@ func ParsePath(path string) (FileInfo, error) {
 func Remove(dir string) error {
 	ctx := vcontext.Background()
 	// TODO(saito) Provide equivalent of filepath.Join that works for URLs.
-	lister := file.List(ctx, dir)
+	lister := file.List(ctx, dir, true)
 	n := 0
 	for lister.Scan() {
 		// TODO(saito) Use grailfile once it's ready.
@@ -226,7 +226,7 @@ func ListIndexes(dir string) ([]FileInfo, error) {
 	ctx := vcontext.Background()
 	var infos []FileInfo
 
-	lister := file.List(ctx, dir)
+	lister := file.List(ctx, dir, true)
 	for lister.Scan() {
 		fi, err := ParsePath(lister.Path())
 		if err != nil {
