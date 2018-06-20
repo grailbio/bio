@@ -13,7 +13,7 @@ import (
 
 // Test the case where each goroutine calls Get immediately followed by Put.
 func TestIndependentGets(t *testing.T) {
-	p := NewFreePool(-1)
+	p := NewRecordFreePool(func() *Record { return &Record{Magic: Magic} }, -1)
 	wg := sync.WaitGroup{}
 	const numThreads = 100
 	for i := 0; i < numThreads; i++ {
@@ -29,7 +29,7 @@ func TestIndependentGets(t *testing.T) {
 	}
 	wg.Wait()
 	// Allow some slack per thread.,
-	require.Truef(t, p.testLen() <= numThreads*2, "Pool too large: %v", p.testLen())
+	require.Truef(t, p.ApproxLen() <= numThreads*2, "Pool too large: %v", p.ApproxLen())
 }
 
 // Test the case where each goroutine calls Get, and lets another goroutine calls Put.
@@ -37,8 +37,7 @@ func TestPutsByAnotherThread(t *testing.T) {
 	const numThreads = 100
 	const getsPerThread = 1000
 	ch := make(chan *Record, numThreads)
-	p := NewFreePool(-1)
-
+	p := NewRecordFreePool(func() *Record { return &Record{Magic: Magic} }, -1)
 	// Getters
 	getterWg := sync.WaitGroup{}
 	for i := 0; i < numThreads; i++ {
@@ -69,5 +68,5 @@ func TestPutsByAnotherThread(t *testing.T) {
 	close(ch)
 	putterWg.Wait()
 	// Allow some slack
-	require.Truef(t, p.testLen() <= numThreads*getsPerThread/20, "Pool too large: %v", p.testLen())
+	require.Truef(t, p.ApproxLen() <= numThreads*getsPerThread/20, "Pool too large: %v", p.ApproxLen())
 }

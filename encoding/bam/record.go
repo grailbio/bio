@@ -2,12 +2,16 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
+//go:generate ../../../base/gtl/generate.py --prefix=Record -DELEM=*Record --package=bam --output=record_pool.go ../../../base/gtl/randomized_freepool.go.tpl
+
 package bam
 
 import (
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/biogo/hts/sam"
+	"v.io/x/lib/vlog"
 )
 
 // Record extends biogo sam.Record with grail-specific stuff.  The
@@ -53,4 +57,39 @@ func CastDown(rb *sam.Record) *Record {
 		panic("CastFromRecord: object must be bam.Record, not sam.Record.")
 	}
 	return rec
+}
+
+var recordPool = NewRecordFreePool(func() *Record { return &Record{Magic: Magic} }, 1<<20)
+
+// GetFromFreePool gets a sam.Record object from the singleton freepool, or
+// allocate one anew if the pool is empty.
+func GetFromFreePool() *Record {
+	rec := recordPool.Get()
+	rec.Name = ""
+	rec.Ref = nil
+	rec.MateRef = nil
+	rec.Cigar = nil
+	rec.Seq = sam.Seq{}
+	rec.Qual = nil
+	rec.AuxFields = nil
+	return rec
+}
+
+var nPoolWarnings int32
+
+// PutInFreePool adds "r" to the singleton freepool.  The caller must guarantee
+// that there is no outstanding references to "r"; "r" will be overwritten in a
+// future.
+func PutInFreePool(r *Record) {
+	if r == nil {
+		panic("r=nil")
+	}
+	if r.Magic != Magic {
+		if atomic.AddInt32(&nPoolWarnings, 1) < 2 {
+			vlog.Errorf(`putSamRecord: object must be bam.Record, not sam.Record. magic %x.
+If you see this warning in non-test code path, you MUST fix the problem`, r.Magic)
+		}
+		return
+	}
+	recordPool.Put(r)
 }
