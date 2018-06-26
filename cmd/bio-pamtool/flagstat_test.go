@@ -19,7 +19,7 @@ func TestFlagStat(t *testing.T) {
 	dir := sh.MakeTempDir()
 	pamPath := filepath.Join(dir, "test.pam")
 
-	pamtoolPath := testutil.GoExecutable(t, sh, "//go/src/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
+	pamtoolPath := testutil.GoExecutable(t, "//go/src/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
 	sh.Cmd(pamtoolPath, "convert", bamPath, pamPath).Run()
 	assert.NoError(t, sh.Err)
 

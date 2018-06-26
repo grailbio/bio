@@ -17,7 +17,7 @@ func TestView(t *testing.T) {
 
 	sh := gosh.NewShell(nil)
 	defer sh.Cleanup()
-	pamtoolPath := testutil.GoExecutable(t, sh, "//go/src/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
+	pamtoolPath := testutil.GoExecutable(t, "//go/src/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
 	dir := sh.MakeTempDir()
 	pamPath := filepath.Join(dir, "test.pam")
 	sh.Cmd(pamtoolPath, "convert", bamPath, pamPath).Run()

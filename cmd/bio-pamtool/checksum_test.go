@@ -16,7 +16,7 @@ func TestVerify(t *testing.T) {
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	sh := gosh.NewShell(nil)
 	defer sh.Cleanup()
-	pamtoolPath := testutil.GoExecutable(t, sh, "//go/src/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
+	pamtoolPath := testutil.GoExecutable(t, "//go/src/github.com/grailbio/bio/cmd/bio-pamtool/bio-pamtool")
 	dir := sh.MakeTempDir()
 	pamPath := filepath.Join(dir, "test.pam")
 	sh.Cmd(pamtoolPath, "convert", bamPath, pamPath).Run()
