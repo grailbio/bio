@@ -33,6 +33,13 @@ Benchmark_PackSeqLong1-8               1        1510392344 ns/op
 Benchmark_PackSeqLong4-8               1        2200776260 ns/op
 Benchmark_PackSeqLongMax-8             1        3029837297 ns/op
 
+Benchmark_ReverseCompShort1-8                 20          76847905 ns/op
+Benchmark_ReverseCompShort4-8                 50          29293746 ns/op
+Benchmark_ReverseCompShortMax-8              100          19428703 ns/op
+Benchmark_ReverseCompLong1-8                   1        1458896247 ns/op
+Benchmark_ReverseCompLong4-8                   1        2012557816 ns/op
+Benchmark_ReverseCompLongMax-8                 1        2835188762 ns/op
+
 For comparison, unpackSeqSlow:
 Benchmark_UnpackSeqShort1-8                    3         473023326 ns/op
 Benchmark_UnpackSeqShort4-8                   10         129047060 ns/op
@@ -48,6 +55,14 @@ Benchmark_PackSeqShortMax-8           10         118149764 ns/op
 Benchmark_PackSeqLong1-8               1        6663558987 ns/op
 Benchmark_PackSeqLong4-8               1        2954068774 ns/op
 Benchmark_PackSeqLongMax-8             1        4180531216 ns/op
+
+reverseCompSlow:
+Benchmark_ReverseCompShort1-8                  2         503259438 ns/op
+Benchmark_ReverseCompShort4-8                  3         361078151 ns/op
+Benchmark_ReverseCompShortMax-8                5         321822410 ns/op
+Benchmark_ReverseCompLong1-8                   1        6852320115 ns/op
+Benchmark_ReverseCompLong4-8                   1        4334209675 ns/op
+Benchmark_ReverseCompLongMax-8                 1        3621205279 ns/op
 */
 
 func unpackSeqSubtask(dst, src []byte, nIter int) int {
@@ -309,6 +324,146 @@ func TestPackSeq(t *testing.T) {
 		biosimd.UnpackSeq(src2Slice, dst1Slice)
 		if !bytes.Equal(srcSlice, src2Slice) {
 			t.Fatal("UnpackSeq didn't invert PackSeq.")
+		}
+	}
+}
+
+func reverseCompSubtask(seq8 []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.ReverseCompUnsafeInplace(seq8)
+	}
+	return int(seq8[0])
+}
+
+func reverseCompSubtaskFuture(main []byte, nIter int) chan int {
+	future := make(chan int)
+	go func() { future <- reverseCompSubtask(main, nIter) }()
+	return future
+}
+
+func multiReverseComp(mains [][]byte, cpus int, nJob int) {
+	sumFutures := make([]chan int, cpus)
+	shardSizeBase := nJob / cpus
+	shardRemainder := nJob - shardSizeBase*cpus
+	shardSizeP1 := shardSizeBase + 1
+	var taskIdx int
+	for ; taskIdx < shardRemainder; taskIdx++ {
+		sumFutures[taskIdx] = reverseCompSubtaskFuture(mains[taskIdx], shardSizeP1)
+	}
+	for ; taskIdx < cpus; taskIdx++ {
+		sumFutures[taskIdx] = reverseCompSubtaskFuture(mains[taskIdx], shardSizeBase)
+	}
+	var sum int
+	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
+		sum += <-sumFutures[taskIdx]
+	}
+}
+
+func benchmarkReverseComp(cpus int, nByte int, nJob int, b *testing.B) {
+	if cpus > runtime.NumCPU() {
+		b.Skipf("only have %v cpus", runtime.NumCPU())
+	}
+
+	mainSlices := make([][]byte, cpus)
+	for ii := range mainSlices {
+		// Add 63 to prevent false sharing.
+		newArr := simd.MakeUnsafe(nByte + 63)
+		for jj := 0; jj < nByte; jj++ {
+			newArr[jj] = byte(jj*3) & 15
+		}
+		mainSlices[ii] = newArr[:nByte]
+	}
+	for i := 0; i < b.N; i++ {
+		multiReverseComp(mainSlices, cpus, nJob)
+	}
+}
+
+func Benchmark_ReverseCompShort1(b *testing.B) {
+	benchmarkReverseComp(1, 75, 9999999, b)
+}
+
+func Benchmark_ReverseCompShort4(b *testing.B) {
+	benchmarkReverseComp(4, 75, 9999999, b)
+}
+
+func Benchmark_ReverseCompShortMax(b *testing.B) {
+	benchmarkReverseComp(runtime.NumCPU(), 75, 9999999, b)
+}
+
+func Benchmark_ReverseCompLong1(b *testing.B) {
+	benchmarkReverseComp(1, 249250621, 50, b)
+}
+
+func Benchmark_ReverseCompLong4(b *testing.B) {
+	benchmarkReverseComp(4, 249250621, 50, b)
+}
+
+func Benchmark_ReverseCompLongMax(b *testing.B) {
+	benchmarkReverseComp(runtime.NumCPU(), 249250621, 50, b)
+}
+
+func reverseCompSlow(seq8 []byte) {
+	table := [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
+	nByte := len(seq8)
+	nByteDiv2 := nByte >> 1
+	for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
+		seq8[idx], seq8[invIdx] = table[seq8[invIdx]], table[seq8[idx]]
+	}
+	if nByte&1 == 1 {
+		seq8[nByteDiv2] = table[seq8[nByteDiv2]]
+	}
+}
+
+func TestReverseComp(t *testing.T) {
+	maxSize := 500
+	nIter := 200
+	main1Arr := simd.MakeUnsafe(maxSize)
+	main2Arr := simd.MakeUnsafe(maxSize)
+	main3Arr := simd.MakeUnsafe(maxSize)
+	main4Arr := simd.MakeUnsafe(maxSize)
+	main5Arr := simd.MakeUnsafe(maxSize)
+	for iter := 0; iter < nIter; iter++ {
+		sliceStart := rand.Intn(maxSize)
+		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
+		main1Slice := main1Arr[sliceStart:sliceEnd]
+		main2Slice := main2Arr[sliceStart:sliceEnd]
+		main3Slice := main3Arr[sliceStart:sliceEnd]
+		main4Slice := main4Arr[sliceStart:sliceEnd]
+		main5Slice := main5Arr[sliceStart:sliceEnd]
+		for ii := range main1Slice {
+			main1Slice[ii] = byte(rand.Intn(16))
+		}
+		copy(main3Slice, main1Slice)
+		sentinel := byte(rand.Intn(256))
+		main3Arr[sliceEnd] = sentinel
+		main5Arr[sliceEnd] = sentinel
+		biosimd.ReverseCompUnsafe(main4Slice, main1Slice)
+		biosimd.ReverseCompUnsafe(main2Slice, main4Slice)
+		if !bytes.Equal(main1Slice, main2Slice) {
+			t.Fatal("ReverseCompUnsafe isn't its own inverse.")
+		}
+		copy(main2Slice, main1Slice)
+		biosimd.ReverseComp(main5Slice, main1Slice)
+		reverseCompSlow(main1Slice)
+		biosimd.ReverseCompUnsafeInplace(main2Slice)
+		biosimd.ReverseCompInplace(main3Slice)
+		if !bytes.Equal(main1Slice, main2Slice) {
+			t.Fatal("Mismatched ReverseCompUnsafeInplace result.")
+		}
+		if !bytes.Equal(main1Slice, main3Slice) {
+			t.Fatal("Mismatched ReverseCompInplace result.")
+		}
+		if main3Arr[sliceEnd] != sentinel {
+			t.Fatal("ReverseCompInplace clobbered an extra byte.")
+		}
+		if !bytes.Equal(main1Slice, main4Slice) {
+			t.Fatal("Mismatched ReverseCompUnsafe result.")
+		}
+		if !bytes.Equal(main1Slice, main5Slice) {
+			t.Fatal("Mismatched ReverseComp result.")
+		}
+		if main5Arr[sliceEnd] != sentinel {
+			t.Fatal("ReverseComp clobbered an extra byte.")
 		}
 	}
 }

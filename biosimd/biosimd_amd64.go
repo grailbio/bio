@@ -54,6 +54,18 @@ func packSeqSSE41Asm(dst, src unsafe.Pointer, nSrcVec int)
 //go:noescape
 func packSeqOddSSSE3Asm(dst, src unsafe.Pointer, nDstFullByte int)
 
+//go:noescape
+func reverseCompInplaceTinySSSE3Asm(seq8 unsafe.Pointer, nByte int)
+
+//go:noescape
+func reverseCompInplaceSSSE3Asm(seq8 unsafe.Pointer, nByte int)
+
+//go:noescape
+func reverseCompTinySSSE3Asm(dst, src unsafe.Pointer, nByte int)
+
+//go:noescape
+func reverseCompSSSE3Asm(dst, src unsafe.Pointer, nByte int)
+
 // *** end assembly function signatures
 
 func init() {
@@ -74,7 +86,7 @@ func init() {
 // potentially-size-increasing operation on src[] is simd.{Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
 // 1. len(src) = (len(dst) + 1) / 2.
-// 2. Capcity of src is at least RoundUpPow2(len(src), bytesPerVec), and the
+// 2. Capacity of src is at least RoundUpPow2(len(src), bytesPerVec), and the
 //    same is true for dst.
 // 3. The caller does not care if a few bytes past the end of dst[] are
 //    changed.
@@ -134,7 +146,7 @@ func UnpackSeq(dst, src []byte) {
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
 // 1. len(dst) = (len(src) + 1) / 2.
 // 2. All elements of src[] are less than 16.
-// 3. Capcity of src is at least RoundUpPow2(len(src), bytesPerVec), and the
+// 3. Capacity of src is at least RoundUpPow2(len(src), bytesPerVec), and the
 //    same is true for dst.
 // 4. The caller does not care if a few bytes past the end of dst[] are
 //    changed.
@@ -180,4 +192,98 @@ func PackSeq(dst, src []byte) {
 	if dstOdd == 1 {
 		dst[nDstFullByte] = src[nDstFullByte*2] << 4
 	}
+}
+
+// ReverseCompUnsafeInplace reverse-complements seq8[], assuming that it's
+// using .bam seq-field encoding with 1 byte per base.
+// WARNING: This is a function designed to be used in inner loops, which makes
+// assumptions about length and capacity which aren't checked at runtime.  Use
+// the safe version of this function when that's a problem.
+// Assumptions #2-3 are always satisfied when the last
+// potentially-size-increasing operation on seq8[] is simd.{Re}makeUnsafe(),
+// ResizeUnsafe(), or XcapUnsafe().
+// 1. All elements of seq8[] are less than 16.
+// 2. Capacity of seq8 is at least RoundUpPow2(len(seq8) + 1, bytesPerVec).
+// 3. The caller does not care if a few bytes past the end of seq8[] are
+//    changed.
+func ReverseCompUnsafeInplace(seq8 []byte) {
+	nByte := len(seq8)
+	seq8Header := (*reflect.SliceHeader)(unsafe.Pointer(&seq8))
+	if nByte <= bytesPerVec {
+		reverseCompInplaceTinySSSE3Asm(unsafe.Pointer(seq8Header.Data), nByte)
+		return
+	}
+	reverseCompInplaceSSSE3Asm(unsafe.Pointer(seq8Header.Data), nByte)
+}
+
+// ReverseCompInplace reverse-complements seq8[], assuming that it's using .bam
+// seq-field encoding with 1 byte per base.
+// WARNING: If a seq8[] value is larger than 15, it's possible for this to
+// immediately crash, and it's also possible for this to return and fill seq8[]
+// with garbage.  Only promise is that we don't scribble over arbitrary memory.
+func ReverseCompInplace(seq8 []byte) {
+	// This has no performance penalty relative to the unsafe function when nByte
+	// > 16, but the penalty can be horrific (in relative terms) below that.
+	nByte := len(seq8)
+	if nByte <= bytesPerVec {
+		table := [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
+		nByteDiv2 := nByte >> 1
+		for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
+			seq8[idx], seq8[invIdx] = table[seq8[invIdx]], table[seq8[idx]]
+		}
+		if nByte&1 == 1 {
+			seq8[nByteDiv2] = table[seq8[nByteDiv2]]
+		}
+		return
+	}
+	seq8Header := (*reflect.SliceHeader)(unsafe.Pointer(&seq8))
+	reverseCompInplaceSSSE3Asm(unsafe.Pointer(seq8Header.Data), nByte)
+}
+
+// ReverseCompUnsafe saves the reverse-complement of src[] to dst[], assuming
+// .bam seq-field encoding with 1 byte per base.
+// WARNING: This is a function designed to be used in inner loops, which makes
+// assumptions about length and capacity which aren't checked at runtime.  Use
+// the safe version of this function when that's a problem.
+// Assumptions #3-4 are always satisfied when the last
+// potentially-size-increasing operation on src[] is simd.{Re}makeUnsafe(),
+// ResizeUnsafe(), or XcapUnsafe(), and the same is true of dst[].
+// 1. len(src) == len(dst).
+// 2. All elements of src[] are less than 16.
+// 3. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
+//    the same is true of dst.
+// 4. The caller does not care if a few bytes past the end of dst[] are
+//    changed.
+func ReverseCompUnsafe(dst, src []byte) {
+	nByte := len(src)
+	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
+	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+	if nByte <= bytesPerVec {
+		reverseCompTinySSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nByte)
+		return
+	}
+	reverseCompSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nByte)
+}
+
+// ReverseComp saves the reverse-complement of src[] to dst[], assuming .bam
+// seq-field encoding with 1 byte per base.
+// It panics if len(dst) != len(src).
+// WARNING: If a src[] value is larger than 15, it's possible for this to
+// immediately crash, and it's also possible for this to return and fill src[]
+// with garbage.  Only promise is that we don't scribble over arbitrary memory.
+func ReverseComp(dst, src []byte) {
+	nByte := len(src)
+	if len(dst) != len(src) {
+		panic("ReverseComp() requires len(dst) == len(src).")
+	}
+	if nByte < bytesPerVec {
+		table := [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
+		for idx, invIdx := 0, nByte-1; idx != nByte; idx, invIdx = idx+1, invIdx-1 {
+			dst[idx] = table[src[invIdx]]
+		}
+		return
+	}
+	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
+	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+	reverseCompSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nByte)
 }
