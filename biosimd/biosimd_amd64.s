@@ -42,13 +42,13 @@ TEXT ·unpackSeqSSE2Asm(SB),4,$0-24
         // R8 = pointer to current dst[] element.
         MOVQ    dst+0(FP), R8
         MOVQ    src+8(FP), DI
-        MOVQ	nDstVec+16(FP), CX
+        MOVQ	nSrcByte+16(FP), CX
 
         MOVOU   ·Mask0f0f<>(SB), X0
 
         // AX = pointer to last relevant word of src[].
         // (note that 8 src bytes -> 16 dst bytes)
-        LEAQ    -8(DI)(CX*8), AX
+        LEAQ    -8(DI)(CX*1), AX
         CMPQ    AX, DI
         JLE     unpackSeqSSE2Final
 
@@ -71,8 +71,6 @@ unpackSeqSSE2Loop:
         CMPQ    AX, DI
         JG      unpackSeqSSE2Loop
 unpackSeqSSE2Final:
-        JL      unpackSeqSSE2Finish
-
         // Necessary to write one more vector.  We skip unpackhi, but must
         // execute the rest of the loop body.
         MOVOU   (DI), X1
@@ -83,8 +81,6 @@ unpackSeqSSE2Final:
         PAND    X0, X1
         PUNPCKLBW       X2, X1
         MOVOU   X1, (R8)
-
-unpackSeqSSE2Finish:
         RET
 
 TEXT ·unpackSeqOddSSE2Asm(SB),4,$0-24
@@ -132,8 +128,6 @@ unpackSeqOddSSE2Loop:
         PUNPCKHBW       X2, X3
         MOVOU   X1, (AX)
         MOVOU   X3, 16(AX)
-
-unpackSeqOddSSE2Finish:
         RET
 
 TEXT ·packSeqSSE41Asm(SB),4,$0-24
@@ -141,15 +135,15 @@ TEXT ·packSeqSSE41Asm(SB),4,$0-24
         // R8 = pointer to current dst[] element.
         MOVQ    dst+0(FP), R8
         MOVQ    src+8(FP), DI
-        MOVQ	nSrcVec+16(FP), CX
+        MOVQ	nSrcByte+16(FP), CX
 
         MOVOU   ·GatherOddLow<>(SB), X0
         MOVOU   ·GatherOddHigh<>(SB), X1
 
-        // AX = pointer to last relevant word of dst[].
+        // AX = pointer to last relevant word of src[].
         // (note that 16 src bytes -> 8 dst bytes)
-        LEAQ    -8(R8)(CX*8), AX
-        CMPQ    AX, R8
+        LEAQ    -16(DI)(CX*1), AX
+        CMPQ    AX, DI
         JLE     packSeqSSE41Final
 
 packSeqSSE41Loop:
@@ -169,11 +163,9 @@ packSeqSSE41Loop:
         MOVOU   X2, (R8)
         ADDQ    $32, DI
         ADDQ    $16, R8
-        CMPQ    AX, R8
+        CMPQ    AX, DI
         JG      packSeqSSE41Loop
 packSeqSSE41Final:
-        JL      packSeqSSE41Finish
-
         // Necessary to write one more word.
         MOVOU   (DI), X2
         MOVOU   X2, X4
@@ -181,8 +173,6 @@ packSeqSSE41Final:
         POR     X4, X2
         PSHUFB  X0, X2
         PEXTRQ  $0, X2, (R8)
-
-packSeqSSE41Finish:
         RET
 
 TEXT ·packSeqOddSSSE3Asm(SB),4,$0-24
@@ -392,14 +382,14 @@ TEXT ·unpackAndReplaceSeqSSSE3Asm(SB),4,$0-32
         MOVQ    dst+0(FP), R8
         MOVQ    src+8(FP), DI
         MOVQ	tablePtr+16(FP), SI
-        MOVQ	nDstVec+24(FP), CX
+        MOVQ	nSrcByte+24(FP), CX
 
         MOVOU   (SI), X0
         MOVOU   ·Mask0f0f<>(SB), X1
 
         // AX = pointer to last relevant word of src[].
         // (note that 8 src bytes -> 16 dst bytes)
-        LEAQ    -8(DI)(CX*8), AX
+        LEAQ    -8(DI)(CX*1), AX
         CMPQ    AX, DI
         JLE     unpackAndReplaceSeqSSSE3Final
 
@@ -426,8 +416,6 @@ unpackAndReplaceSeqSSSE3Loop:
         CMPQ    AX, DI
         JG      unpackAndReplaceSeqSSSE3Loop
 unpackAndReplaceSeqSSSE3Final:
-        JL      unpackAndReplaceSeqSSSE3Finish
-
         // Necessary to write one more vector.  We skip unpackhi, but must
         // execute the rest of the loop body.
         MOVOU   (DI), X3
@@ -441,8 +429,6 @@ unpackAndReplaceSeqSSSE3Final:
         PSHUFB  X3, X5
         PUNPCKLBW       X4, X5
         MOVOU   X5, (R8)
-
-unpackAndReplaceSeqSSSE3Finish:
         RET
 
 TEXT ·unpackAndReplaceSeqOddSSSE3Asm(SB),4,$0-32
@@ -502,6 +488,4 @@ unpackAndReplaceSeqOddSSSE3Loop:
         PUNPCKHBW       X4, X3
         MOVOU   X5, (AX)
         MOVOU   X3, 16(AX)
-
-unpackAndReplaceSeqOddSSSE3Finish:
         RET

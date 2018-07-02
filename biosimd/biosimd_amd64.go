@@ -43,13 +43,13 @@ var log2BytesPerVec uint
 func hasSSE42Asm() bool
 
 //go:noescape
-func unpackSeqSSE2Asm(dst, src unsafe.Pointer, nDstVec int)
+func unpackSeqSSE2Asm(dst, src unsafe.Pointer, nSrcByte int)
 
 //go:noescape
 func unpackSeqOddSSE2Asm(dst, src unsafe.Pointer, nSrcFullByte int)
 
 //go:noescape
-func packSeqSSE41Asm(dst, src unsafe.Pointer, nSrcVec int)
+func packSeqSSE41Asm(dst, src unsafe.Pointer, nSrcByte int)
 
 //go:noescape
 func packSeqOddSSSE3Asm(dst, src unsafe.Pointer, nDstFullByte int)
@@ -67,7 +67,7 @@ func reverseCompTinySSSE3Asm(dst, src unsafe.Pointer, nByte int)
 func reverseCompSSSE3Asm(dst, src unsafe.Pointer, nByte int)
 
 //go:noescape
-func unpackAndReplaceSeqSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nDstVec int)
+func unpackAndReplaceSeqSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nSrcByte int)
 
 //go:noescape
 func unpackAndReplaceSeqOddSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nSrcFullByte int)
@@ -94,18 +94,16 @@ func init() {
 // potentially-size-increasing operation on src[] is simd.{Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
 // 1. len(src) = (len(dst) + 1) / 2.
-// 2. Capacity of src is at least RoundUpPow2(len(src), bytesPerVec), and the
-//    same is true for dst.
+// 2. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
+//    the same is true for dst.
 // 3. The caller does not care if a few bytes past the end of dst[] are
 //    changed.
 func UnpackSeqUnsafe(dst, src []byte) {
 	// Based on simd.PackedNibbleLookupUnsafe().  Differences are (i) even/odd is
 	// swapped, and (ii) no table lookup is necessary.
-	dstLen := len(dst)
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
 	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
-	nDstVec := simd.DivUpPow2(dstLen, bytesPerVec, log2BytesPerVec)
-	unpackSeqSSE2Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nDstVec)
+	unpackSeqSSE2Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), srcHeader.Len)
 }
 
 // UnpackSeq sets the bytes in dst[] as follows:
@@ -154,16 +152,15 @@ func UnpackSeq(dst, src []byte) {
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
 // 1. len(dst) = (len(src) + 1) / 2.
 // 2. All elements of src[] are less than 16.
-// 3. Capacity of src is at least RoundUpPow2(len(src), bytesPerVec), and the
-//    same is true for dst.
+// 3. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
+//    the same is true for dst.
 // 4. The caller does not care if a few bytes past the end of dst[] are
 //    changed.
 func PackSeqUnsafe(dst, src []byte) {
 	srcLen := len(src)
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
 	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
-	nSrcVec := (srcLen + bytesPerVec - 2) >> log2BytesPerVec
-	packSeqSSE41Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nSrcVec)
+	packSeqSSE41Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), srcLen)
 	if srcLen&1 == 1 {
 		// Force low bits of last dst[] byte to zero.
 		dst[srcLen>>1] = src[srcLen-1] << 4
@@ -313,11 +310,9 @@ func ReverseComp(dst, src []byte) {
 //    changed.
 func UnpackAndReplaceSeqUnsafe(dst, src []byte, tablePtr *[16]byte) {
 	// Minor variant of simd.PackedNibbleLookupUnsafe().
-	dstLen := len(dst)
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
 	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
-	nDstVec := simd.DivUpPow2(dstLen, bytesPerVec, log2BytesPerVec)
-	unpackAndReplaceSeqSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), unsafe.Pointer(tablePtr), nDstVec)
+	unpackAndReplaceSeqSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), unsafe.Pointer(tablePtr), srcHeader.Len)
 }
 
 // UnpackAndReplaceSeq sets the bytes in dst[] as follows:
