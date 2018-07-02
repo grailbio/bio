@@ -383,3 +383,125 @@ reverseCompSSSE3Loop:
         PSHUFB  X2, X3
         MOVOU   X3, (CX)
         RET
+
+TEXT ·unpackAndReplaceSeqSSSE3Asm(SB),4,$0-32
+        // Identical to packedNibbleLookupSSSE3Asm, except with even/odd
+        // swapped.
+        // DI = pointer to current src[] element.
+        // R8 = pointer to current dst[] element.
+        MOVQ    dst+0(FP), R8
+        MOVQ    src+8(FP), DI
+        MOVQ	tablePtr+16(FP), SI
+        MOVQ	nDstVec+24(FP), CX
+
+        MOVOU   (SI), X0
+        MOVOU   ·Mask0f0f<>(SB), X1
+
+        // AX = pointer to last relevant word of src[].
+        // (note that 8 src bytes -> 16 dst bytes)
+        LEAQ    -8(DI)(CX*8), AX
+        CMPQ    AX, DI
+        JLE     unpackAndReplaceSeqSSSE3Final
+
+unpackAndReplaceSeqSSSE3Loop:
+        MOVOU   (DI), X3
+        MOVOU   X0, X4
+        MOVOU   X0, X5
+        // Isolate high and low nibbles, then parallel-lookup.
+        MOVOU   X3, X2
+        PSRLQ   $4, X3
+        PAND    X1, X2
+        PAND    X1, X3
+        PSHUFB  X2, X4
+        PSHUFB  X3, X5
+        // Use unpacklo/unpackhi to stitch results together.
+        // Odd bytes (1, 3, 5, ...) are in X4, even in X3/X5.
+        MOVOU   X5, X3
+        PUNPCKLBW       X4, X5
+        PUNPCKHBW       X4, X3
+        MOVOU   X5, (R8)
+        MOVOU   X3, 16(R8)
+        ADDQ    $16, DI
+        ADDQ    $32, R8
+        CMPQ    AX, DI
+        JG      unpackAndReplaceSeqSSSE3Loop
+unpackAndReplaceSeqSSSE3Final:
+        JL      unpackAndReplaceSeqSSSE3Finish
+
+        // Necessary to write one more vector.  We skip unpackhi, but must
+        // execute the rest of the loop body.
+        MOVOU   (DI), X3
+        MOVOU   X0, X4
+        MOVOU   X0, X5
+        MOVOU   X3, X2
+        PSRLQ   $4, X3
+        PAND    X1, X2
+        PAND    X1, X3
+        PSHUFB  X2, X4
+        PSHUFB  X3, X5
+        PUNPCKLBW       X4, X5
+        MOVOU   X5, (R8)
+
+unpackAndReplaceSeqSSSE3Finish:
+        RET
+
+TEXT ·unpackAndReplaceSeqOddSSSE3Asm(SB),4,$0-32
+        // Identical to packedNibbleLookupOddSSSE3Asm, except with even/odd
+        // swapped.
+        // DI = pointer to current src[] element.
+        // R8 = pointer to current dst[] element.
+        MOVQ    dst+0(FP), R8
+        MOVQ    src+8(FP), DI
+        MOVQ	tablePtr+16(FP), SI
+        MOVQ	nSrcFullByte+24(FP), CX
+
+        MOVOU   (SI), X0
+        MOVOU   ·Mask0f0f<>(SB), X1
+
+        // set AX to 32 bytes before end of dst[].
+        // change CX to 16 bytes before end of src[].
+        SUBQ    $16, CX
+        LEAQ    0(R8)(CX*2), AX
+        ADDQ    DI, CX
+
+unpackAndReplaceSeqOddSSSE3Loop:
+        MOVOU   (DI), X3
+        MOVOU   X0, X4
+        MOVOU   X0, X5
+        // Isolate high and low nibbles, then parallel-lookup.
+        MOVOU   X3, X2
+        PSRLQ   $4, X3
+        PAND    X1, X2
+        PAND    X1, X3
+        PSHUFB  X2, X4
+        PSHUFB  X3, X5
+        // Use unpacklo/unpackhi to stitch results together.
+        // Odd bytes (1, 3, 5, ...) are in X4, even in X3/X5.
+        MOVOU   X5, X3
+        PUNPCKLBW       X4, X5
+        PUNPCKHBW       X4, X3
+        MOVOU   X5, (R8)
+        MOVOU   X3, 16(R8)
+        ADDQ    $16, DI
+        ADDQ    $32, R8
+        CMPQ    CX, DI
+        JG      unpackAndReplaceSeqOddSSSE3Loop
+
+        // Final usually-unaligned read and write.
+        MOVOU   (CX), X3
+        MOVOU   X0, X4
+        MOVOU   X0, X5
+        MOVOU   X3, X2
+        PSRLQ   $4, X3
+        PAND    X1, X2
+        PAND    X1, X3
+        PSHUFB  X2, X4
+        PSHUFB  X3, X5
+        MOVOU   X5, X3
+        PUNPCKLBW       X4, X5
+        PUNPCKHBW       X4, X3
+        MOVOU   X5, (AX)
+        MOVOU   X3, 16(AX)
+
+unpackAndReplaceSeqOddSSSE3Finish:
+        RET

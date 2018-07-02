@@ -57,12 +57,12 @@ Benchmark_PackSeqLong4-8               1        2954068774 ns/op
 Benchmark_PackSeqLongMax-8             1        4180531216 ns/op
 
 reverseCompSlow:
-Benchmark_ReverseCompShort1-8                  2         503259438 ns/op
-Benchmark_ReverseCompShort4-8                  3         361078151 ns/op
-Benchmark_ReverseCompShortMax-8                5         321822410 ns/op
-Benchmark_ReverseCompLong1-8                   1        6852320115 ns/op
-Benchmark_ReverseCompLong4-8                   1        4334209675 ns/op
-Benchmark_ReverseCompLongMax-8                 1        3621205279 ns/op
+Benchmark_ReverseCompShort1-8                  3         487496815 ns/op
+Benchmark_ReverseCompShort4-8                  5         220447034 ns/op
+Benchmark_ReverseCompShortMax-8                5         283437486 ns/op
+Benchmark_ReverseCompLong1-8                   1        7214422123 ns/op
+Benchmark_ReverseCompLong4-8                   1        4453820099 ns/op
+Benchmark_ReverseCompLongMax-8                 1        3593169766 ns/op
 */
 
 func unpackSeqSubtask(dst, src []byte, nIter int) int {
@@ -183,6 +183,7 @@ func TestUnpackSeq(t *testing.T) {
 		if !bytes.Equal(dst1Slice, dst2Slice) {
 			t.Fatal("Mismatched UnpackSeqUnsafe result.")
 		}
+		simd.Memset8Unsafe(dst2Slice, 0)
 		sentinel := byte(rand.Intn(256))
 		dst2Arr[dstSliceEnd] = sentinel
 		biosimd.UnpackSeq(dst2Slice, srcSlice)
@@ -311,6 +312,7 @@ func TestPackSeq(t *testing.T) {
 		if !bytes.Equal(dst1Slice, dst2Slice) {
 			t.Fatal("Mismatched PackSeqUnsafe result.")
 		}
+		simd.Memset8Unsafe(dst2Slice, 0)
 		sentinel := byte(rand.Intn(256))
 		dst2Arr[dstSliceEnd] = sentinel
 		biosimd.PackSeq(dst2Slice, srcSlice)
@@ -402,15 +404,16 @@ func Benchmark_ReverseCompLongMax(b *testing.B) {
 	benchmarkReverseComp(runtime.NumCPU(), 249250621, 50, b)
 }
 
+var revCompTable = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
+
 func reverseCompSlow(seq8 []byte) {
-	table := [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
 	nByte := len(seq8)
 	nByteDiv2 := nByte >> 1
 	for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
-		seq8[idx], seq8[invIdx] = table[seq8[invIdx]], table[seq8[idx]]
+		seq8[idx], seq8[invIdx] = revCompTable[seq8[invIdx]], revCompTable[seq8[idx]]
 	}
 	if nByte&1 == 1 {
-		seq8[nByteDiv2] = table[seq8[nByteDiv2]]
+		seq8[nByteDiv2] = revCompTable[seq8[nByteDiv2]]
 	}
 }
 
@@ -464,6 +467,60 @@ func TestReverseComp(t *testing.T) {
 		}
 		if main5Arr[sliceEnd] != sentinel {
 			t.Fatal("ReverseComp clobbered an extra byte.")
+		}
+	}
+}
+
+// No need to benchmark this separately since it's isomorphic to
+// simd.PackedNibbleLookup.
+func unpackAndReplaceSeqSlow(dst, src []byte, tablePtr *[16]byte) {
+	dstLen := len(dst)
+	nSrcFullByte := dstLen / 2
+	srcOdd := dstLen & 1
+	for srcPos := 0; srcPos < nSrcFullByte; srcPos++ {
+		srcByte := src[srcPos]
+		dst[2*srcPos] = tablePtr[srcByte>>4]
+		dst[2*srcPos+1] = tablePtr[srcByte&15]
+	}
+	if srcOdd == 1 {
+		srcByte := src[nSrcFullByte]
+		dst[2*nSrcFullByte] = tablePtr[srcByte>>4]
+	}
+}
+
+func TestUnpackAndReplaceSeq(t *testing.T) {
+	maxDstSize := 500
+	maxSrcSize := (maxDstSize + 1) / 2
+	nIter := 200
+	srcArr := simd.MakeUnsafe(maxSrcSize)
+	dst1Arr := simd.MakeUnsafe(maxDstSize)
+	dst2Arr := simd.MakeUnsafe(maxDstSize)
+	table := [...]byte{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'}
+	for iter := 0; iter < nIter; iter++ {
+		srcSliceStart := rand.Intn(maxSrcSize)
+		dstSliceStart := srcSliceStart * 2
+		dstSliceEnd := dstSliceStart + rand.Intn(maxDstSize-dstSliceStart)
+		srcSliceEnd := (dstSliceEnd + 1) / 2
+		srcSlice := srcArr[srcSliceStart:srcSliceEnd]
+		for ii := range srcSlice {
+			srcSlice[ii] = byte(rand.Intn(256))
+		}
+		dst1Slice := dst1Arr[dstSliceStart:dstSliceEnd]
+		dst2Slice := dst2Arr[dstSliceStart:dstSliceEnd]
+		unpackAndReplaceSeqSlow(dst1Slice, srcSlice, &table)
+		biosimd.UnpackAndReplaceSeqUnsafe(dst2Slice, srcSlice, &table)
+		if !bytes.Equal(dst1Slice, dst2Slice) {
+			t.Fatal("Mismatched UnpackAndReplaceSeqUnsafe result.")
+		}
+		simd.Memset8Unsafe(dst2Arr, 0)
+		sentinel := byte(rand.Intn(256))
+		dst2Arr[dstSliceEnd] = sentinel
+		biosimd.UnpackAndReplaceSeq(dst2Slice, srcSlice, &table)
+		if !bytes.Equal(dst1Slice, dst2Slice) {
+			t.Fatal("Mismatched UnpackAndReplaceSeq result.")
+		}
+		if dst2Arr[dstSliceEnd] != sentinel {
+			t.Fatal("UnpackAndReplaceSeq clobbered an extra byte.")
 		}
 	}
 }

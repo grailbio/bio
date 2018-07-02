@@ -66,6 +66,14 @@ func reverseCompTinySSSE3Asm(dst, src unsafe.Pointer, nByte int)
 //go:noescape
 func reverseCompSSSE3Asm(dst, src unsafe.Pointer, nByte int)
 
+//go:noescape
+func unpackAndReplaceSeqSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nDstVec int)
+
+//go:noescape
+func unpackAndReplaceSeqOddSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nSrcFullByte int)
+
+//		unpackAndReplaceSeqOddSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), unsafe.Pointer(tablePtr), nSrcFullByte)
+
 // *** end assembly function signatures
 
 func init() {
@@ -216,6 +224,8 @@ func ReverseCompUnsafeInplace(seq8 []byte) {
 	reverseCompInplaceSSSE3Asm(unsafe.Pointer(seq8Header.Data), nByte)
 }
 
+var revCompTable = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
+
 // ReverseCompInplace reverse-complements seq8[], assuming that it's using .bam
 // seq-field encoding with 1 byte per base.
 // WARNING: If a seq8[] value is larger than 15, it's possible for this to
@@ -226,13 +236,12 @@ func ReverseCompInplace(seq8 []byte) {
 	// > 16, but the penalty can be horrific (in relative terms) below that.
 	nByte := len(seq8)
 	if nByte <= bytesPerVec {
-		table := [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
 		nByteDiv2 := nByte >> 1
 		for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
-			seq8[idx], seq8[invIdx] = table[seq8[invIdx]], table[seq8[idx]]
+			seq8[idx], seq8[invIdx] = revCompTable[seq8[invIdx]], revCompTable[seq8[idx]]
 		}
 		if nByte&1 == 1 {
-			seq8[nByteDiv2] = table[seq8[nByteDiv2]]
+			seq8[nByteDiv2] = revCompTable[seq8[nByteDiv2]]
 		}
 		return
 	}
@@ -277,13 +286,68 @@ func ReverseComp(dst, src []byte) {
 		panic("ReverseComp() requires len(dst) == len(src).")
 	}
 	if nByte < bytesPerVec {
-		table := [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
 		for idx, invIdx := 0, nByte-1; idx != nByte; idx, invIdx = idx+1, invIdx-1 {
-			dst[idx] = table[src[invIdx]]
+			dst[idx] = revCompTable[src[invIdx]]
 		}
 		return
 	}
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
 	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
 	reverseCompSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nByte)
+}
+
+// UnpackAndReplaceSeqUnsafe sets the bytes in dst[] as follows:
+//   if pos is even, dst[pos] := table[src[pos / 2] >> 4]
+//   if pos is odd, dst[pos] := table[src[pos / 2] & 15]
+// It panics if len(src) != (len(dst) + 1) / 2.
+// WARNING: This is a function designed to be used in inner loops, which makes
+// assumptions about length and capacity which aren't checked at runtime.  Use
+// the safe version of this function when that's a problem.
+// Assumptions #2-#3 are always satisfied when the last
+// potentially-size-increasing operation on src[] is {Re}makeUnsafe(),
+// ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
+// 1. len(src) == (len(dst) + 1) / 2.
+// 2. Capacity of src is at least RoundUpPow2(len(src), bytesPerVec), and the
+//    same is true for dst.
+// 3. The caller does not care if a few bytes past the end of dst[] are
+//    changed.
+func UnpackAndReplaceSeqUnsafe(dst, src []byte, tablePtr *[16]byte) {
+	// Minor variant of simd.PackedNibbleLookupUnsafe().
+	dstLen := len(dst)
+	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
+	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+	nDstVec := simd.DivUpPow2(dstLen, bytesPerVec, log2BytesPerVec)
+	unpackAndReplaceSeqSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), unsafe.Pointer(tablePtr), nDstVec)
+}
+
+// UnpackAndReplaceSeq sets the bytes in dst[] as follows:
+//   if pos is even, dst[pos] := table[src[pos / 2] >> 4]
+//   if pos is odd, dst[pos] := table[src[pos / 2] & 15]
+// It panics if len(src) != (len(dst) + 1) / 2.
+// Nothing bad happens if len(dst) is odd and some low bits in the last src[]
+// byte are set, though it's generally good practice to ensure that case
+// doesn't come up.
+func UnpackAndReplaceSeq(dst, src []byte, tablePtr *[16]byte) {
+	// Minor variant of simd.PackedNibbleLookup().
+	dstLen := len(dst)
+	nSrcFullByte := dstLen >> 1
+	srcOdd := dstLen & 1
+	if len(src) != nSrcFullByte+srcOdd {
+		panic("UnpackAndReplaceSeq() requires len(src) == (len(dst) + 1) / 2.")
+	}
+	if nSrcFullByte < bytesPerVec {
+		for srcPos := 0; srcPos < nSrcFullByte; srcPos++ {
+			srcByte := src[srcPos]
+			dst[2*srcPos] = tablePtr[srcByte>>4]
+			dst[2*srcPos+1] = tablePtr[srcByte&15]
+		}
+	} else {
+		srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
+		dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+		unpackAndReplaceSeqOddSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), unsafe.Pointer(tablePtr), nSrcFullByte)
+	}
+	if srcOdd == 1 {
+		srcByte := src[nSrcFullByte]
+		dst[2*nSrcFullByte] = tablePtr[srcByte>>4]
+	}
 }
