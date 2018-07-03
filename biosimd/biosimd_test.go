@@ -56,7 +56,7 @@ Benchmark_PackSeqLong1-8               1        6663558987 ns/op
 Benchmark_PackSeqLong4-8               1        2954068774 ns/op
 Benchmark_PackSeqLongMax-8             1        4180531216 ns/op
 
-reverseCompSlow:
+reverseComp4Slow:
 Benchmark_ReverseCompShort1-8                  3         487496815 ns/op
 Benchmark_ReverseCompShort4-8                  5         220447034 ns/op
 Benchmark_ReverseCompShortMax-8                5         283437486 ns/op
@@ -332,7 +332,7 @@ func TestPackSeq(t *testing.T) {
 
 func reverseCompSubtask(seq8 []byte, nIter int) int {
 	for iter := 0; iter < nIter; iter++ {
-		biosimd.ReverseCompUnsafeInplace(seq8)
+		biosimd.ReverseComp4UnsafeInplace(seq8)
 	}
 	return int(seq8[0])
 }
@@ -404,20 +404,20 @@ func Benchmark_ReverseCompLongMax(b *testing.B) {
 	benchmarkReverseComp(runtime.NumCPU(), 249250621, 50, b)
 }
 
-var revCompTable = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
+var revComp4Table = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
 
-func reverseCompSlow(seq8 []byte) {
+func reverseComp4Slow(seq8 []byte) {
 	nByte := len(seq8)
 	nByteDiv2 := nByte >> 1
 	for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
-		seq8[idx], seq8[invIdx] = revCompTable[seq8[invIdx]], revCompTable[seq8[idx]]
+		seq8[idx], seq8[invIdx] = revComp4Table[seq8[invIdx]], revComp4Table[seq8[idx]]
 	}
 	if nByte&1 == 1 {
-		seq8[nByteDiv2] = revCompTable[seq8[nByteDiv2]]
+		seq8[nByteDiv2] = revComp4Table[seq8[nByteDiv2]]
 	}
 }
 
-func TestReverseComp(t *testing.T) {
+func TestReverseComp4(t *testing.T) {
 	maxSize := 500
 	nIter := 200
 	main1Arr := simd.MakeUnsafe(maxSize)
@@ -440,33 +440,98 @@ func TestReverseComp(t *testing.T) {
 		sentinel := byte(rand.Intn(256))
 		main3Arr[sliceEnd] = sentinel
 		main5Arr[sliceEnd] = sentinel
-		biosimd.ReverseCompUnsafe(main4Slice, main1Slice)
-		biosimd.ReverseCompUnsafe(main2Slice, main4Slice)
+		biosimd.ReverseComp4Unsafe(main4Slice, main1Slice)
+		biosimd.ReverseComp4Unsafe(main2Slice, main4Slice)
 		if !bytes.Equal(main1Slice, main2Slice) {
-			t.Fatal("ReverseCompUnsafe isn't its own inverse.")
+			t.Fatal("ReverseComp4Unsafe isn't its own inverse.")
 		}
 		copy(main2Slice, main1Slice)
-		biosimd.ReverseComp(main5Slice, main1Slice)
-		reverseCompSlow(main1Slice)
-		biosimd.ReverseCompUnsafeInplace(main2Slice)
-		biosimd.ReverseCompInplace(main3Slice)
+		biosimd.ReverseComp4(main5Slice, main1Slice)
+		reverseComp4Slow(main1Slice)
+		biosimd.ReverseComp4UnsafeInplace(main2Slice)
+		biosimd.ReverseComp4Inplace(main3Slice)
 		if !bytes.Equal(main1Slice, main2Slice) {
-			t.Fatal("Mismatched ReverseCompUnsafeInplace result.")
+			t.Fatal("Mismatched ReverseComp4UnsafeInplace result.")
 		}
 		if !bytes.Equal(main1Slice, main3Slice) {
-			t.Fatal("Mismatched ReverseCompInplace result.")
+			t.Fatal("Mismatched ReverseComp4Inplace result.")
 		}
 		if main3Arr[sliceEnd] != sentinel {
-			t.Fatal("ReverseCompInplace clobbered an extra byte.")
+			t.Fatal("ReverseComp4Inplace clobbered an extra byte.")
 		}
 		if !bytes.Equal(main1Slice, main4Slice) {
-			t.Fatal("Mismatched ReverseCompUnsafe result.")
+			t.Fatal("Mismatched ReverseComp4Unsafe result.")
 		}
 		if !bytes.Equal(main1Slice, main5Slice) {
-			t.Fatal("Mismatched ReverseComp result.")
+			t.Fatal("Mismatched ReverseComp4 result.")
 		}
 		if main5Arr[sliceEnd] != sentinel {
-			t.Fatal("ReverseComp clobbered an extra byte.")
+			t.Fatal("ReverseComp4 clobbered an extra byte.")
+		}
+	}
+}
+
+func reverseComp2Slow(main []byte) {
+	nByte := len(main)
+	nByteDiv2 := nByte >> 1
+	for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
+		main[idx], main[invIdx] = 3-main[invIdx], 3-main[idx]
+	}
+	if nByte&1 == 1 {
+		main[nByteDiv2] = 3 - main[nByteDiv2]
+	}
+}
+
+func TestReverseComp2(t *testing.T) {
+	maxSize := 500
+	nIter := 200
+	main1Arr := simd.MakeUnsafe(maxSize)
+	main2Arr := simd.MakeUnsafe(maxSize)
+	main3Arr := simd.MakeUnsafe(maxSize)
+	main4Arr := simd.MakeUnsafe(maxSize)
+	main5Arr := simd.MakeUnsafe(maxSize)
+	for iter := 0; iter < nIter; iter++ {
+		sliceStart := rand.Intn(maxSize)
+		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
+		main1Slice := main1Arr[sliceStart:sliceEnd]
+		main2Slice := main2Arr[sliceStart:sliceEnd]
+		main3Slice := main3Arr[sliceStart:sliceEnd]
+		main4Slice := main4Arr[sliceStart:sliceEnd]
+		main5Slice := main5Arr[sliceStart:sliceEnd]
+		for ii := range main1Slice {
+			main1Slice[ii] = byte(rand.Intn(4))
+		}
+		copy(main3Slice, main1Slice)
+		sentinel := byte(rand.Intn(256))
+		main3Arr[sliceEnd] = sentinel
+		main5Arr[sliceEnd] = sentinel
+		biosimd.ReverseComp2Unsafe(main4Slice, main1Slice)
+		biosimd.ReverseComp2Unsafe(main2Slice, main4Slice)
+		if !bytes.Equal(main1Slice, main2Slice) {
+			t.Fatal("ReverseComp2Unsafe isn't its own inverse.")
+		}
+		copy(main2Slice, main1Slice)
+		biosimd.ReverseComp2(main5Slice, main1Slice)
+		reverseComp2Slow(main1Slice)
+		biosimd.ReverseComp2UnsafeInplace(main2Slice)
+		biosimd.ReverseComp2Inplace(main3Slice)
+		if !bytes.Equal(main1Slice, main2Slice) {
+			t.Fatal("Mismatched ReverseComp2UnsafeInplace result.")
+		}
+		if !bytes.Equal(main1Slice, main3Slice) {
+			t.Fatal("Mismatched ReverseComp2Inplace result.")
+		}
+		if main3Arr[sliceEnd] != sentinel {
+			t.Fatal("ReverseComp2Inplace clobbered an extra byte.")
+		}
+		if !bytes.Equal(main1Slice, main4Slice) {
+			t.Fatal("Mismatched ReverseComp2Unsafe result.")
+		}
+		if !bytes.Equal(main1Slice, main5Slice) {
+			t.Fatal("Mismatched ReverseComp2 result.")
+		}
+		if main5Arr[sliceEnd] != sentinel {
+			t.Fatal("ReverseComp2 clobbered an extra byte.")
 		}
 	}
 }
