@@ -19,12 +19,12 @@
         DATA ·GatherOddHigh<>+0x08(SB)/8, $0x0f0d0b0907050301
         GLOBL ·GatherOddHigh<>(SB), 24, $16
 
-        DATA ·Reverse16<>+0x00(SB)/8, $0x08090a0b0c0d0e0f
-        DATA ·Reverse16<>+0x08(SB)/8, $0x0001020304050607
-        GLOBL ·Reverse16<>(SB), 24, $16
-        DATA ·Reverse16Minus16<>+0x00(SB)/8, $0xf8f9fafbfcfdfeff
-        DATA ·Reverse16Minus16<>+0x08(SB)/8, $0xf0f1f2f3f4f5f6f7
-        GLOBL ·Reverse16Minus16<>(SB), 24, $16
+        DATA ·Reverse8<>+0x00(SB)/8, $0x08090a0b0c0d0e0f
+        DATA ·Reverse8<>+0x08(SB)/8, $0x0001020304050607
+        GLOBL ·Reverse8<>(SB), 24, $16
+        DATA ·Reverse8Minus16<>+0x00(SB)/8, $0xf8f9fafbfcfdfeff
+        DATA ·Reverse8Minus16<>+0x08(SB)/8, $0xf0f1f2f3f4f5f6f7
+        GLOBL ·Reverse8Minus16<>(SB), 24, $16
         DATA ·ReverseComp4Lookup<>+0x00(SB)/8, $0x0e060a020c040800
         DATA ·ReverseComp4Lookup<>+0x08(SB)/8, $0x0f070b030d050901
         GLOBL ·ReverseComp4Lookup<>(SB), 24, $16
@@ -238,7 +238,7 @@ TEXT ·reverseComp4InplaceTinySSSE3Asm(SB),4,$0-16
         MOVQ    seq8+0(FP), SI
         MOVD    nByte+8(FP), X2
 
-        MOVOU   ·Reverse16Minus16<>(SB), X0
+        MOVOU   ·Reverse8Minus16<>(SB), X0
         MOVOU   ·ReverseComp4Lookup<>(SB), X1
         PXOR    X3, X3
         PSHUFB  X3, X2
@@ -266,7 +266,7 @@ TEXT ·reverseComp4InplaceSSSE3Asm(SB),4,$0-16
         // DI iterates backwards from the end of seq8[].
         LEAQ    -16(SI)(AX*1), DI
 
-        MOVOU   ·Reverse16<>(SB), X0
+        MOVOU   ·Reverse8<>(SB), X0
         MOVOU   ·ReverseComp4Lookup<>(SB), X1
         SUBQ    $1, AX
         SHRQ    $1, AX
@@ -328,7 +328,7 @@ TEXT ·reverseComp4TinySSSE3Asm(SB),4,$0-24
         MOVQ    src+8(FP), SI
         MOVD    nByte+16(FP), X2
 
-        MOVOU   ·Reverse16Minus16<>(SB), X0
+        MOVOU   ·Reverse8Minus16<>(SB), X0
         MOVOU   ·ReverseComp4Lookup<>(SB), X1
         PXOR    X3, X3
         PSHUFB  X3, X2
@@ -355,7 +355,7 @@ TEXT ·reverseComp4SSSE3Asm(SB),4,$0-24
         // May as well save start of final dst[] vector.
         LEAQ    -16(DI)(AX*1), CX
 
-        MOVOU   ·Reverse16<>(SB), X0
+        MOVOU   ·Reverse8<>(SB), X0
         MOVOU   ·ReverseComp4Lookup<>(SB), X1
 
 reverseComp4SSSE3Loop:
@@ -379,7 +379,7 @@ TEXT ·reverseComp2InplaceTinySSSE3Asm(SB),4,$0-16
         MOVQ    acgt8+0(FP), SI
         MOVD    nByte+8(FP), X2
 
-        MOVOU   ·Reverse16Minus16<>(SB), X0
+        MOVOU   ·Reverse8Minus16<>(SB), X0
         MOVOU   ·Mask0303<>(SB), X1
         PXOR    X3, X3
         PSHUFB  X3, X2
@@ -403,7 +403,7 @@ TEXT ·reverseComp2InplaceSSSE3Asm(SB),4,$0-16
         // DI iterates backwards from the end of acgt8[].
         LEAQ    -16(SI)(AX*1), DI
 
-        MOVOU   ·Reverse16<>(SB), X0
+        MOVOU   ·Reverse8<>(SB), X0
         MOVOU   ·Mask0303<>(SB), X1
         SUBQ    $1, AX
         SHRQ    $1, AX
@@ -462,7 +462,7 @@ TEXT ·reverseComp2TinySSSE3Asm(SB),4,$0-24
         MOVQ    src+8(FP), SI
         MOVD    nByte+16(FP), X2
 
-        MOVOU   ·Reverse16Minus16<>(SB), X0
+        MOVOU   ·Reverse8Minus16<>(SB), X0
         MOVOU   ·Mask0303<>(SB), X1
         PXOR    X3, X3
         PSHUFB  X3, X2
@@ -487,7 +487,7 @@ TEXT ·reverseComp2SSSE3Asm(SB),4,$0-24
         // May as well save start of final dst[] vector.
         LEAQ    -16(DI)(AX*1), CX
 
-        MOVOU   ·Reverse16<>(SB), X0
+        MOVOU   ·Reverse8<>(SB), X0
         MOVOU   ·Mask0303<>(SB), X1
 
 reverseComp2SSSE3Loop:
