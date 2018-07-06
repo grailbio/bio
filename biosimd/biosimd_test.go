@@ -19,26 +19,26 @@ Initial benchmark results:
   MacBook Pro (15-inch, 2016)
   2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
 
-Benchmark_UnpackSeqShort1-8                   20          76568435 ns/op
-Benchmark_UnpackSeqShort4-8                  100          22946637 ns/op
-Benchmark_UnpackSeqShortMax-8                100          20510380 ns/op
-Benchmark_UnpackSeqLong1-8                     1        1560652622 ns/op
-Benchmark_UnpackSeqLong4-8                     1        2169053364 ns/op
-Benchmark_UnpackSeqLongMax-8                   1        2882049313 ns/op
+Benchmark_UnpackSeqShort1-8                   20          70897086 ns/op
+Benchmark_UnpackSeqShort4-8                  100          21312704 ns/op
+Benchmark_UnpackSeqShortMax-8                100          18395262 ns/op
+Benchmark_UnpackSeqLong1-8                     1        1538266286 ns/op
+Benchmark_UnpackSeqLong4-8                     1        2140915576 ns/op
+Benchmark_UnpackSeqLongMax-8                   1        2730406285 ns/op
 
-Benchmark_PackSeqShort1-8             20          94062516 ns/op
-Benchmark_PackSeqShort4-8             50          26069558 ns/op
-Benchmark_PackSeqShortMax-8          100          24528628 ns/op
-Benchmark_PackSeqLong1-8               1        1510392344 ns/op
-Benchmark_PackSeqLong4-8               1        2200776260 ns/op
-Benchmark_PackSeqLongMax-8             1        3029837297 ns/op
+Benchmark_PackSeqShort1-8             20          87414175 ns/op
+Benchmark_PackSeqShort4-8             50          24514465 ns/op
+Benchmark_PackSeqShortMax-8          100          23399695 ns/op
+Benchmark_PackSeqLong1-8               1        1471399081 ns/op
+Benchmark_PackSeqLong4-8               1        2160393376 ns/op
+Benchmark_PackSeqLongMax-8             1        2973043492 ns/op
 
-Benchmark_ReverseCompShort1-8                 20          76847905 ns/op
-Benchmark_ReverseCompShort4-8                 50          29293746 ns/op
-Benchmark_ReverseCompShortMax-8              100          19428703 ns/op
-Benchmark_ReverseCompLong1-8                   1        1458896247 ns/op
-Benchmark_ReverseCompLong4-8                   1        2012557816 ns/op
-Benchmark_ReverseCompLongMax-8                 1        2835188762 ns/op
+Benchmark_CleanAsciiSeqShort1-8               20          95413137 ns/op
+Benchmark_CleanAsciiSeqShort4-8               50          26567655 ns/op
+Benchmark_CleanAsciiSeqShortMax-8            100          24327826 ns/op
+Benchmark_CleanAsciiSeqLong1-8                 1        1533053583 ns/op
+Benchmark_CleanAsciiSeqLong4-8                 1        1982245778 ns/op
+Benchmark_CleanAsciiSeqLongMax-8               1        2781139905 ns/op
 
 For comparison, unpackSeqSlow:
 Benchmark_UnpackSeqShort1-8                    3         473023326 ns/op
@@ -56,13 +56,13 @@ Benchmark_PackSeqLong1-8               1        6663558987 ns/op
 Benchmark_PackSeqLong4-8               1        2954068774 ns/op
 Benchmark_PackSeqLongMax-8             1        4180531216 ns/op
 
-reverseComp4Slow:
-Benchmark_ReverseCompShort1-8                  3         487496815 ns/op
-Benchmark_ReverseCompShort4-8                  5         220447034 ns/op
-Benchmark_ReverseCompShortMax-8                5         283437486 ns/op
-Benchmark_ReverseCompLong1-8                   1        7214422123 ns/op
-Benchmark_ReverseCompLong4-8                   1        4453820099 ns/op
-Benchmark_ReverseCompLongMax-8                 1        3593169766 ns/op
+cleanAsciiSeqSlow:
+Benchmark_CleanAsciiSeqShort1-8                3         450481328 ns/op
+Benchmark_CleanAsciiSeqShort4-8               10         122691751 ns/op
+Benchmark_CleanAsciiSeqShortMax-8             10         158868958 ns/op
+Benchmark_CleanAsciiSeqLong1-8                 1        6094399462 ns/op
+Benchmark_CleanAsciiSeqLong4-8                 1        4005568728 ns/op
+Benchmark_CleanAsciiSeqLongMax-8               1        3286359547 ns/op
 */
 
 func unpackSeqSubtask(dst, src []byte, nIter int) int {
@@ -330,212 +330,6 @@ func TestPackSeq(t *testing.T) {
 	}
 }
 
-func reverseCompSubtask(seq8 []byte, nIter int) int {
-	for iter := 0; iter < nIter; iter++ {
-		biosimd.ReverseComp4UnsafeInplace(seq8)
-	}
-	return int(seq8[0])
-}
-
-func reverseCompSubtaskFuture(main []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- reverseCompSubtask(main, nIter) }()
-	return future
-}
-
-func multiReverseComp(mains [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = reverseCompSubtaskFuture(mains[taskIdx], shardSizeP1)
-	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = reverseCompSubtaskFuture(mains[taskIdx], shardSizeBase)
-	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
-	}
-}
-
-func benchmarkReverseComp(cpus int, nByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
-	}
-
-	mainSlices := make([][]byte, cpus)
-	for ii := range mainSlices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nByte + 63)
-		for jj := 0; jj < nByte; jj++ {
-			newArr[jj] = byte(jj*3) & 15
-		}
-		mainSlices[ii] = newArr[:nByte]
-	}
-	for i := 0; i < b.N; i++ {
-		multiReverseComp(mainSlices, cpus, nJob)
-	}
-}
-
-func Benchmark_ReverseCompShort1(b *testing.B) {
-	benchmarkReverseComp(1, 75, 9999999, b)
-}
-
-func Benchmark_ReverseCompShort4(b *testing.B) {
-	benchmarkReverseComp(4, 75, 9999999, b)
-}
-
-func Benchmark_ReverseCompShortMax(b *testing.B) {
-	benchmarkReverseComp(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_ReverseCompLong1(b *testing.B) {
-	benchmarkReverseComp(1, 249250621, 50, b)
-}
-
-func Benchmark_ReverseCompLong4(b *testing.B) {
-	benchmarkReverseComp(4, 249250621, 50, b)
-}
-
-func Benchmark_ReverseCompLongMax(b *testing.B) {
-	benchmarkReverseComp(runtime.NumCPU(), 249250621, 50, b)
-}
-
-var revComp4Table = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
-
-func reverseComp4Slow(seq8 []byte) {
-	nByte := len(seq8)
-	nByteDiv2 := nByte >> 1
-	for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
-		seq8[idx], seq8[invIdx] = revComp4Table[seq8[invIdx]], revComp4Table[seq8[idx]]
-	}
-	if nByte&1 == 1 {
-		seq8[nByteDiv2] = revComp4Table[seq8[nByteDiv2]]
-	}
-}
-
-func TestReverseComp4(t *testing.T) {
-	maxSize := 500
-	nIter := 200
-	main1Arr := simd.MakeUnsafe(maxSize)
-	main2Arr := simd.MakeUnsafe(maxSize)
-	main3Arr := simd.MakeUnsafe(maxSize)
-	main4Arr := simd.MakeUnsafe(maxSize)
-	main5Arr := simd.MakeUnsafe(maxSize)
-	for iter := 0; iter < nIter; iter++ {
-		sliceStart := rand.Intn(maxSize)
-		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
-		main1Slice := main1Arr[sliceStart:sliceEnd]
-		main2Slice := main2Arr[sliceStart:sliceEnd]
-		main3Slice := main3Arr[sliceStart:sliceEnd]
-		main4Slice := main4Arr[sliceStart:sliceEnd]
-		main5Slice := main5Arr[sliceStart:sliceEnd]
-		for ii := range main1Slice {
-			main1Slice[ii] = byte(rand.Intn(16))
-		}
-		copy(main3Slice, main1Slice)
-		sentinel := byte(rand.Intn(256))
-		main3Arr[sliceEnd] = sentinel
-		main5Arr[sliceEnd] = sentinel
-		biosimd.ReverseComp4Unsafe(main4Slice, main1Slice)
-		biosimd.ReverseComp4Unsafe(main2Slice, main4Slice)
-		if !bytes.Equal(main1Slice, main2Slice) {
-			t.Fatal("ReverseComp4Unsafe isn't its own inverse.")
-		}
-		copy(main2Slice, main1Slice)
-		biosimd.ReverseComp4(main5Slice, main1Slice)
-		reverseComp4Slow(main1Slice)
-		biosimd.ReverseComp4UnsafeInplace(main2Slice)
-		biosimd.ReverseComp4Inplace(main3Slice)
-		if !bytes.Equal(main1Slice, main2Slice) {
-			t.Fatal("Mismatched ReverseComp4UnsafeInplace result.")
-		}
-		if !bytes.Equal(main1Slice, main3Slice) {
-			t.Fatal("Mismatched ReverseComp4Inplace result.")
-		}
-		if main3Arr[sliceEnd] != sentinel {
-			t.Fatal("ReverseComp4Inplace clobbered an extra byte.")
-		}
-		if !bytes.Equal(main1Slice, main4Slice) {
-			t.Fatal("Mismatched ReverseComp4Unsafe result.")
-		}
-		if !bytes.Equal(main1Slice, main5Slice) {
-			t.Fatal("Mismatched ReverseComp4 result.")
-		}
-		if main5Arr[sliceEnd] != sentinel {
-			t.Fatal("ReverseComp4 clobbered an extra byte.")
-		}
-	}
-}
-
-func reverseComp2Slow(main []byte) {
-	nByte := len(main)
-	nByteDiv2 := nByte >> 1
-	for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
-		main[idx], main[invIdx] = 3-main[invIdx], 3-main[idx]
-	}
-	if nByte&1 == 1 {
-		main[nByteDiv2] = 3 - main[nByteDiv2]
-	}
-}
-
-func TestReverseComp2(t *testing.T) {
-	maxSize := 500
-	nIter := 200
-	main1Arr := simd.MakeUnsafe(maxSize)
-	main2Arr := simd.MakeUnsafe(maxSize)
-	main3Arr := simd.MakeUnsafe(maxSize)
-	main4Arr := simd.MakeUnsafe(maxSize)
-	main5Arr := simd.MakeUnsafe(maxSize)
-	for iter := 0; iter < nIter; iter++ {
-		sliceStart := rand.Intn(maxSize)
-		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
-		main1Slice := main1Arr[sliceStart:sliceEnd]
-		main2Slice := main2Arr[sliceStart:sliceEnd]
-		main3Slice := main3Arr[sliceStart:sliceEnd]
-		main4Slice := main4Arr[sliceStart:sliceEnd]
-		main5Slice := main5Arr[sliceStart:sliceEnd]
-		for ii := range main1Slice {
-			main1Slice[ii] = byte(rand.Intn(4))
-		}
-		copy(main3Slice, main1Slice)
-		sentinel := byte(rand.Intn(256))
-		main3Arr[sliceEnd] = sentinel
-		main5Arr[sliceEnd] = sentinel
-		biosimd.ReverseComp2Unsafe(main4Slice, main1Slice)
-		biosimd.ReverseComp2Unsafe(main2Slice, main4Slice)
-		if !bytes.Equal(main1Slice, main2Slice) {
-			t.Fatal("ReverseComp2Unsafe isn't its own inverse.")
-		}
-		copy(main2Slice, main1Slice)
-		biosimd.ReverseComp2(main5Slice, main1Slice)
-		reverseComp2Slow(main1Slice)
-		biosimd.ReverseComp2UnsafeInplace(main2Slice)
-		biosimd.ReverseComp2Inplace(main3Slice)
-		if !bytes.Equal(main1Slice, main2Slice) {
-			t.Fatal("Mismatched ReverseComp2UnsafeInplace result.")
-		}
-		if !bytes.Equal(main1Slice, main3Slice) {
-			t.Fatal("Mismatched ReverseComp2Inplace result.")
-		}
-		if main3Arr[sliceEnd] != sentinel {
-			t.Fatal("ReverseComp2Inplace clobbered an extra byte.")
-		}
-		if !bytes.Equal(main1Slice, main4Slice) {
-			t.Fatal("Mismatched ReverseComp2Unsafe result.")
-		}
-		if !bytes.Equal(main1Slice, main5Slice) {
-			t.Fatal("Mismatched ReverseComp2 result.")
-		}
-		if main5Arr[sliceEnd] != sentinel {
-			t.Fatal("ReverseComp2 clobbered an extra byte.")
-		}
-	}
-}
-
 // No need to benchmark this separately since it's isomorphic to
 // simd.PackedNibbleLookup.
 func unpackAndReplaceSeqSlow(dst, src []byte, tablePtr *[16]byte) {
@@ -586,6 +380,131 @@ func TestUnpackAndReplaceSeq(t *testing.T) {
 		}
 		if dst2Arr[dstSliceEnd] != sentinel {
 			t.Fatal("UnpackAndReplaceSeq clobbered an extra byte.")
+		}
+	}
+}
+
+func cleanAsciiSeqSubtask(ascii8 []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.CleanAsciiSeqInplace(ascii8)
+	}
+	return int(ascii8[0])
+}
+
+func cleanAsciiSeqSubtaskFuture(ascii8 []byte, nIter int) chan int {
+	future := make(chan int)
+	go func() { future <- cleanAsciiSeqSubtask(ascii8, nIter) }()
+	return future
+}
+
+func multiCleanAsciiSeq(ascii8s [][]byte, cpus int, nJob int) {
+	sumFutures := make([]chan int, cpus)
+	shardSizeBase := nJob / cpus
+	shardRemainder := nJob - shardSizeBase*cpus
+	shardSizeP1 := shardSizeBase + 1
+	var taskIdx int
+	for ; taskIdx < shardRemainder; taskIdx++ {
+		sumFutures[taskIdx] = cleanAsciiSeqSubtaskFuture(ascii8s[taskIdx], shardSizeP1)
+	}
+	for ; taskIdx < cpus; taskIdx++ {
+		sumFutures[taskIdx] = cleanAsciiSeqSubtaskFuture(ascii8s[taskIdx], shardSizeBase)
+	}
+	var sum int
+	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
+		sum += <-sumFutures[taskIdx]
+	}
+}
+
+func benchmarkCleanAsciiSeq(cpus int, nByte int, nJob int, b *testing.B) {
+	if cpus > runtime.NumCPU() {
+		b.Skipf("only have %v cpus", runtime.NumCPU())
+	}
+
+	ascii8Slices := make([][]byte, cpus)
+	for ii := range ascii8Slices {
+		// Add 63 to prevent false sharing.
+		newArr := simd.MakeUnsafe(nByte + 63)
+		for jj := 0; jj < nByte; jj++ {
+			newArr[jj] = byte(jj * 3)
+		}
+		ascii8Slices[ii] = newArr[:nByte]
+	}
+	for i := 0; i < b.N; i++ {
+		multiCleanAsciiSeq(ascii8Slices, cpus, nJob)
+	}
+}
+
+func Benchmark_CleanAsciiSeqShort1(b *testing.B) {
+	benchmarkCleanAsciiSeq(1, 75, 9999999, b)
+}
+
+func Benchmark_CleanAsciiSeqShort4(b *testing.B) {
+	benchmarkCleanAsciiSeq(4, 75, 9999999, b)
+}
+
+func Benchmark_CleanAsciiSeqShortMax(b *testing.B) {
+	benchmarkCleanAsciiSeq(runtime.NumCPU(), 75, 9999999, b)
+}
+
+func Benchmark_CleanAsciiSeqLong1(b *testing.B) {
+	benchmarkCleanAsciiSeq(1, 249250621, 50, b)
+}
+
+func Benchmark_CleanAsciiSeqLong4(b *testing.B) {
+	benchmarkCleanAsciiSeq(4, 249250621, 50, b)
+}
+
+func Benchmark_CleanAsciiSeqLongMax(b *testing.B) {
+	benchmarkCleanAsciiSeq(runtime.NumCPU(), 249250621, 50, b)
+}
+
+var cleanAsciiSeqTable = [...]byte{
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'A', 'N', 'C', 'N', 'N', 'N', 'G', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'T', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'A', 'N', 'C', 'N', 'N', 'N', 'G', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'T', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
+
+func cleanAsciiSeqSlow(ascii8 []byte) {
+	for pos, ascii8Byte := range ascii8 {
+		ascii8[pos] = cleanAsciiSeqTable[ascii8Byte]
+	}
+}
+
+func TestCleanAsciiSeq(t *testing.T) {
+	maxSize := 500
+	nIter := 200
+	main1Arr := simd.MakeUnsafe(maxSize)
+	main2Arr := simd.MakeUnsafe(maxSize)
+	for iter := 0; iter < nIter; iter++ {
+		sliceStart := rand.Intn(maxSize)
+		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
+		main1Slice := main1Arr[sliceStart:sliceEnd]
+		main2Slice := main2Arr[sliceStart:sliceEnd]
+		for ii := range main1Slice {
+			main1Slice[ii] = byte(rand.Intn(256))
+		}
+		copy(main2Slice, main1Slice)
+		sentinel := byte(rand.Intn(256))
+		main2Arr[sliceEnd] = sentinel
+		biosimd.CleanAsciiSeqInplace(main2Slice)
+		cleanAsciiSeqSlow(main1Slice)
+		if !bytes.Equal(main1Slice, main2Slice) {
+			t.Fatal("Mismatched CleanAsciiSeqInplace result.")
+		}
+		if main2Arr[sliceEnd] != sentinel {
+			t.Fatal("CleanAsciiSeqInplace clobbered an extra byte.")
 		}
 	}
 }
