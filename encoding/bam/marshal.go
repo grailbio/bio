@@ -2,13 +2,14 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
+//go:generate ../../../base/gtl/generate.py --prefix=bytes -DELEM=[]byte --package=bam --output=bytes_pool.go ../../../base/gtl/randomized_freepool.go.tpl
+
 package bam
 
 import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"sync"
 
 	"github.com/biogo/hts/sam"
 )
@@ -16,13 +17,8 @@ import (
 var (
 	errNameAbsentOrTooLong           = errors.New("bam: name absent or too long")
 	errSequenceQualityLengthMismatch = errors.New("bam: sequence/quality length mismatch")
+	bufPool                          = NewbytesFreePool(func() []byte { return nil }, 1024)
 )
-
-var bufPool = sync.Pool{
-	New: func() interface{} {
-		return []byte{}
-	},
-}
 
 // buildAux constructs a single byte slice that represents a slice of sam.Aux.
 // *buf should be an empty slice on call, and it is filled with the result on
@@ -71,7 +67,7 @@ func Marshal(r *sam.Record, buf *bytes.Buffer) error {
 	if r.Qual != nil && len(r.Qual) != r.Seq.Length {
 		return errSequenceQualityLengthMismatch
 	}
-	scratch := bufPool.Get().([]byte)
+	scratch := bufPool.Get()
 	ResizeScratch(&scratch, 0)
 	buildAux(r.AuxFields, &scratch)
 	tags := scratch

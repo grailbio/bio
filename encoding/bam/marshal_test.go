@@ -43,3 +43,20 @@ func TestMarshal(t *testing.T) {
 	require.NoError(t, r.Close())
 	require.NoError(t, in.Close())
 }
+
+func BenchmarkRead(b *testing.B) {
+	path := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	for i := 0; i < b.N; i++ {
+		in, err := os.Open(path)
+		require.NoErrorf(b, err, "path: %s", path)
+		r, err := bam.NewReader(in, 0)
+		require.NoErrorf(b, err, "path: %s", path)
+		for {
+			if _, err := r.Read(); err == io.EOF {
+				break
+			}
+		}
+		require.NoError(b, r.Close())
+		require.NoError(b, in.Close())
+	}
+}

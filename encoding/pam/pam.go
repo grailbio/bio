@@ -39,7 +39,7 @@ func CoordRangePathString(r biopb.CoordRange) string {
 	return fmt.Sprintf("%s,%s", CoordPathString(r.Start), CoordPathString(r.Limit))
 }
 
-// ValidateRecRange validates "r" and normalize its fields, if necessary. In
+// ValidateCoordRange validates "r" and normalize its fields, if necessary. In
 // particular, if the range fields are all zeros, the range is replaced by
 // UniversalRange.
 func ValidateCoordRange(r *biopb.CoordRange) error {
@@ -69,7 +69,7 @@ type ReadSeekCloser interface {
 	io.Closer
 }
 
-// PathString generates a string that can be used to embed in a pathname.  Use
+// CoordPathString generates a string that can be used to embed in a pathname.  Use
 // ParsePath() to parse such a string.
 func CoordPathString(r biopb.Coord) string {
 	var refStr, posStr string
@@ -137,7 +137,7 @@ type FileInfo struct {
 	Range biopb.CoordRange
 }
 
-var basenameRe = regexp.MustCompile("^(-|\\d+):(-|\\d+)(:\\d+)?,(-|\\d+):(-|\\d+)(:\\d+)?\\.(.+)$")
+var basenameRe = regexp.MustCompile(`^(-|\d+):(-|\d+)(:\d+)?,(-|\d+):(-|\d+)(:\d+)?\.(.+)$`)
 
 func parseExtension(str string) (FileType, gbam.FieldType, bool) {
 	if str == "index" {
@@ -201,23 +201,9 @@ func ParsePath(path string) (FileInfo, error) {
 // some of the existing files fails to delete.
 func Remove(dir string) error {
 	ctx := vcontext.Background()
-	// TODO(saito) Provide equivalent of filepath.Join that works for URLs.
-	lister := file.List(ctx, dir, true)
-	n := 0
-	for lister.Scan() {
-		// TODO(saito) Use grailfile once it's ready.
-		if err := file.Remove(ctx, lister.Path()); err != nil {
-			return err
-		}
-		n++
-	}
-	if err := lister.Err(); err != nil {
-		return err
-	}
-	if n == 0 {
-		return nil
-	}
-	return file.Remove(ctx, dir)
+	err := file.RemoveAll(ctx, dir)
+	file.Remove(ctx, dir) // nolint: errcheck
+	return err
 }
 
 // ListIndexes lists shard index files found for the given PAM files.  The

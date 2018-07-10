@@ -95,7 +95,7 @@ type ShardReader struct {
 	// Requested range of records to read. It is a copy of ReadOpts.Range.
 	// It may span outside the range of this shard.
 	//
-	// INVARIANT: intersection of requestedRange shardRange is nonempty.
+	// INVARIANT: (requestedRange ∩ shardRange) != ∅
 	requestedRange biopb.CoordRange
 
 	// Fields to read. It is a complement of ReadOpts.DropFields.
@@ -118,7 +118,6 @@ type fieldReadBuf struct {
 	index               biopb.PAMBlockIndexEntry
 	buf                 []byte // raw uncompressed bytes
 	defaultBuf, blobBuf byteBuffer
-	err                 error // any error that happens during read is accumulated here.
 	remaining           int   // total # of records remaining in the current recordio block.
 	prevInt64Value0     int64 // for decoding delta-encoded int
 	prevInt64Value1     int64
@@ -134,7 +133,6 @@ func (rb *fieldReadBuf) reset(addr biopb.PAMBlockIndexEntry, buf []byte, blob []
 	rb.defaultBuf.buf = buf
 	rb.blobBuf.n = 0
 	rb.blobBuf.buf = blob
-	rb.err = nil
 	rb.prevInt64Value0 = 0
 	rb.prevInt64Value1 = 0
 	rb.prevString = rb.prevString[:0]
@@ -642,7 +640,7 @@ func readBlockHeader(buf *[]byte) (biopb.PAMBlockHeader, error) {
 	return bh, nil
 }
 
-// ReadShardIndex reads the index file, "dir/recRange.index".
+// ReadShardIndex reads the index file, "dir/coordRange.index".
 func ReadShardIndex(dir string, recRange biopb.CoordRange) (biopb.PAMShardIndex, error) {
 	path := ShardIndexPath(dir, recRange)
 	var index biopb.PAMShardIndex
@@ -652,9 +650,9 @@ func ReadShardIndex(dir string, recRange biopb.CoordRange) (biopb.PAMShardIndex,
 	if err != nil {
 		return index, errors.Wrap(err, path)
 	}
-	defer in.Close(ctx)
+	defer in.Close(ctx) // nolint: errcheck
 	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
-	defer rio.Finish()
+	defer rio.Finish() // nolint: errcheck
 	if !rio.Scan() {
 		return index, errors.Errorf("ReadShardIndex %v: Failed to read record: %v", path, rio.Err())
 	}

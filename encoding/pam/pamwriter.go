@@ -381,7 +381,7 @@ func newShardIndex(wo WriteOpts, h *sam.Header) biopb.PAMShardIndex {
 	var err error
 	if index.EncodedBamHeader, err = gbam.MarshalHeader(h); err != nil {
 		// TODO(saito) propagate errors up
-		vlog.Fatalf("Encode header: %v, err")
+		vlog.Fatalf("Encode header: %v", err)
 	}
 	index.Range = wo.Range
 	return index

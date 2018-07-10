@@ -1,5 +1,5 @@
-// Code generated from " ../../../base/gtl/generate.py --prefix=Record -DELEM=*Record --package=bam --output=record_pool.go ../../../base/gtl/randomized_freepool.go.tpl ". DO NOT EDIT.
-// RecordFreePool is thread-safe pool that uses power-of-two loadbalancing across
+// Code generated from " ../../../base/gtl/generate.py --prefix=bytes -DELEM=[]byte --package=bam --output=bytes_pool.go ../../../base/gtl/randomized_freepool.go.tpl ". DO NOT EDIT.
+// bytesFreePool is thread-safe pool that uses power-of-two loadbalancing across
 // CPUs.
 
 // This library requires the following two additional files per package. For
@@ -43,7 +43,7 @@ import (
 	"unsafe"
 )
 
-// RecordFreePool is a variation of sync.Pool, specialized for a concrete type.
+// bytesFreePool is a variation of sync.Pool, specialized for a concrete type.
 //
 // - Put() performs power-of-two loadbalancing, and Get() looks only at the
 //   local queue.  This improves the performance of Get() on many-core machines,
@@ -53,37 +53,37 @@ import (
 //
 // - It never frees objects accumulated in the pool. We could add this feature
 //   if needed.
-type RecordFreePool struct {
-	new          func() *Record
-	local        []RecordpoolLocal
+type bytesFreePool struct {
+	new          func() []byte
+	local        []bytespoolLocal
 	maxLocalSize int64
 }
 
 const (
-	RecordmaxPrivateElems = 4
-	RecordcacheLineSize   = 64
+	bytesmaxPrivateElems = 4
+	bytescacheLineSize   = 64
 )
 
-type RecordpoolLocalInner struct {
-	private     [RecordmaxPrivateElems]*Record // Can be used only by the respective P.
+type bytespoolLocalInner struct {
+	private     [bytesmaxPrivateElems][]byte // Can be used only by the respective P.
 	privateSize int
 
-	shared     []*Record  // Can be used by any P.
+	shared     [][]byte   // Can be used by any P.
 	sharedSize int64      // ==len(shared), but can be accessed w/o holding mu.
 	mu         sync.Mutex // Protects shared.
 }
 
-type RecordpoolLocal struct {
-	RecordpoolLocalInner
+type bytespoolLocal struct {
+	bytespoolLocalInner
 	// Pad prevents false sharing.
-	pad [RecordcacheLineSize - unsafe.Sizeof(RecordpoolLocalInner{})%RecordcacheLineSize]byte
+	pad [bytescacheLineSize - unsafe.Sizeof(bytespoolLocalInner{})%bytescacheLineSize]byte
 }
 
-// NewRecordFreePool creates a new free object pool. new should create a new
+// NewbytesFreePool creates a new free object pool. new should create a new
 // object. It is called when the pool is empty on Get(). maxSize bounds the
 // approx max number of objects that can be stored in the pool. Beyond this
 // limit, Put() call will drop the objects.
-func NewRecordFreePool(new func() *Record, maxSize int) *RecordFreePool {
+func NewbytesFreePool(new func() []byte, maxSize int) *bytesFreePool {
 	maxProcs := runtime.GOMAXPROCS(0)
 	maxLocalSize := -1
 	if maxSize > 0 {
@@ -92,15 +92,15 @@ func NewRecordFreePool(new func() *Record, maxSize int) *RecordFreePool {
 			maxLocalSize = 1
 		}
 	}
-	p := &RecordFreePool{
+	p := &bytesFreePool{
 		new:          new,
-		local:        make([]RecordpoolLocal, maxProcs),
+		local:        make([]bytespoolLocal, maxProcs),
 		maxLocalSize: int64(maxLocalSize),
 	}
 	return p
 }
 
-func (p *RecordFreePool) pin() *RecordpoolLocal {
+func (p *bytesFreePool) pin() *bytespoolLocal {
 	pid := runtime_procPin()
 	if int(pid) >= len(p.local) {
 		panic(pid)
@@ -110,10 +110,10 @@ func (p *RecordFreePool) pin() *RecordpoolLocal {
 
 // Put adds an object to the freepool. The caller shall not touch the object
 // after the call.
-func (p *RecordFreePool) Put(x *Record) {
+func (p *bytesFreePool) Put(x []byte) {
 	done := false
 	l := p.pin()
-	if l.privateSize < RecordmaxPrivateElems {
+	if l.privateSize < bytesmaxPrivateElems {
 		l.private[l.privateSize] = x
 		l.privateSize++
 		done = true
@@ -142,14 +142,14 @@ func (p *RecordFreePool) Put(x *Record) {
 
 // Get removes an object from the freepool. If pool is empty, it calls the
 // callback passed to NewFreePool.
-func (p *RecordFreePool) Get() *Record {
+func (p *bytesFreePool) Get() []byte {
 	l := p.pin()
-	var x *Record
+	var x []byte
 	done := false
 	if l.privateSize > 0 {
 		l.privateSize--
 		x = l.private[l.privateSize]
-		var empty *Record
+		var empty []byte
 		l.private[l.privateSize] = empty
 		done = true
 	}
@@ -175,7 +175,7 @@ func (p *RecordFreePool) Get() *Record {
 // ApproxLen returns an approximate length of the pool. For unittesting only.
 //
 // It returns an accurate value iff. no other thread is accessing the pool.
-func (p *RecordFreePool) ApproxLen() int {
+func (p *bytesFreePool) ApproxLen() int {
 	n := 0
 	for i := range p.local {
 		n += p.local[i].privateSize

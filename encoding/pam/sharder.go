@@ -59,7 +59,7 @@ func readFieldIndex(ctx context.Context, dir string, recRange biopb.CoordRange, 
 	if err != nil {
 		return index, err
 	}
-	defer in.Close(ctx)
+	defer in.Close(ctx) // nolint: errcheck
 	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
 	trailer := rio.Trailer()
 	if len(trailer) == 0 {

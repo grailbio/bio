@@ -5,7 +5,9 @@ import (
 	"flag"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -22,9 +24,10 @@ import (
 
 var (
 	// Flags for BenchmarkWrite
-	inFile              = flag.String("in", "", "Input BAM filename")
-	indexFile           = flag.String("index", "", "Input BAI filename")
-	outFile             = flag.String("out", "", "Output BAM filename")
+	inFile = flag.String("in",
+		"//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam",
+		"Input BAM filename. If the path starts with '//', it is assumed relative to the relative of the workspace")
+	outFile             = flag.String("out", "", "Output BAM filename. IF empty, writes to a temporary file")
 	useShardedBAMWriter = flag.Bool("useshardedbamwriter", false, "use ShardedBAMWriter")
 	shardSize           = flag.Int("shard-size", 1000000, "shard size")
 	gzLevel             = flag.Int("gz-level", gzip.DefaultCompression, "gz compression level")
@@ -209,12 +212,12 @@ func biogowriter(b *testing.B, biogoout chan []*sam.Record, bamwriter *bam.Write
 	}
 }
 
-func shardedCopy(b *testing.B) {
+func shardedCopy(b *testing.B, inFile, outFile string) {
 	// Prepare inputs.
-	provider := bamprovider.NewProvider(*inFile, bamprovider.ProviderOpts{Index: *indexFile})
+	provider := bamprovider.NewProvider(inFile, bamprovider.ProviderOpts{})
 	header, err := provider.GetHeader()
 	if err != nil {
-		b.Fatalf("Could not read header from file %s: %s", *inFile, err)
+		b.Fatalf("Could not read header from file %s: %s", inFile, err)
 	}
 
 	// Prepare outputs
@@ -222,9 +225,9 @@ func shardedCopy(b *testing.B) {
 	var biogoout chan []*sam.Record
 	var outGroup sync.WaitGroup
 
-	out, err := os.Create(*outFile)
+	out, err := os.Create(outFile)
 	if err != nil {
-		b.Fatalf("error creating output file %s", *outFile)
+		b.Fatalf("error creating output file %s", outFile)
 	}
 	if *useShardedBAMWriter {
 		// Write the header
@@ -278,17 +281,17 @@ func shardedCopy(b *testing.B) {
 // ShardedBAMWriter to biogo's writer.  Currently, the biogo output is
 // out of order, so it's not a completely fair comparison.
 func BenchmarkWrite(b *testing.B) {
-	if *inFile == "" {
-		b.Fatalf("you must specify an input bam file with --in")
+	in := *inFile
+	if strings.HasPrefix(in, "//") {
+		in = testutil.GetFilePath(in)
 	}
-	if *outFile == "" {
-		b.Fatalf("you must specify an output bam file with --out")
+	out := *outFile
+	if out == "" {
+		tmpDir, cleanup := testutil.TempDir(b, "", "")
+		defer cleanup()
+		out = filepath.Join(tmpDir, "out.bam")
 	}
-	if *indexFile == "" {
-		*indexFile = *inFile + ".bai"
-	}
-
 	for i := 0; i < b.N; i++ {
-		shardedCopy(b)
+		shardedCopy(b, in, out)
 	}
 }
