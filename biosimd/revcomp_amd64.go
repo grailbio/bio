@@ -54,8 +54,8 @@ var revComp8Table16 = [16]byte{
 	'N', 'T', 'N', 'G', 'A', 'N', 'N', 'C', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
 
 // ReverseComp8InplaceNoValidate reverse-complements ascii8[], assuming that
-// it's using ASCII encoding, and all values are in {0, '0', 'A', C', 'G', 'T',
-// 'N', 'a', 'c', 'g', 't', 'n'}.
+// it's using ASCII encoding, and all values are in {0, '0', 'A', 'C', 'G',
+// 'T', 'N', 'a', 'c', 'g', 't', 'n'}.
 // If the input assumption is satisfied, output is restricted to
 // 'A'/'C'/'G'/'T'/'N'.  Other bytes may be written if the input assumption is
 // not satisfied.
@@ -93,6 +93,29 @@ func ReverseComp8Inplace(ascii8 []byte) {
 	}
 	ascii8Header := (*reflect.SliceHeader)(unsafe.Pointer(&ascii8))
 	reverseComp8InplaceSSSE3Asm(unsafe.Pointer(ascii8Header.Data), nByte)
+}
+
+// ReverseComp8NoValidate writes the reverse-complement of src[] to dst[],
+// assuming src is using ASCII encoding, and all values are in {0, '0', 'A',
+// 'C', 'G', 'T', 'N', 'a', 'c', 'g', 't', 'n'}.
+// If the input assumption is satisfied, output is restricted to
+// 'A'/'C'/'G'/'T'/'N'.  Other bytes may be written if the input assumption is
+// not satisfied.
+// It panics if len(dst) != len(src).
+func ReverseComp8NoValidate(dst, src []byte) {
+	nByte := len(src)
+	if len(dst) != nByte {
+		panic("ReverseComp8NoValidate requires len(dst) == len(src).")
+	}
+	if nByte < 16 {
+		for idx, invIdx := 0, nByte-1; idx != nByte; idx, invIdx = idx+1, invIdx-1 {
+			dst[idx] = revComp8Table[src[invIdx]]
+		}
+		return
+	}
+	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
+	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+	reverseCompLookupSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), &revComp8Table16, nByte)
 }
 
 var revComp4Table = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}

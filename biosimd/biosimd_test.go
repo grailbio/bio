@@ -33,12 +33,26 @@ Benchmark_PackSeqLong1-8               1        1471399081 ns/op
 Benchmark_PackSeqLong4-8               1        2160393376 ns/op
 Benchmark_PackSeqLongMax-8             1        2973043492 ns/op
 
-Benchmark_CleanAsciiSeqShort1-8               20          95413137 ns/op
-Benchmark_CleanAsciiSeqShort4-8               50          26567655 ns/op
-Benchmark_CleanAsciiSeqShortMax-8            100          24327826 ns/op
-Benchmark_CleanAsciiSeqLong1-8                 1        1533053583 ns/op
-Benchmark_CleanAsciiSeqLong4-8                 1        1982245778 ns/op
-Benchmark_CleanAsciiSeqLongMax-8               1        2781139905 ns/op
+Benchmark_CleanASCIISeqShort1-8               20          95413137 ns/op
+Benchmark_CleanASCIISeqShort4-8               50          26567655 ns/op
+Benchmark_CleanASCIISeqShortMax-8            100          24327826 ns/op
+Benchmark_CleanASCIISeqLong1-8                 1        1533053583 ns/op
+Benchmark_CleanASCIISeqLong4-8                 1        1982245778 ns/op
+Benchmark_CleanASCIISeqLongMax-8               1        2781139905 ns/op
+
+Benchmark_ASCIIToSeq8Short1-8                 10         108897260 ns/op
+Benchmark_ASCIIToSeq8Short4-8                 50          30240106 ns/op
+Benchmark_ASCIIToSeq8ShortMax-8               50          28269450 ns/op
+Benchmark_ASCIIToSeq8Long1-8                   1        2042849647 ns/op
+Benchmark_ASCIIToSeq8Long4-8                   1        2866563421 ns/op
+Benchmark_ASCIIToSeq8LongMax-8                 1        4069479778 ns/op
+
+Benchmark_IsNonACGTSeqShort1-8                20          68965449 ns/op
+Benchmark_IsNonACGTSeqShort4-8               100          19292183 ns/op
+Benchmark_IsNonACGTSeqShortMax-8             100          19445680 ns/op
+Benchmark_IsNonACGTSeqLong1-8                  2         570726956 ns/op
+Benchmark_IsNonACGTSeqLong4-8                  1        1011456304 ns/op
+Benchmark_IsNonACGTSeqLongMax-8                1        1498684970 ns/op
 
 For comparison, unpackSeqSlow:
 Benchmark_UnpackSeqShort1-8                    3         473023326 ns/op
@@ -56,13 +70,29 @@ Benchmark_PackSeqLong1-8               1        6663558987 ns/op
 Benchmark_PackSeqLong4-8               1        2954068774 ns/op
 Benchmark_PackSeqLongMax-8             1        4180531216 ns/op
 
-cleanAsciiSeqSlow:
-Benchmark_CleanAsciiSeqShort1-8                3         450481328 ns/op
-Benchmark_CleanAsciiSeqShort4-8               10         122691751 ns/op
-Benchmark_CleanAsciiSeqShortMax-8             10         158868958 ns/op
-Benchmark_CleanAsciiSeqLong1-8                 1        6094399462 ns/op
-Benchmark_CleanAsciiSeqLong4-8                 1        4005568728 ns/op
-Benchmark_CleanAsciiSeqLongMax-8               1        3286359547 ns/op
+cleanASCIISeqSlow:
+Benchmark_CleanASCIISeqShort1-8                3         450481328 ns/op
+Benchmark_CleanASCIISeqShort4-8               10         122691751 ns/op
+Benchmark_CleanASCIISeqShortMax-8             10         158868958 ns/op
+Benchmark_CleanASCIISeqLong1-8                 1        6094399462 ns/op
+Benchmark_CleanASCIISeqLong4-8                 1        4005568728 ns/op
+Benchmark_CleanASCIISeqLongMax-8               1        3286359547 ns/op
+
+asciiToSeq8Slow:
+Benchmark_ASCIIToSeq8Short1-8                  2         534821999 ns/op
+Benchmark_ASCIIToSeq8Short4-8                 10         145672279 ns/op
+Benchmark_ASCIIToSeq8ShortMax-8               10         133403902 ns/op
+Benchmark_ASCIIToSeq8Long1-8                   1        8159363086 ns/op
+Benchmark_ASCIIToSeq8Long4-8                   1        3625222422 ns/op
+Benchmark_ASCIIToSeq8LongMax-8                 1        4613796268 ns/op
+
+isNonACGTPresentSlow:
+Benchmark_IsNonACGTSeqShort1-8                 5         311237808 ns/op
+Benchmark_IsNonACGTSeqShort4-8                20          87487932 ns/op
+Benchmark_IsNonACGTSeqShortMax-8              20          68635003 ns/op
+Benchmark_IsNonACGTSeqLong1-8                  1        3158281885 ns/op
+Benchmark_IsNonACGTSeqLong4-8                  1        2215643228 ns/op
+Benchmark_IsNonACGTSeqLongMax-8                1        2045172556 ns/op
 */
 
 func unpackSeqSubtask(dst, src []byte, nIter int) int {
@@ -384,30 +414,76 @@ func TestUnpackAndReplaceSeq(t *testing.T) {
 	}
 }
 
-func cleanAsciiSeqSubtask(ascii8 []byte, nIter int) int {
+func unpackAndReplaceSeqSubsetSlow(dst, src []byte, tablePtr *[16]byte, startPos, endPos int) {
+	for srcPos := startPos; srcPos != endPos; srcPos++ {
+		srcByte := src[srcPos>>1]
+		if srcPos&1 == 0 {
+			srcByte = srcByte >> 4
+		} else {
+			srcByte = srcByte & 15
+		}
+		dst[srcPos-startPos] = tablePtr[srcByte]
+	}
+}
+
+func TestUnpackAndReplaceSeqSubset(t *testing.T) {
+	maxDstSize := 500
+	maxSrcSize := (maxDstSize + 1) / 2
+	nIter := 200
+	srcArr := simd.MakeUnsafe(maxSrcSize)
+	dst1Arr := simd.MakeUnsafe(maxDstSize)
+	dst2Arr := simd.MakeUnsafe(maxDstSize)
+	table := [...]byte{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'}
 	for iter := 0; iter < nIter; iter++ {
-		biosimd.CleanAsciiSeqInplace(ascii8)
+		srcSliceStart := rand.Intn(maxSrcSize - 1)
+		// Force nonempty.
+		srcSliceEnd := srcSliceStart + 1 + rand.Intn(maxSrcSize-1-srcSliceStart)
+		srcSlice := srcArr[srcSliceStart:srcSliceEnd]
+		for ii := range srcSlice {
+			srcSlice[ii] = byte(rand.Intn(256))
+		}
+		srcSliceLenX2 := 2 * (srcSliceEnd - srcSliceStart)
+		startPos := rand.Intn(srcSliceLenX2)
+		endPos := startPos + rand.Intn(srcSliceLenX2-startPos)
+		dst1Slice := dst1Arr[:endPos-startPos]
+		dst2Slice := dst2Arr[:endPos-startPos]
+		sentinel := byte(rand.Intn(256))
+		dst2Arr[endPos-startPos] = sentinel
+		unpackAndReplaceSeqSubsetSlow(dst1Slice, srcSlice, &table, startPos, endPos)
+		biosimd.UnpackAndReplaceSeqSubset(dst2Slice, srcSlice, &table, startPos, endPos)
+		if !bytes.Equal(dst1Slice, dst2Slice) {
+			t.Fatal("Mismatched UnpackAndReplaceSeqSubset result.")
+		}
+		if dst2Arr[endPos-startPos] != sentinel {
+			t.Fatal("UnpackAndReplaceSeqSubset clobbered an extra byte.")
+		}
+	}
+}
+
+func cleanASCIISeqSubtask(ascii8 []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.CleanASCIISeqInplace(ascii8)
 	}
 	return int(ascii8[0])
 }
 
-func cleanAsciiSeqSubtaskFuture(ascii8 []byte, nIter int) chan int {
+func cleanASCIISeqSubtaskFuture(ascii8 []byte, nIter int) chan int {
 	future := make(chan int)
-	go func() { future <- cleanAsciiSeqSubtask(ascii8, nIter) }()
+	go func() { future <- cleanASCIISeqSubtask(ascii8, nIter) }()
 	return future
 }
 
-func multiCleanAsciiSeq(ascii8s [][]byte, cpus int, nJob int) {
+func multiCleanASCIISeq(ascii8s [][]byte, cpus int, nJob int) {
 	sumFutures := make([]chan int, cpus)
 	shardSizeBase := nJob / cpus
 	shardRemainder := nJob - shardSizeBase*cpus
 	shardSizeP1 := shardSizeBase + 1
 	var taskIdx int
 	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = cleanAsciiSeqSubtaskFuture(ascii8s[taskIdx], shardSizeP1)
+		sumFutures[taskIdx] = cleanASCIISeqSubtaskFuture(ascii8s[taskIdx], shardSizeP1)
 	}
 	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = cleanAsciiSeqSubtaskFuture(ascii8s[taskIdx], shardSizeBase)
+		sumFutures[taskIdx] = cleanASCIISeqSubtaskFuture(ascii8s[taskIdx], shardSizeBase)
 	}
 	var sum int
 	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
@@ -415,7 +491,7 @@ func multiCleanAsciiSeq(ascii8s [][]byte, cpus int, nJob int) {
 	}
 }
 
-func benchmarkCleanAsciiSeq(cpus int, nByte int, nJob int, b *testing.B) {
+func benchmarkCleanASCIISeq(cpus int, nByte int, nJob int, b *testing.B) {
 	if cpus > runtime.NumCPU() {
 		b.Skipf("only have %v cpus", runtime.NumCPU())
 	}
@@ -430,35 +506,35 @@ func benchmarkCleanAsciiSeq(cpus int, nByte int, nJob int, b *testing.B) {
 		ascii8Slices[ii] = newArr[:nByte]
 	}
 	for i := 0; i < b.N; i++ {
-		multiCleanAsciiSeq(ascii8Slices, cpus, nJob)
+		multiCleanASCIISeq(ascii8Slices, cpus, nJob)
 	}
 }
 
-func Benchmark_CleanAsciiSeqShort1(b *testing.B) {
-	benchmarkCleanAsciiSeq(1, 75, 9999999, b)
+func Benchmark_CleanASCIISeqShort1(b *testing.B) {
+	benchmarkCleanASCIISeq(1, 75, 9999999, b)
 }
 
-func Benchmark_CleanAsciiSeqShort4(b *testing.B) {
-	benchmarkCleanAsciiSeq(4, 75, 9999999, b)
+func Benchmark_CleanASCIISeqShort4(b *testing.B) {
+	benchmarkCleanASCIISeq(4, 75, 9999999, b)
 }
 
-func Benchmark_CleanAsciiSeqShortMax(b *testing.B) {
-	benchmarkCleanAsciiSeq(runtime.NumCPU(), 75, 9999999, b)
+func Benchmark_CleanASCIISeqShortMax(b *testing.B) {
+	benchmarkCleanASCIISeq(runtime.NumCPU(), 75, 9999999, b)
 }
 
-func Benchmark_CleanAsciiSeqLong1(b *testing.B) {
-	benchmarkCleanAsciiSeq(1, 249250621, 50, b)
+func Benchmark_CleanASCIISeqLong1(b *testing.B) {
+	benchmarkCleanASCIISeq(1, 249250621, 50, b)
 }
 
-func Benchmark_CleanAsciiSeqLong4(b *testing.B) {
-	benchmarkCleanAsciiSeq(4, 249250621, 50, b)
+func Benchmark_CleanASCIISeqLong4(b *testing.B) {
+	benchmarkCleanASCIISeq(4, 249250621, 50, b)
 }
 
-func Benchmark_CleanAsciiSeqLongMax(b *testing.B) {
-	benchmarkCleanAsciiSeq(runtime.NumCPU(), 249250621, 50, b)
+func Benchmark_CleanASCIISeqLongMax(b *testing.B) {
+	benchmarkCleanASCIISeq(runtime.NumCPU(), 249250621, 50, b)
 }
 
-var cleanAsciiSeqTable = [...]byte{
+var cleanASCIISeqTable = [...]byte{
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
@@ -476,13 +552,13 @@ var cleanAsciiSeqTable = [...]byte{
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
 
-func cleanAsciiSeqSlow(ascii8 []byte) {
+func cleanASCIISeqSlow(ascii8 []byte) {
 	for pos, ascii8Byte := range ascii8 {
-		ascii8[pos] = cleanAsciiSeqTable[ascii8Byte]
+		ascii8[pos] = cleanASCIISeqTable[ascii8Byte]
 	}
 }
 
-func TestCleanAsciiSeq(t *testing.T) {
+func TestCleanASCIISeq(t *testing.T) {
 	maxSize := 500
 	nIter := 200
 	main1Arr := simd.MakeUnsafe(maxSize)
@@ -498,13 +574,359 @@ func TestCleanAsciiSeq(t *testing.T) {
 		copy(main2Slice, main1Slice)
 		sentinel := byte(rand.Intn(256))
 		main2Arr[sliceEnd] = sentinel
-		biosimd.CleanAsciiSeqInplace(main2Slice)
-		cleanAsciiSeqSlow(main1Slice)
+		biosimd.CleanASCIISeqInplace(main2Slice)
+		cleanASCIISeqSlow(main1Slice)
 		if !bytes.Equal(main1Slice, main2Slice) {
-			t.Fatal("Mismatched CleanAsciiSeqInplace result.")
+			t.Fatal("Mismatched CleanASCIISeqInplace result.")
 		}
 		if main2Arr[sliceEnd] != sentinel {
-			t.Fatal("CleanAsciiSeqInplace clobbered an extra byte.")
+			t.Fatal("CleanASCIISeqInplace clobbered an extra byte.")
+		}
+	}
+}
+
+var cleanASCIISeqNoCapitalizeTable = [...]byte{
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'A', 'N', 'C', 'N', 'N', 'N', 'G', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'T', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'a', 'N', 'c', 'N', 'N', 'N', 'g', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 't', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
+
+func cleanASCIISeqNoCapitalizeSlow(ascii8 []byte) {
+	for pos, ascii8Byte := range ascii8 {
+		ascii8[pos] = cleanASCIISeqNoCapitalizeTable[ascii8Byte]
+	}
+}
+
+func TestCleanASCIISeqNoCapitalize(t *testing.T) {
+	maxSize := 500
+	nIter := 200
+	main1Arr := simd.MakeUnsafe(maxSize)
+	main2Arr := simd.MakeUnsafe(maxSize)
+	for iter := 0; iter < nIter; iter++ {
+		sliceStart := rand.Intn(maxSize)
+		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
+		main1Slice := main1Arr[sliceStart:sliceEnd]
+		main2Slice := main2Arr[sliceStart:sliceEnd]
+		for ii := range main1Slice {
+			main1Slice[ii] = byte(rand.Intn(256))
+		}
+		copy(main2Slice, main1Slice)
+		sentinel := byte(rand.Intn(256))
+		main2Arr[sliceEnd] = sentinel
+		biosimd.CleanASCIISeqNoCapitalizeInplace(main2Slice)
+		cleanASCIISeqNoCapitalizeSlow(main1Slice)
+		if !bytes.Equal(main1Slice, main2Slice) {
+			t.Fatal("Mismatched CleanASCIISeqNoCapitalizeInplace result.")
+		}
+		if main2Arr[sliceEnd] != sentinel {
+			t.Fatal("CleanASCIISeqNoCapitalizeInplace clobbered an extra byte.")
+		}
+	}
+}
+
+func asciiToSeq8Subtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.ASCIIToSeq8(dst, src)
+	}
+	return int(dst[0])
+}
+
+func asciiToSeq8SubtaskFuture(dst, src []byte, nIter int) chan int {
+	future := make(chan int)
+	go func() { future <- asciiToSeq8Subtask(dst, src, nIter) }()
+	return future
+}
+
+func multiASCIIToSeq8(dsts, srcs [][]byte, cpus int, nJob int) {
+	sumFutures := make([]chan int, cpus)
+	shardSizeBase := nJob / cpus
+	shardRemainder := nJob - shardSizeBase*cpus
+	shardSizeP1 := shardSizeBase + 1
+	var taskIdx int
+	for ; taskIdx < shardRemainder; taskIdx++ {
+		sumFutures[taskIdx] = asciiToSeq8SubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeP1)
+	}
+	for ; taskIdx < cpus; taskIdx++ {
+		sumFutures[taskIdx] = asciiToSeq8SubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeBase)
+	}
+	var sum int
+	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
+		sum += <-sumFutures[taskIdx]
+	}
+}
+
+func benchmarkASCIIToSeq8(cpus int, nByte int, nJob int, b *testing.B) {
+	if cpus > runtime.NumCPU() {
+		b.Skipf("only have %v cpus", runtime.NumCPU())
+	}
+
+	srcSlices := make([][]byte, cpus)
+	dstSlices := make([][]byte, cpus)
+	for ii := range srcSlices {
+		// Add 63 to prevent false sharing.
+		newArr := simd.MakeUnsafe(nByte + 63)
+		for jj := 0; jj < nByte; jj++ {
+			newArr[jj] = byte(jj * 3)
+		}
+		srcSlices[ii] = newArr[:nByte]
+		newArr = simd.MakeUnsafe(nByte + 63)
+		dstSlices[ii] = newArr[:nByte]
+	}
+	for i := 0; i < b.N; i++ {
+		multiASCIIToSeq8(dstSlices, srcSlices, cpus, nJob)
+	}
+}
+
+func Benchmark_ASCIIToSeq8Short1(b *testing.B) {
+	benchmarkASCIIToSeq8(1, 75, 9999999, b)
+}
+
+func Benchmark_ASCIIToSeq8Short4(b *testing.B) {
+	benchmarkASCIIToSeq8(4, 75, 9999999, b)
+}
+
+func Benchmark_ASCIIToSeq8ShortMax(b *testing.B) {
+	benchmarkASCIIToSeq8(runtime.NumCPU(), 75, 9999999, b)
+}
+
+func Benchmark_ASCIIToSeq8Long1(b *testing.B) {
+	benchmarkASCIIToSeq8(1, 249250621, 50, b)
+}
+
+func Benchmark_ASCIIToSeq8Long4(b *testing.B) {
+	benchmarkASCIIToSeq8(4, 249250621, 50, b)
+}
+
+func Benchmark_ASCIIToSeq8LongMax(b *testing.B) {
+	benchmarkASCIIToSeq8(runtime.NumCPU(), 249250621, 50, b)
+}
+
+var asciiToSeq8Table = [...]byte{
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 1, 15, 2, 15, 15, 15, 4, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 8, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 1, 15, 2, 15, 15, 15, 4, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 8, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15}
+
+func asciiToSeq8Slow(dst, src []byte) {
+	for pos, srcByte := range src {
+		dst[pos] = asciiToSeq8Table[srcByte]
+	}
+}
+
+func TestASCIIToSeq8(t *testing.T) {
+	maxSize := 500
+	nIter := 200
+	srcArr := simd.MakeUnsafe(maxSize)
+	main1Arr := simd.MakeUnsafe(maxSize)
+	main2Arr := simd.MakeUnsafe(maxSize)
+	for iter := 0; iter < nIter; iter++ {
+		sliceStart := rand.Intn(maxSize)
+		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
+		srcSlice := srcArr[sliceStart:sliceEnd]
+		main1Slice := main1Arr[sliceStart:sliceEnd]
+		main2Slice := main2Arr[sliceStart:sliceEnd]
+		for ii := range srcSlice {
+			srcSlice[ii] = byte(rand.Intn(256))
+		}
+		sentinel := byte(rand.Intn(256))
+		main2Arr[sliceEnd] = sentinel
+		biosimd.ASCIIToSeq8(main2Slice, srcSlice)
+		asciiToSeq8Slow(main1Slice, srcSlice)
+		if !bytes.Equal(main1Slice, main2Slice) {
+			t.Fatal("Mismatched ASCIIToSeq8 result.")
+		}
+		if main2Arr[sliceEnd] != sentinel {
+			t.Fatal("ASCIIToSeq8 clobbered an extra byte.")
+		}
+	}
+}
+
+func isNonACGTSubtask(ascii8 []byte, nIter int) int {
+	result := true
+	for iter := 0; iter < nIter; iter++ {
+		result = result && biosimd.IsNonACGTPresent(ascii8)
+	}
+	if result {
+		return int(ascii8[0])
+	}
+	return int(ascii8[1])
+}
+
+func isNonACGTSubtaskFuture(ascii8 []byte, nIter int) chan int {
+	future := make(chan int)
+	go func() { future <- isNonACGTSubtask(ascii8, nIter) }()
+	return future
+}
+
+func multiIsNonACGTSeq(ascii8s [][]byte, cpus int, nJob int) {
+	sumFutures := make([]chan int, cpus)
+	shardSizeBase := nJob / cpus
+	shardRemainder := nJob - shardSizeBase*cpus
+	shardSizeP1 := shardSizeBase + 1
+	var taskIdx int
+	for ; taskIdx < shardRemainder; taskIdx++ {
+		sumFutures[taskIdx] = isNonACGTSubtaskFuture(ascii8s[taskIdx], shardSizeP1)
+	}
+	for ; taskIdx < cpus; taskIdx++ {
+		sumFutures[taskIdx] = isNonACGTSubtaskFuture(ascii8s[taskIdx], shardSizeBase)
+	}
+	var sum int
+	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
+		sum += <-sumFutures[taskIdx]
+	}
+}
+
+func benchmarkIsNonACGTSeq(cpus int, nByte int, nJob int, b *testing.B) {
+	if cpus > runtime.NumCPU() {
+		b.Skipf("only have %v cpus", runtime.NumCPU())
+	}
+
+	ascii8Slices := make([][]byte, cpus)
+	for ii := range ascii8Slices {
+		// Add 63 to prevent false sharing.
+		newArr := simd.MakeUnsafe(nByte + 63)
+		for jj := 0; jj < nByte; jj++ {
+			newArr[jj] = 'T'
+		}
+		newArr[nByte/2] = 'N'
+		ascii8Slices[ii] = newArr[:nByte]
+	}
+	for i := 0; i < b.N; i++ {
+		multiIsNonACGTSeq(ascii8Slices, cpus, nJob)
+	}
+}
+
+func Benchmark_IsNonACGTSeqShort1(b *testing.B) {
+	benchmarkIsNonACGTSeq(1, 75, 9999999, b)
+}
+
+func Benchmark_IsNonACGTSeqShort4(b *testing.B) {
+	benchmarkIsNonACGTSeq(4, 75, 9999999, b)
+}
+
+func Benchmark_IsNonACGTSeqShortMax(b *testing.B) {
+	benchmarkIsNonACGTSeq(runtime.NumCPU(), 75, 9999999, b)
+}
+
+func Benchmark_IsNonACGTSeqLong1(b *testing.B) {
+	benchmarkIsNonACGTSeq(1, 249250621, 50, b)
+}
+
+func Benchmark_IsNonACGTSeqLong4(b *testing.B) {
+	benchmarkIsNonACGTSeq(4, 249250621, 50, b)
+}
+
+func Benchmark_IsNonACGTSeqLongMax(b *testing.B) {
+	benchmarkIsNonACGTSeq(runtime.NumCPU(), 249250621, 50, b)
+}
+
+var isNotCapitalACGTTable = [...]bool{
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, false, true, false, true, true, true, false, true, true, true, true, true, true, true, true,
+	true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true}
+
+func isNonACGTPresentSlow(ascii8 []byte) bool {
+	for _, ascii8Byte := range ascii8 {
+		if isNotCapitalACGTTable[ascii8Byte] {
+			return true
+		}
+		// explicit boolean expression is a bit slower
+		/*
+			if (ascii8Byte != 'A') && (ascii8Byte != 'T') && ((ascii8Byte & 0xfb) != 'C') {
+				return true
+			}
+		*/
+	}
+	return false
+}
+
+var isNotCapitalACGTNTable = [...]bool{
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, false, true, false, true, true, true, false, true, true, true, true, true, true, false, true,
+	true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true}
+
+func isNonACGTNPresentSlow(ascii8 []byte) bool {
+	for _, ascii8Byte := range ascii8 {
+		if isNotCapitalACGTNTable[ascii8Byte] {
+			return true
+		}
+	}
+	return false
+}
+
+var randACGTN0Table = [...]byte{
+	'A', 'A', 'A', 'A', 'C', 'C', 'C', 'C', 'G', 'G', 'G', 'G', 'T', 'T', 'T', 'T', 'N', '0'}
+
+func TestIsNonACGTPresent(t *testing.T) {
+	maxSize := 500
+	nIter := 200
+	srcArr := simd.MakeUnsafe(maxSize)
+	for iter := 0; iter < nIter; iter++ {
+		sliceStart := rand.Intn(maxSize)
+		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
+		srcSlice := srcArr[sliceStart:sliceEnd]
+		for ii := range srcSlice {
+			srcSlice[ii] = randACGTN0Table[rand.Intn(18)]
+		}
+		resultACGT := isNonACGTPresentSlow(srcSlice)
+		resultACGT2 := biosimd.IsNonACGTPresent(srcSlice)
+		if resultACGT != resultACGT2 {
+			t.Fatal("Mismatched IsNonACGTPresent result.")
+		}
+		resultACGT = isNonACGTNPresentSlow(srcSlice)
+		resultACGT2 = biosimd.IsNonACGTNPresent(srcSlice)
+		if resultACGT != resultACGT2 {
+			t.Fatal("Mismatched IsNonACGTNPresent result.")
 		}
 	}
 }

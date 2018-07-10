@@ -76,15 +76,15 @@ TEXT ·reverseCompInplaceLookupSSSE3Asm(SB),4,$0-24
         ANDQ    $8, BX
         // BX is now 0 when we don't need to process 3 vectors at the end, and
         // 8 when we do.
-        LEAQ    0(AX)(BX*2), CX
-        // CX is now (nByte+31)/2 when we don't need to process 3 vectors at
+        LEAQ    0(AX)(BX*2), R9
+        // R9 is now (nByte+31)/2 when we don't need to process 3 vectors at
         // the end, and (nByte-1)/2 when we do.
-        LEAQ    -24(SI)(CX*1), AX
+        LEAQ    -24(SI)(R9*1), AX
         // AX can now be used for the loop termination check:
-        //   if nByte == 17, CX == 24, so AX == &(seq8[0]).
-        //   if nByte == 32, CX == 31, so AX == &(seq8[7]).
-        //   if nByte == 33, CX == 16, so AX == &(seq8[-8]).
-        //   if nByte == 48, CX == 23, so AX == &(seq8[-1]).
+        //   if nByte == 17, R9 == 24, so AX == &(seq8[0]).
+        //   if nByte == 32, R9 == 31, so AX == &(seq8[7]).
+        //   if nByte == 33, R9 == 16, so AX == &(seq8[-8]).
+        //   if nByte == 48, R9 == 23, so AX == &(seq8[-1]).
         CMPQ    AX, SI
         JL      reverseCompInplaceLookupSSSE3LastThree
 
@@ -157,7 +157,7 @@ TEXT ·reverseCompLookupSSSE3Asm(SB),4,$0-32
         // SI iterates backwards from the end of src[].
         LEAQ    -16(BX)(AX*1), SI
         // May as well save start of final dst[] vector.
-        LEAQ    -16(DI)(AX*1), CX
+        LEAQ    -16(DI)(AX*1), R9
 
         MOVOU   ·Reverse8<>(SB), X0
         MOVOU   (R8), X1
@@ -170,13 +170,13 @@ reverseCompLookupSSSE3Loop:
         MOVOU   X3, (DI)
         SUBQ    $16, SI
         ADDQ    $16, DI
-        CMPQ    CX, DI
+        CMPQ    R9, DI
         JG      reverseCompLookupSSSE3Loop
 
         MOVOU   (BX), X2
         PSHUFB  X0, X2
         PSHUFB  X2, X1
-        MOVOU   X1, (CX)
+        MOVOU   X1, (R9)
         RET
 
 TEXT ·reverseComp8InplaceSSSE3Asm(SB),4,$0-16
@@ -220,15 +220,15 @@ TEXT ·reverseComp8InplaceSSSE3Asm(SB),4,$0-16
         ANDQ    $8, BX
         // BX is now 0 when we don't need to process 3 vectors at the end, and
         // 8 when we do.
-        LEAQ    0(AX)(BX*2), CX
-        // CX is now (nByte+31)/2 when we don't need to process 3 vectors at
+        LEAQ    0(AX)(BX*2), R9
+        // R9 is now (nByte+31)/2 when we don't need to process 3 vectors at
         // the end, and (nByte-1)/2 when we do.
-        LEAQ    -24(SI)(CX*1), AX
+        LEAQ    -24(SI)(R9*1), AX
         // AX can now be used for the loop termination check:
-        //   if nByte == 17, CX == 24, so AX == &(seq8[0]).
-        //   if nByte == 32, CX == 31, so AX == &(seq8[7]).
-        //   if nByte == 33, CX == 16, so AX == &(seq8[-8]).
-        //   if nByte == 48, CX == 23, so AX == &(seq8[-1]).
+        //   if nByte == 17, R9 == 24, so AX == &(seq8[0]).
+        //   if nByte == 32, R9 == 31, so AX == &(seq8[7]).
+        //   if nByte == 33, R9 == 16, so AX == &(seq8[-8]).
+        //   if nByte == 48, R9 == 23, so AX == &(seq8[-1]).
         CMPQ    AX, SI
         JL      reverseComp8InplaceSSSE3LastThree
 
@@ -246,6 +246,8 @@ reverseComp8InplaceSSSE3Loop:
         MOVO    X10, X12
         PCMPEQB X2, X11
         PCMPEQB X3, X12
+        PAND    X9, X11
+        PAND    X9, X12
         // Check for high bits == 0x40.
         MOVO    X9, X13
         MOVO    X9, X14
@@ -258,8 +260,6 @@ reverseComp8InplaceSSSE3Loop:
         PAND    X14, X3
         MOVO    X1, X4
         MOVO    X1, X5
-        PAND    X9, X11
-        PAND    X9, X12
         PSHUFB  X2, X4
         PSHUFB  X3, X5
         PXOR    X11, X4
@@ -290,24 +290,24 @@ reverseComp8InplaceSSSE3LastThree:
         PCMPEQB X2, X11
         PCMPEQB X3, X12
         PCMPEQB X4, X10
-        MOVO    X9, X13
-        MOVO    X9, X14
-        MOVO    X9, X15
-        PANDN   X2, X13
-        PANDN   X3, X14
-        PANDN   X4, X15
-        PCMPEQB X8, X13
-        PCMPEQB X8, X14
-        PCMPEQB X8, X15
-        // X13/X14/X15 now describe which non-T bases are valid.
-        PAND    X13, X2
-        PAND    X14, X3
-        PAND    X15, X4
-        MOVO    X1, X5
-        MOVO    X1, X6
         PAND    X9, X11
         PAND    X9, X12
         PAND    X9, X10
+
+        MOVO    X9, X13
+        MOVO    X9, X14
+        PANDN   X2, X13
+        PANDN   X3, X14
+        PANDN   X4, X9
+        PCMPEQB X8, X13
+        PCMPEQB X8, X14
+        PCMPEQB X8, X9
+        // X13/X14/X9 now describe which non-T bases are valid.
+        PAND    X13, X2
+        PAND    X14, X3
+        PAND    X9, X4
+        MOVO    X1, X5
+        MOVO    X1, X6
         PSHUFB  X4, X1
         PSHUFB  X2, X5
         PSHUFB  X3, X6

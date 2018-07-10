@@ -162,12 +162,14 @@ func TestReverseComp8(t *testing.T) {
 	main1Arr := simd.MakeUnsafe(maxSize)
 	main2Arr := simd.MakeUnsafe(maxSize)
 	main3Arr := simd.MakeUnsafe(maxSize)
+	main4Arr := simd.MakeUnsafe(maxSize)
 	for iter := 0; iter < nIter; iter++ {
 		sliceStart := rand.Intn(maxSize)
 		sliceEnd := sliceStart + rand.Intn(maxSize-sliceStart)
 		main1Slice := main1Arr[sliceStart:sliceEnd]
 		main2Slice := main2Arr[sliceStart:sliceEnd]
 		main3Slice := main3Arr[sliceStart:sliceEnd]
+		main4Slice := main4Arr[sliceStart:sliceEnd]
 		for ii := range main1Slice {
 			main1Slice[ii] = revComp8RandTable[rand.Intn(12)]
 		}
@@ -175,9 +177,17 @@ func TestReverseComp8(t *testing.T) {
 		copy(main3Slice, main1Slice)
 		sentinel := byte(rand.Intn(256))
 		main3Arr[sliceEnd] = sentinel
+		main4Arr[sliceEnd] = sentinel
+		biosimd.ReverseComp8NoValidate(main4Slice, main1Slice)
 		biosimd.ReverseComp8Inplace(main3Slice)
 		reverseComp8Slow(main1Slice)
 		biosimd.ReverseComp8InplaceNoValidate(main2Slice)
+		if !bytes.Equal(main1Slice, main4Slice) {
+			t.Fatal("Mismatched ReverseComp8NoValidate result.")
+		}
+		if main4Arr[sliceEnd] != sentinel {
+			t.Fatal("ReverseComp8NoValidate clobbered an extra byte.")
+		}
 		if !bytes.Equal(main1Slice, main2Slice) {
 			t.Fatal("Mismatched ReverseComp8InplaceNoValidate result.")
 		}

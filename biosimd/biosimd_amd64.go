@@ -61,7 +61,16 @@ func unpackAndReplaceSeqSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nSrcByte int
 func unpackAndReplaceSeqOddSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nSrcFullByte int)
 
 //go:noescape
-func cleanAsciiSeqInplaceSSSE3Asm(ascii8 unsafe.Pointer, nByte int)
+func cleanASCIISeqInplaceSSSE3Asm(ascii8 unsafe.Pointer, nByte int)
+
+//go:noescape
+func cleanASCIISeqNoCapitalizeInplaceSSSE3Asm(ascii8 unsafe.Pointer, nByte int)
+
+//go:noescape
+func isNonACGTPresentSSE41Asm(ascii8 unsafe.Pointer, nonTTablePtr *[16]byte, nByte int) bool
+
+//go:noescape
+func asciiToSeq8SSSE3Asm(dst, src unsafe.Pointer, nByte int)
 
 // *** end assembly function signatures
 
@@ -112,7 +121,7 @@ func UnpackSeq(dst, src []byte) {
 		panic("UnpackSeq() requires len(src) == (len(dst) + 1) / 2.")
 	}
 	if nSrcFullByte < 16 {
-		for srcPos := 0; srcPos < nSrcFullByte; srcPos++ {
+		for srcPos := 0; srcPos != nSrcFullByte; srcPos++ {
 			srcByte := src[srcPos]
 			dst[2*srcPos] = srcByte >> 4
 			dst[2*srcPos+1] = srcByte & 15
@@ -199,8 +208,8 @@ func PackSeq(dst, src []byte) {
 // potentially-size-increasing operation on src[] is {Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
 // 1. len(src) == (len(dst) + 1) / 2.
-// 2. Capacity of src is at least RoundUpPow2(len(src), bytesPerVec), and the
-//    same is true for dst.
+// 2. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
+//    the same is true for dst.
 // 3. The caller does not care if a few bytes past the end of dst[] are
 //    changed.
 func UnpackAndReplaceSeqUnsafe(dst, src []byte, tablePtr *[16]byte) {
@@ -226,7 +235,7 @@ func UnpackAndReplaceSeq(dst, src []byte, tablePtr *[16]byte) {
 		panic("UnpackAndReplaceSeq() requires len(src) == (len(dst) + 1) / 2.")
 	}
 	if nSrcFullByte < 16 {
-		for srcPos := 0; srcPos < nSrcFullByte; srcPos++ {
+		for srcPos := 0; srcPos != nSrcFullByte; srcPos++ {
 			srcByte := src[srcPos]
 			dst[2*srcPos] = tablePtr[srcByte>>4]
 			dst[2*srcPos+1] = tablePtr[srcByte&15]
@@ -242,7 +251,47 @@ func UnpackAndReplaceSeq(dst, src []byte, tablePtr *[16]byte) {
 	}
 }
 
-var cleanAsciiSeqTable = [...]byte{
+// UnpackAndReplaceSeqSubset sets the bytes in dst[] as follows:
+//   if srcPos is even, dst[srcPos-startPos] := table[src[srcPos / 2] >> 4]
+//   if srcPos is odd, dst[srcPos-startPos] := table[src[srcPos / 2] & 15]
+// It panics if len(dst) != endPos - startPos, startPos < 0, or
+// len(src) * 2 < endPos.
+func UnpackAndReplaceSeqSubset(dst, src []byte, tablePtr *[16]byte, startPos, endPos int) {
+	if (startPos < 0) || (len(src)*2 < endPos) {
+		panic("UnpackAndReplaceSeqSubset() requires 0 <= startPos <= endPos <= 2 * len(src).")
+	}
+	dstLen := len(dst)
+	if dstLen != endPos-startPos {
+		panic("UnpackAndReplaceSeqSubset() requires len(dst) == endPos - startPos.")
+	}
+	if dstLen == 0 {
+		return
+	}
+	startOffset := startPos >> 1
+	startPosOdd := startPos & 1
+	if startPosOdd == 1 {
+		dst[0] = tablePtr[src[startOffset]&15]
+		startOffset++
+	}
+	nSrcFullByte := (dstLen - startPosOdd) >> 1
+	if nSrcFullByte < 16 {
+		for srcPos := 0; srcPos != nSrcFullByte; srcPos++ {
+			srcByte := src[srcPos+startOffset]
+			dst[2*srcPos+startPosOdd] = tablePtr[srcByte>>4]
+			dst[2*srcPos+1+startPosOdd] = tablePtr[srcByte&15]
+		}
+	} else {
+		srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
+		dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+		unpackAndReplaceSeqOddSSSE3Asm(unsafe.Pointer(dstHeader.Data+uintptr(startPosOdd)), unsafe.Pointer(srcHeader.Data+uintptr(startOffset)), unsafe.Pointer(tablePtr), nSrcFullByte)
+	}
+	if endPos&1 == 1 {
+		srcByte := src[nSrcFullByte+startOffset]
+		dst[dstLen-1] = tablePtr[srcByte>>4]
+	}
+}
+
+var cleanASCIISeqTable = [...]byte{
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
@@ -260,16 +309,164 @@ var cleanAsciiSeqTable = [...]byte{
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
 
-// CleanAsciiSeqInplace capitalizes 'a'/'c'/'g'/'t', and replaces everything
+// CleanASCIISeqInplace capitalizes 'a'/'c'/'g'/'t', and replaces everything
 // non-ACGT with 'N'.
-func CleanAsciiSeqInplace(ascii8 []byte) {
+func CleanASCIISeqInplace(ascii8 []byte) {
 	nByte := len(ascii8)
 	if nByte < 16 {
 		for pos, ascii8Byte := range ascii8 {
-			ascii8[pos] = cleanAsciiSeqTable[ascii8Byte]
+			ascii8[pos] = cleanASCIISeqTable[ascii8Byte]
 		}
 		return
 	}
 	ascii8Header := (*reflect.SliceHeader)(unsafe.Pointer(&ascii8))
-	cleanAsciiSeqInplaceSSSE3Asm(unsafe.Pointer(ascii8Header.Data), nByte)
+	cleanASCIISeqInplaceSSSE3Asm(unsafe.Pointer(ascii8Header.Data), nByte)
+}
+
+var cleanASCIISeqNoCapitalizeTable = [...]byte{
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'A', 'N', 'C', 'N', 'N', 'N', 'G', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'T', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'a', 'N', 'c', 'N', 'N', 'N', 'g', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 't', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
+	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
+
+// CleanASCIISeqNoCapitalizeInplace replaces everything non-ACGTacgt with 'N'.
+func CleanASCIISeqNoCapitalizeInplace(ascii8 []byte) {
+	nByte := len(ascii8)
+	if nByte < 16 {
+		for pos, ascii8Byte := range ascii8 {
+			ascii8[pos] = cleanASCIISeqNoCapitalizeTable[ascii8Byte]
+		}
+		return
+	}
+	ascii8Header := (*reflect.SliceHeader)(unsafe.Pointer(&ascii8))
+	cleanASCIISeqNoCapitalizeInplaceSSSE3Asm(unsafe.Pointer(ascii8Header.Data), nByte)
+}
+
+var isNotCapitalACGTTable = [...]bool{
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, false, true, false, true, true, true, false, true, true, true, true, true, true, true, true,
+	true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true}
+
+var acgTable16 = [...]byte{
+	0xff, 0, 0xff, 0, 0xff, 0xff, 0xff, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+
+// IsNonACGTPresent returns true iff there is a non-capital-ACGT character in
+// the slice.
+func IsNonACGTPresent(ascii8 []byte) bool {
+	nByte := len(ascii8)
+	if nByte < 16 {
+		for _, ascii8Byte := range ascii8 {
+			if isNotCapitalACGTTable[ascii8Byte] {
+				return true
+			}
+		}
+		return false
+	}
+	ascii8Header := (*reflect.SliceHeader)(unsafe.Pointer(&ascii8))
+	return isNonACGTPresentSSE41Asm(unsafe.Pointer(ascii8Header.Data), &acgTable16, nByte)
+}
+
+var isNotCapitalACGTNTable = [...]bool{
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, false, true, false, true, true, true, false, true, true, true, true, true, true, false, true,
+	true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true}
+
+var acgnTable16 = [...]byte{
+	0xff, 0, 0xff, 0, 0xff, 0xff, 0xff, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 0xff}
+
+// IsNonACGTNPresent returns true iff there is a non-capital-ACGTN character in
+// the slice.
+func IsNonACGTNPresent(ascii8 []byte) bool {
+	nByte := len(ascii8)
+	if nByte < 16 {
+		for _, ascii8Byte := range ascii8 {
+			if isNotCapitalACGTNTable[ascii8Byte] {
+				return true
+			}
+		}
+		return false
+	}
+	ascii8Header := (*reflect.SliceHeader)(unsafe.Pointer(&ascii8))
+	return isNonACGTPresentSSE41Asm(unsafe.Pointer(ascii8Header.Data), &acgnTable16, nByte)
+}
+
+var asciiToSeq8Table = [...]byte{
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 1, 15, 2, 15, 15, 15, 4, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 8, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 1, 15, 2, 15, 15, 15, 4, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 8, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15}
+
+// ASCIIToSeq8 sets dst[pos] as follows:
+//   src[pos] == 'A'/'a': dst[pos] == 1
+//   src[pos] == 'C'/'c': dst[pos] == 2
+//   src[pos] == 'G'/'g': dst[pos] == 4
+//   src[pos] == 'T'/'t': dst[pos] == 8
+//   src[pos] == anything else: dst[pos] == 15
+// It panics if len(dst) != len(src).
+func ASCIIToSeq8(dst, src []byte) {
+	// This is good for unvalidated .fa loading when you're fine with treating
+	// all non-ACGT characters as N.
+	nByte := len(src)
+	if len(dst) != nByte {
+		panic("ASCIIToSeq8() requires len(src) == len(dst).")
+	}
+	if nByte < 16 {
+		for pos, srcByte := range src {
+			dst[pos] = asciiToSeq8Table[srcByte]
+		}
+		return
+	}
+	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
+	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+	asciiToSeq8SSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nByte)
 }
