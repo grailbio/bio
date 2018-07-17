@@ -13,6 +13,7 @@ import (
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"github.com/pkg/errors"
 	"v.io/x/lib/vlog"
 )
@@ -42,7 +43,7 @@ type readSubshard struct {
 
 // Get the size of file for given rowshard and field.
 func fieldFileSize(ctx context.Context, dir string, recRange biopb.CoordRange, f gbam.FieldType) int64 {
-	path := FieldDataPath(dir, recRange, f)
+	path := pamutil.FieldDataPath(dir, recRange, f)
 	stat, err := file.Stat(ctx, path)
 	if err != nil {
 		vlog.Infof("stat %v: %v", path, err)
@@ -53,7 +54,7 @@ func fieldFileSize(ctx context.Context, dir string, recRange biopb.CoordRange, f
 
 // readFieldIndex reads the index for, "dir/recRange.field".
 func readFieldIndex(ctx context.Context, dir string, recRange biopb.CoordRange, f gbam.FieldType) (biopb.PAMFieldIndex, error) {
-	path := FieldDataPath(dir, recRange, f)
+	path := pamutil.FieldDataPath(dir, recRange, f)
 	var index biopb.PAMFieldIndex
 	in, err := file.Open(ctx, path)
 	if err != nil {
@@ -85,7 +86,7 @@ func readAndSubsetIndexes(ctx context.Context, files []FileInfo, recRange biopb.
 		requestedRange biopb.CoordRange) []biopb.PAMBlockIndexEntry {
 		result := []biopb.PAMBlockIndexEntry{}
 		for _, block := range blocks {
-			if blockIntersectsRange(block.StartAddr, block.EndAddr, requestedRange) {
+			if pamutil.BlockIntersectsRange(block.StartAddr, block.EndAddr, requestedRange) {
 				result = append(result, block)
 			} else {
 				vlog.VI(0).Infof("ReadAndSubset: shardlimit: %+v, reqRange %+v drop block %+v", shardLimit, requestedRange, block)
@@ -293,15 +294,4 @@ func GenerateReadShards(opts GenerateReadShardsOpts, path string) ([]biopb.Coord
 		appendShard(index.shardRange.Limit.Min(opts.Range.Limit))
 	}
 	return bounds, nil
-}
-
-// blockIntersectsRange is a helper class that checks if userRange and
-// [startAddr, endAddr] intersect.
-func blockIntersectsRange(startAddr, endAddr biopb.Coord, userRange biopb.CoordRange) bool {
-	// Note: We can't use biopb.CoordRange.Intersects here because
-	// [b.StartAddr, b.EndAddr] is a closed section.
-	if startAddr.LT(userRange.Limit) && userRange.Start.LE(endAddr) {
-		return true
-	}
-	return false
 }

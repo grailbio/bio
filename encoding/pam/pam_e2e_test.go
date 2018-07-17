@@ -27,6 +27,8 @@ import (
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/bio/encoding/converter"
 	"github.com/grailbio/bio/encoding/pam"
+	"github.com/grailbio/bio/encoding/pam/fieldio"
+	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -113,13 +115,8 @@ func verifyPAMWithShardedReader(t *testing.T, opts pam.ReadOpts, pamPath, bamPat
 		for rpam.Scan() {
 			recPAM := rpam.Record()
 			recBAM := readBAM()
-			if recBAM == nil {
-				t.Fatalf("%d: missing BAM record for %v, with opts %+v", n, recPAM, localOpts)
-			}
-			if recBAM.String() != recPAM.String() {
-				t.Fatalf("%d: Records differ:\nbam:\n %v\npam:\n %v",
-					n, recBAM, recPAM)
-			}
+			require.NotNilf(t, recBAM, "%d: missing BAM record for %v, with opts %+v", n, recPAM, localOpts)
+			require.Equal(t, recBAM.String(), recPAM.String())
 			sam.PutInFreePool(recPAM)
 			sam.PutInFreePool(recBAM)
 			n++
@@ -178,31 +175,63 @@ func TestReadSubsetColumns(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")
-	pamPath := newPAMPath(bamPath, tempDir)
+	readModel := func() []*sam.Record {
+		model := []*sam.Record{}
+		rbam := mustOpenBAM(t, bamPath)
+		for {
+			rec, err := rbam.Read()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			model = append(model, rec)
+		}
+		return model
+	}
 
+	pamPath := newPAMPath(bamPath, tempDir)
 	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 	r := pam.NewReader(pam.ReadOpts{DropFields: []gbam.FieldType{gbam.FieldQual, gbam.FieldName}}, pamPath)
 	n := 0
+	model := readModel()
 	for r.Scan() {
 		rec := r.Record()
-		require.True(t, len(rec.Qual) > 0, "Rec:", rec)
-		require.Equal(t, len(rec.Qual), rec.Seq.Length, "Rec:", rec)
-		require.Equal(t, rec.Name, "", "Rec:", rec)
+		m := model[n]
+		m.Qual = fieldio.GetDummyQual(rec.Seq.Length)
+		m.Name = ""
+		require.Equal(t, rec.String(), m.String())
 		n++
 	}
-	require.Equal(t, n, 3)
+	require.Equal(t, n, len(model))
 	require.NoError(t, r.Close())
 
 	r = pam.NewReader(pam.ReadOpts{DropFields: []gbam.FieldType{gbam.FieldQual, gbam.FieldSeq}}, pamPath)
+	model = readModel()
 	n = 0
 	for r.Scan() {
 		rec := r.Record()
-		require.Equal(t, 0, len(rec.Qual), "Rec:", rec)
-		require.Equal(t, 0, rec.Seq.Length, "Rec:", rec)
-		require.Equal(t, 0, len(rec.Seq.Seq), "Rec:", rec)
+		m := model[n]
+		m.Qual = nil
+		m.Seq.Length = 0
+		m.Seq.Seq = nil
+		require.Equal(t, rec.String(), m.String())
 		n++
 	}
-	require.Equal(t, n, 3)
+	require.Equal(t, n, len(model))
+	require.NoError(t, r.Close())
+
+	r = pam.NewReader(pam.ReadOpts{DropFields: []gbam.FieldType{gbam.FieldSeq, gbam.FieldAux}}, pamPath)
+	model = readModel()
+	n = 0
+	for r.Scan() {
+		rec := r.Record()
+		m := model[n]
+		m.Seq = fieldio.GetDummySeq(len(m.Qual))
+		m.AuxFields = nil
+		require.Equal(t, rec.String(), m.String())
+		n++
+	}
+	require.Equal(t, n, len(model))
 	require.NoError(t, r.Close())
 }
 
@@ -312,7 +341,7 @@ func TestSharder0(t *testing.T) {
 func boundString(bounds []biopb.CoordRange) string {
 	s := make([]string, len(bounds))
 	for i, b := range bounds {
-		s[i] = pam.CoordRangePathString(b)
+		s[i] = pamutil.CoordRangePathString(b)
 	}
 	return strings.Join(s, " ")
 }

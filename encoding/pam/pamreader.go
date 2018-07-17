@@ -7,13 +7,8 @@
 package pam
 
 import (
-	"encoding/binary"
 	"fmt"
-	"io"
 	"path/filepath"
-	"reflect"
-	"sync"
-	"sync/atomic"
 	"unsafe"
 
 	"github.com/biogo/hts/sam"
@@ -21,10 +16,11 @@ import (
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/recordio/recordiozstd"
-	grailunsafe "github.com/grailbio/base/unsafe"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/bio/encoding/pam/fieldio"
+	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"github.com/pkg/errors"
 	"v.io/x/lib/vlog"
 )
@@ -44,49 +40,6 @@ type ReadOpts struct {
 	Range biopb.CoordRange
 }
 
-// fieldReader reads a sequence of values for one field type.
-type fieldReader struct {
-	field          gbam.FieldType
-	requestedRange biopb.CoordRange           // copy of ReadOpts.Range.
-	label          string                     // for vlogging only.
-	in             file.File                  // For reading the data file.
-	rin            io.ReadSeeker              // in.Reader
-	rio            recordio.Scanner           // recordio wrapper for "in".
-	index          biopb.PAMFieldIndex        // Contents of *<fieldname>.index file.
-	blocks         []biopb.PAMBlockIndexEntry // Subset of index.Blocks that intersect requestedRange.
-	fb             fieldReadBuf               // Current buffer being parsed.
-	err            *errorreporter.T
-}
-
-// Create a new fieldReader. (path,shardRange) defines the path prefix and the
-// rowshard range of the data/index files. requestedRange is the coordinate
-// range to read, as requested by the user.
-func newFieldReader(path string, shardRange biopb.CoordRange, requestedRange biopb.CoordRange, f gbam.FieldType, errp *errorreporter.T) (*fieldReader, error) {
-	fr := &fieldReader{
-		field: f,
-		label: fmt.Sprintf("%s:s%s:u%s(%v)",
-			filepath.Base(path), CoordRangePathString(shardRange), CoordRangePathString(requestedRange), f),
-		requestedRange: requestedRange,
-		err:            errp,
-	}
-	ctx := vcontext.Background()
-	in, err := file.Open(ctx, FieldDataPath(path, shardRange, f))
-	if err != nil {
-		return fr, errors.Wrapf(err, "%v: Failed to open field data file for %v", path, f)
-	}
-	fr.in = in
-	fr.rin = fr.in.Reader(ctx)
-	fr.rio = recordio.NewScanner(fr.rin, recordio.ScannerOpts{})
-	trailer := fr.rio.Trailer()
-	if len(trailer) == 0 {
-		return fr, errors.Errorf("%v: file does not contain an index: %v", path, fr.rio.Err())
-	}
-	if err := fr.index.Unmarshal(trailer); err != nil {
-		return fr, errors.Wrapf(err, "%v: Failed to unmarshal field index for %v", path, f)
-	}
-	return fr, nil
-}
-
 // ShardReader is for reading one PAM rowshard. This class is generally hidden
 // behind pam.Reader and is not used directly.
 type ShardReader struct {
@@ -101,380 +54,14 @@ type ShardReader struct {
 	// Fields to read. It is a complement of ReadOpts.DropFields.
 	needField [gbam.NumFields]bool
 
-	addrGenerator gbam.CoordGenerator
 	// Reader for each field. nil if !needField[f]
-	fieldReaders [gbam.NumFields]*fieldReader
+	fieldReaders [gbam.NumFields]*fieldio.Reader
 	index        biopb.PAMShardIndex
 	header       *sam.Header      // Parsed out of index.EmbeddedBamHeader
 	path         string           // PAM directory path.
 	shardRange   biopb.CoordRange // row range parsed out of the filename.
 	nRecords     int              // # records read so far
 	err          *errorreporter.T // Points to Reader.err
-}
-
-// For parsing values of one field in one recordio block.
-type fieldReadBuf struct {
-	header              biopb.PAMBlockHeader
-	index               biopb.PAMBlockIndexEntry
-	buf                 []byte // raw uncompressed bytes
-	defaultBuf, blobBuf byteBuffer
-	remaining           int   // total # of records remaining in the current recordio block.
-	prevInt64Value0     int64 // for decoding delta-encoded int
-	prevInt64Value1     int64
-	prevString          []byte // for decoding prefix-delta-encoded string.
-	tmpAuxMd            auxMetadata
-}
-
-func (rb *fieldReadBuf) reset(addr biopb.PAMBlockIndexEntry, buf []byte, blob []byte) {
-	rb.index = addr
-	rb.remaining = int(addr.NumRecords)
-
-	rb.defaultBuf.n = 0
-	rb.defaultBuf.buf = buf
-	rb.blobBuf.n = 0
-	rb.blobBuf.buf = blob
-	rb.prevInt64Value0 = 0
-	rb.prevInt64Value1 = 0
-	rb.prevString = rb.prevString[:0]
-}
-
-type stringDeltaMetadata struct {
-	prefixLen int // Prefix shared with the prev record
-	deltaLen  int // Length of the suffix that differs from the prev record.
-}
-
-// Read the length information for delta-encoded string.  Pass the result to
-// readStringDeltaField() to actually decode the string.
-func (rb *fieldReadBuf) readStringDeltaMetadata() stringDeltaMetadata {
-	return stringDeltaMetadata{
-		prefixLen: int(rb.defaultBuf.Uvarint32()),
-		deltaLen:  int(rb.defaultBuf.Uvarint32()),
-	}
-}
-
-func (rb *fieldReadBuf) skipStringDeltaField() {
-	rb.remaining--
-	md := rb.readStringDeltaMetadata()
-	prefix := rb.prevString[:md.prefixLen]
-	resizeBuf(&rb.prevString, md.prefixLen+md.deltaLen)
-	copy(rb.prevString, prefix)
-	copy(rb.prevString[md.prefixLen:], rb.blobBuf.RawBytes(md.deltaLen))
-}
-
-// Reconstruct a delta-encoded string. "sd" can be obtained by calling
-// readStringDeltaMetadata().
-func (rb *fieldReadBuf) readStringDeltaField(md stringDeltaMetadata, arena *unsafeArena) string {
-	rb.remaining--
-	doassert(md.prefixLen >= 0)
-	destBuf := arena.alloc(md.prefixLen + md.deltaLen)
-	if md.prefixLen > 0 {
-		copy(destBuf, rb.prevString[:md.prefixLen])
-	}
-	copy(destBuf[md.prefixLen:], rb.blobBuf.RawBytes(md.deltaLen))
-
-	resizeBuf(&rb.prevString, len(destBuf))
-	copy(rb.prevString, destBuf)
-	return grailunsafe.BytesToString(destBuf)
-}
-
-// Consume a field containing a delta-encoded int.
-func (rb *fieldReadBuf) readVarintDeltaField() int64 {
-	rb.remaining--
-	delta := rb.defaultBuf.Varint64()
-	value := rb.prevInt64Value0 + delta
-	rb.prevInt64Value0 = value
-	return value
-}
-
-// Consume a field containing a varint.
-func (rb *fieldReadBuf) readVarintField() int64 {
-	rb.remaining--
-	return rb.defaultBuf.Varint64()
-}
-
-// Consume the mapq value.
-func (rb *fieldReadBuf) readMapqField() byte {
-	rb.remaining--
-	return rb.defaultBuf.Uint8()
-}
-
-// Consume the flags value.
-func (rb *fieldReadBuf) readFlagsField() sam.Flags {
-	rb.remaining--
-	return sam.Flags(rb.defaultBuf.Uint16())
-}
-
-// Read a block from recordio and uncompress it.
-func (fr *fieldReader) readBlock(fileOff int64) error {
-	fb := &fr.fb
-
-	fr.rio.Seek(recordio.ItemLocation{uint64(fileOff), 0})
-	if !fr.rio.Scan() {
-		err := fr.rio.Err()
-		if err == nil {
-			err = errors.Errorf("Failed to read a block at offset %d", fileOff)
-		}
-		return err
-	}
-	fb.buf = fr.rio.Get().([]byte)
-	var err error
-	fb.header, err = readBlockHeader(&fb.buf)
-	return err
-}
-
-// readBlock reads a set of recordio blocks listed in "addr", uncompresses them,
-// and generate sam.Records. Returns false on EOF. An error is reported in
-// Reader.err.
-func (fr *fieldReader) readNextBlock() bool {
-	if len(fr.blocks) == 0 {
-		return false
-	}
-	addr := fr.blocks[0]
-	fr.blocks = fr.blocks[1:]
-
-	// Read and uncompress the recordio block.
-	if err := fr.readBlock(int64(addr.FileOffset)); err != nil {
-		fr.err.Set(err)
-		return false
-	}
-	// Set up the read pointers
-	fb := &fr.fb
-	limitOffset := uint32(len(fb.buf))
-	doassert(fb.header.Offset <= fb.header.BlobOffset)
-	doassert(fb.header.BlobOffset <= limitOffset)
-	fb.reset(addr,
-		fb.buf[fb.header.Offset:fb.header.BlobOffset],
-		fb.buf[fb.header.BlobOffset:limitOffset])
-	vlog.VI(2).Infof("%v: Read block %+v, %d remaining", fr.label, addr, len(fr.blocks))
-	return true
-}
-
-func (rb *fieldReadBuf) skipCigarField() {
-	rb.remaining--
-	nOps := rb.readCigarLen()
-	for i := 0; i < nOps; i++ {
-		rb.defaultBuf.Uvarint32()
-	}
-}
-
-// Extract the # of cigar ops.
-func (rb *fieldReadBuf) readCigarLen() int {
-	return int(rb.defaultBuf.Uvarint32())
-}
-
-// Parse the Cigar field.
-func (rb *fieldReadBuf) readCigarField(nOps int, arena *unsafeArena) sam.Cigar {
-	rb.remaining--
-	cigar := gbam.UnsafeBytesToCigar(arena.alloc(nOps * 4))
-	for i := 0; i < nOps; i++ {
-		cigar[i] = sam.CigarOp(rb.defaultBuf.Uvarint32())
-	}
-	return cigar
-}
-
-func (rb *fieldReadBuf) skipSeqField() {
-	rb.remaining--
-	nBases := rb.readSeqLen()
-	bytes := seqBytes(nBases)
-	rb.blobBuf.RawBytes(bytes)
-}
-
-// Extract the length of the Seq field.
-func (rb *fieldReadBuf) readSeqLen() int {
-	return int(rb.defaultBuf.Uvarint32())
-}
-
-// Compute the size of a sam.Seq.Seq that stores n bases.  It returns
-// ⌈nbases/2⌉, since each base consumes 4 bits.
-func seqBytes(n int) int {
-	return (n + 1) / 2
-}
-
-// Parse the Seq field. nBases must be obtained by calling readSeqLen.
-func (rb *fieldReadBuf) readSeqField(nBases int, arena *unsafeArena) sam.Seq {
-	rb.remaining--
-	bytes := seqBytes(nBases)
-	destBuf := arena.alloc(bytes)
-	copy(destBuf, rb.blobBuf.RawBytes(bytes))
-	return sam.Seq{
-		Length: nBases,
-		Seq:    gbam.UnsafeBytesToDoublets(destBuf),
-	}
-}
-
-func (rb *fieldReadBuf) skipQualField() {
-	rb.remaining--
-	nBases := int(rb.defaultBuf.Uvarint32())
-	rb.blobBuf.RawBytes(nBases)
-}
-
-func (rb *fieldReadBuf) readQualField(nBases int, arena *unsafeArena) []byte {
-	rb.remaining--
-	qual := arena.alloc(nBases)
-	copy(qual, rb.blobBuf.RawBytes(nBases))
-	return qual
-}
-
-type auxTagHeader struct {
-	// Two-letter tag name + datatype ('Z', 'H', 'i', etc)
-	name [3]byte
-	// Length of the payload part (excluding the first three letters).
-	len int
-}
-
-type auxMetadata struct {
-	tags []auxTagHeader
-}
-
-func (rb *fieldReadBuf) readAuxMetadata() auxMetadata {
-	nAux := int(rb.defaultBuf.Uvarint32())
-	if cap(rb.tmpAuxMd.tags) < nAux {
-		rb.tmpAuxMd.tags = make([]auxTagHeader, nAux)
-	} else {
-		rb.tmpAuxMd.tags = rb.tmpAuxMd.tags[:nAux]
-	}
-	for i := 0; i < nAux; i++ {
-		t := &rb.tmpAuxMd.tags[i]
-		copy(t.name[:], rb.blobBuf.RawBytes(3))
-		switch t.name[2] {
-		case 'A', 'c', 'C': // ascii, int8, uint8
-			t.len = 1
-		case 's', 'S': // int16, uint16
-			t.len = 2
-		case 'i', 'I', 'f': // int32, uint32, float32
-			t.len = 4
-		case 'Z', 'H': // text, hex string
-			t.len = int(rb.defaultBuf.Uvarint32())
-		default:
-			// TODO(saito) Handle unknown tags more gracefully.
-			vlog.Fatalf("Unknown aux tag: %+v", t)
-		}
-	}
-	return rb.tmpAuxMd
-}
-
-func (rb *fieldReadBuf) skipAuxField() {
-	rb.remaining--
-	md := rb.readAuxMetadata()
-	for _, tag := range md.tags {
-		rb.blobBuf.RawBytes(tag.len)
-	}
-}
-
-const sizeofSliceHeader = int(unsafe.Sizeof(reflect.SliceHeader{}))
-
-func (rb *fieldReadBuf) readAuxField(md auxMetadata, arena *unsafeArena) []sam.Aux {
-	rb.remaining--
-	var aux []sam.Aux
-	// Allocate the backing space for aux.
-	arena.align()
-	auxBuf := arena.alloc(len(md.tags) * sizeofSliceHeader)
-	// Clear the array before updating rec.AuxFields. GC will be
-	// confused otherwise.
-	for i := range auxBuf {
-		auxBuf[i] = 0
-	}
-	auxBufHdr := (*reflect.SliceHeader)(unsafe.Pointer(&auxBuf))
-	auxHdr := (*reflect.SliceHeader)(unsafe.Pointer(&aux))
-	auxHdr.Data = auxBufHdr.Data
-	auxHdr.Len = len(md.tags)
-	auxHdr.Cap = auxHdr.Len
-
-	for i, tag := range md.tags {
-		tagBuf := arena.alloc(len(tag.name) + tag.len)
-		copy(tagBuf, tag.name[:])
-		copy(tagBuf[3:], rb.blobBuf.RawBytes(tag.len))
-		aux[i] = sam.Aux(tagBuf)
-	}
-	return aux
-}
-
-// Read the next coordinate value.
-func (rb *fieldReadBuf) readCoordField() (int32, int32) {
-	rb.remaining--
-	refid := rb.prevInt64Value0 + rb.defaultBuf.Varint64()
-	rb.prevInt64Value0 = refid
-	pos := rb.prevInt64Value1 + rb.blobBuf.Varint64()
-	rb.prevInt64Value1 = pos
-	return int32(refid), int32(pos)
-}
-
-// Read the next coordinate value without advancing the read pointer.
-func (rb *fieldReadBuf) peekCoordField() (int32, int32) {
-	s0 := rb.defaultBuf.n
-	s1 := rb.blobBuf.n
-	refid := rb.prevInt64Value0 + rb.defaultBuf.Varint64()
-	pos := rb.prevInt64Value1 + rb.blobBuf.Varint64()
-	rb.defaultBuf.n = s0
-	rb.blobBuf.n = s1
-	return int32(refid), int32(pos)
-}
-
-// If the fieldReadBuffer for FieldCoord is empty, read the next recordio block
-// and reset r.addr.
-func (r *ShardReader) maybeReadNextCoordBlock() bool {
-	fr := r.fieldReaders[gbam.FieldCoord]
-	if fr.fb.remaining > 0 {
-		return true
-	}
-	if !fr.readNextBlock() {
-		return false
-	}
-	if fr.field == gbam.FieldCoord {
-		start := fr.fb.index.StartAddr
-		r.addrGenerator.LastRec = biopb.Coord{start.RefId, start.Pos, start.Seq - 1}
-	}
-	return true
-}
-
-// If the fieldReadBuffer for the field is empty, read the next recordio block.
-func (fr *fieldReader) maybeReadNextBlock() bool {
-	if fr.fb.remaining > 0 {
-		return true
-	}
-	if fr.field == gbam.FieldCoord {
-		vlog.Fatal("use maybeReadNextCoordBlock instead")
-	}
-	return fr.readNextBlock()
-}
-
-var (
-	dummyMu   sync.Mutex
-	dummyQual unsafe.Pointer // stores *[]byte
-	dummySeq  unsafe.Pointer // stores *[]sam.Doublet
-)
-
-// Return a singleton qual string that contains dummy data.
-func getDummyQual(length int) []byte {
-	buf := (*[]byte)(atomic.LoadPointer(&dummyQual))
-	if buf != nil && len(*buf) >= length {
-		return (*buf)[:length]
-	}
-	dummyMu.Lock()
-	newBuf := make([]byte, length)
-	for i := 0; i < length; i++ {
-		newBuf[i] = 0xff
-	}
-	atomic.StorePointer(&dummyQual, unsafe.Pointer(&newBuf))
-	dummyMu.Unlock()
-	return newBuf[:length]
-}
-
-// Return a singleton seq string that contains dummy data.
-func getDummySeq(length int) sam.Seq {
-	n := (length + 1) / 2
-	buf := (*[]sam.Doublet)(atomic.LoadPointer(&dummySeq))
-	if buf != nil && len(*buf) >= n {
-		return sam.Seq{Length: length, Seq: (*buf)[:n]}
-	}
-	dummyMu.Lock()
-	newBuf := make([]sam.Doublet, length)
-	for i := 0; i < length; i++ {
-		newBuf[i] = 0xf
-	}
-	atomic.StorePointer(&dummySeq, unsafe.Pointer(&newBuf))
-	dummyMu.Unlock()
-	return sam.Seq{Length: length, Seq: newBuf[:n]}
 }
 
 // Read one record from the buffer "rb". prevRec is used to delta-decode some
@@ -484,107 +71,109 @@ func (r *ShardReader) readRecord() *sam.Record {
 	rb := gbam.GetFromFreePool()
 	rec := gbam.CastUp(rb)
 
-	if !r.maybeReadNextCoordBlock() {
+	if !r.fieldReaders[gbam.FieldCoord].MaybeReadNextBlock() {
 		return nil
 	}
-	refID, pos := r.fieldReaders[gbam.FieldCoord].fb.readCoordField()
-	rec.Ref = nil
-	if refID >= 0 {
-		rec.Ref = refs[refID]
+	coord := r.fieldReaders[gbam.FieldCoord].ReadCoordField()
+	if coord.RefId >= 0 {
+		rec.Ref = refs[coord.RefId]
+		rec.Pos = int(coord.Pos)
+	} else {
+		rec.Ref = nil
+		rec.Pos = -1
 	}
-	rec.Pos = int(pos)
 
 	if r.needField[gbam.FieldFlags] {
-		if !r.fieldReaders[gbam.FieldFlags].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldFlags].MaybeReadNextBlock() {
 			return nil
 		}
-		rec.Flags = r.fieldReaders[gbam.FieldFlags].fb.readFlagsField()
+		rec.Flags = r.fieldReaders[gbam.FieldFlags].ReadFlagsField()
 	}
 	if r.needField[gbam.FieldMapq] {
-		if !r.fieldReaders[gbam.FieldMapq].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldMapq].MaybeReadNextBlock() {
 			return nil
 		}
-		rec.MapQ = r.fieldReaders[gbam.FieldMapq].fb.readMapqField()
+		rec.MapQ = r.fieldReaders[gbam.FieldMapq].ReadMapqField()
 	}
 	if r.needField[gbam.FieldMateRefID] {
-		if !r.fieldReaders[gbam.FieldMateRefID].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldMateRefID].MaybeReadNextBlock() {
 			return nil
 		}
-		mateRefID := r.fieldReaders[gbam.FieldMateRefID].fb.readVarintDeltaField()
+		mateRefID := r.fieldReaders[gbam.FieldMateRefID].ReadVarintDeltaField()
 		rec.MateRef = nil
 		if mateRefID >= 0 {
 			rec.MateRef = refs[mateRefID]
 		}
 	}
 	if r.needField[gbam.FieldMatePos] {
-		if !r.fieldReaders[gbam.FieldMatePos].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldMatePos].MaybeReadNextBlock() {
 			return nil
 		}
-		rec.MatePos = int(r.fieldReaders[gbam.FieldMatePos].fb.readVarintDeltaField())
+		rec.MatePos = int(r.fieldReaders[gbam.FieldMatePos].ReadVarintDeltaField())
 	}
 	if r.needField[gbam.FieldTempLen] {
-		if !r.fieldReaders[gbam.FieldTempLen].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldTempLen].MaybeReadNextBlock() {
 			return nil
 		}
-		rec.TempLen = int(r.fieldReaders[gbam.FieldTempLen].fb.readVarintField())
+		rec.TempLen = int(r.fieldReaders[gbam.FieldTempLen].ReadVarintField())
 	}
 
 	// Collect the length info for variable-length fields.
 	arenaBytes := 0
 	nCigarOps := 0
 	if r.needField[gbam.FieldCigar] {
-		if !r.fieldReaders[gbam.FieldCigar].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldCigar].MaybeReadNextBlock() {
 			return nil
 		}
-		nCigarOps = r.fieldReaders[gbam.FieldCigar].fb.readCigarLen()
+		nCigarOps = r.fieldReaders[gbam.FieldCigar].ReadCigarLen()
 		arenaBytes += nCigarOps * gbam.CigarOpSize
 	}
 
-	nameMd := stringDeltaMetadata{}
+	nameMd := fieldio.StringDeltaMetadata{}
 	if r.needField[gbam.FieldName] {
-		if !r.fieldReaders[gbam.FieldName].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldName].MaybeReadNextBlock() {
 			return nil
 		}
-		nameMd = r.fieldReaders[gbam.FieldName].fb.readStringDeltaMetadata()
-		arenaBytes += nameMd.prefixLen + nameMd.deltaLen
+		nameMd = r.fieldReaders[gbam.FieldName].ReadStringDeltaMetadata()
+		arenaBytes += nameMd.PrefixLen + nameMd.DeltaLen
 	}
 	rec.Seq.Length = 0
 	if r.needField[gbam.FieldSeq] {
-		if !r.fieldReaders[gbam.FieldSeq].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldSeq].MaybeReadNextBlock() {
 			return nil
 		}
-		rec.Seq.Length = int(r.fieldReaders[gbam.FieldSeq].fb.defaultBuf.Uvarint32())
-		arenaBytes += seqBytes(rec.Seq.Length)
+		rec.Seq.Length = r.fieldReaders[gbam.FieldSeq].ReadSeqMetadata()
+		arenaBytes += fieldio.SeqBytes(rec.Seq.Length)
 	}
 	qualLen := 0
 	if r.needField[gbam.FieldQual] {
-		if !r.fieldReaders[gbam.FieldQual].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldQual].MaybeReadNextBlock() {
 			return nil
 		}
-		qualLen = int(r.fieldReaders[gbam.FieldQual].fb.defaultBuf.Uvarint32())
+		qualLen = r.fieldReaders[gbam.FieldQual].ReadQualMetadata()
 		arenaBytes += qualLen
 	}
-	auxMd := auxMetadata{}
+	auxMd := fieldio.AuxMetadata{}
 	if r.needField[gbam.FieldAux] {
-		if !r.fieldReaders[gbam.FieldAux].maybeReadNextBlock() {
+		if !r.fieldReaders[gbam.FieldAux].MaybeReadNextBlock() {
 			return nil
 		}
 		const pointerSize = int(unsafe.Sizeof(uintptr(0)))
-		auxMd = r.fieldReaders[gbam.FieldAux].fb.readAuxMetadata()
+		auxMd = r.fieldReaders[gbam.FieldAux].ReadAuxMetadata()
 		// Round up to the next CPU word boundary, since we will store
 		// pointers in the arena.
-		arenaBytes += len(auxMd.tags)*sizeofSliceHeader + pointerSize
-		for _, tag := range auxMd.tags {
-			arenaBytes += len(tag.name) + tag.len
+		arenaBytes += len(auxMd.Tags)*fieldio.SizeofSliceHeader + pointerSize
+		for _, tag := range auxMd.Tags {
+			arenaBytes += len(tag.Name) + tag.Len
 		}
 	}
 	gbam.ResizeScratch(&rb.Scratch, arenaBytes)
-	arena := unsafeArena{buf: rb.Scratch}
+	arena := fieldio.NewUnsafeArena(rb.Scratch)
 	if r.needField[gbam.FieldCigar] {
-		rec.Cigar = r.fieldReaders[gbam.FieldCigar].fb.readCigarField(nCigarOps, &arena)
+		rec.Cigar = r.fieldReaders[gbam.FieldCigar].ReadCigarField(nCigarOps, &arena)
 	}
 	if r.needField[gbam.FieldName] {
-		rec.Name = r.fieldReaders[gbam.FieldName].fb.readStringDeltaField(nameMd, &arena)
+		rec.Name = r.fieldReaders[gbam.FieldName].ReadStringDeltaField(nameMd, &arena)
 	}
 
 	// Qual and Seq must be of the same length, as per BAM file format spec.  So
@@ -592,57 +181,36 @@ func (r *ShardReader) readRecord() *sam.Record {
 	switch {
 	case r.needField[gbam.FieldSeq] && r.needField[gbam.FieldQual]:
 		// Common case
-		rec.Seq = r.fieldReaders[gbam.FieldSeq].fb.readSeqField(rec.Seq.Length, &arena)
-		rec.Qual = r.fieldReaders[gbam.FieldQual].fb.readQualField(qualLen, &arena)
+		rec.Seq = r.fieldReaders[gbam.FieldSeq].ReadSeqField(rec.Seq.Length, &arena)
+		rec.Qual = r.fieldReaders[gbam.FieldQual].ReadQualField(qualLen, &arena)
 	case r.needField[gbam.FieldSeq] && !r.needField[gbam.FieldQual]:
 		// Fill qual with garbage data w/ the same length as seq
-		rec.Seq = r.fieldReaders[gbam.FieldSeq].fb.readSeqField(rec.Seq.Length, &arena)
-		rec.Qual = getDummyQual(rec.Seq.Length)
+		rec.Seq = r.fieldReaders[gbam.FieldSeq].ReadSeqField(rec.Seq.Length, &arena)
+		rec.Qual = fieldio.GetDummyQual(rec.Seq.Length)
 	case !r.needField[gbam.FieldSeq] && r.needField[gbam.FieldQual]:
 		// Fill seq with garbage data w/ the same length as qual
-		rec.Qual = r.fieldReaders[gbam.FieldQual].fb.readQualField(qualLen, &arena)
-		rec.Seq = getDummySeq(len(rec.Qual))
+		rec.Qual = r.fieldReaders[gbam.FieldQual].ReadQualField(qualLen, &arena)
+		rec.Seq = fieldio.GetDummySeq(len(rec.Qual))
 	}
 
 	if r.needField[gbam.FieldAux] {
-		rec.AuxFields = r.fieldReaders[gbam.FieldAux].fb.readAuxField(auxMd, &arena)
+		rec.AuxFields = r.fieldReaders[gbam.FieldAux].ReadAuxField(auxMd, &arena)
 	}
-	addr := r.addrGenerator.GenerateFromRecord(rec)
 	r.nRecords++
-	if addr.LT(r.requestedRange.Start) {
+	if coord.LT(r.requestedRange.Start) {
 		// This can't happen; seek() should have moved the read pointer >=
 		// requestedRange.Start.
 		vlog.Fatalf("Record too small: %v, requested %+v", r, r.requestedRange)
 	}
-	if addr.GE(r.requestedRange.Limit) {
+	if coord.GE(r.requestedRange.Limit) {
 		return nil
 	}
 	return rec
 }
 
-func readBlockHeader(buf *[]byte) (biopb.PAMBlockHeader, error) {
-	headerSize, n := binary.Varint(*buf)
-	if n <= 0 {
-		err := errors.Errorf("Failed to read the block header size")
-		vlog.Error(err)
-		return biopb.PAMBlockHeader{}, err
-	}
-	*buf = (*buf)[n:]
-	// TODO(saito): range check
-	headerBytes := (*buf)[:headerSize]
-	*buf = (*buf)[headerSize:]
-
-	bh := biopb.PAMBlockHeader{}
-	err := bh.Unmarshal(headerBytes)
-	if err != nil {
-		panic(err)
-	}
-	return bh, nil
-}
-
 // ReadShardIndex reads the index file, "dir/coordRange.index".
 func ReadShardIndex(dir string, recRange biopb.CoordRange) (biopb.PAMShardIndex, error) {
-	path := ShardIndexPath(dir, recRange)
+	path := pamutil.ShardIndexPath(dir, recRange)
 	var index biopb.PAMShardIndex
 
 	ctx := vcontext.Background()
@@ -663,8 +231,8 @@ func ReadShardIndex(dir string, recRange biopb.CoordRange) (biopb.PAMShardIndex,
 	if index.Magic != ShardIndexMagic {
 		return index, errors.Errorf("Wrong index version '%v'; expect '%v'", index.Magic, ShardIndexMagic)
 	}
-	if index.Version != DefaultVersion {
-		return index, errors.Errorf("Wrong PAM version '%v'; expect '%v'", index.Version, DefaultVersion)
+	if index.Version != pamutil.DefaultVersion {
+		return index, errors.Errorf("Wrong PAM version '%v'; expect '%v'", index.Version, pamutil.DefaultVersion)
 	}
 	return index, rio.Err()
 }
@@ -702,18 +270,14 @@ func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
 		if fr == nil {
 			continue
 		}
-		for _, b := range fr.index.Blocks {
-			if blockIntersectsRange(b.StartAddr, b.EndAddr, requestedRange) {
-				fr.blocks = append(fr.blocks, b)
-			}
-		}
-		if len(fr.blocks) == 0 {
+		blockStart, ok := fr.Seek(requestedRange)
+		if !ok {
 			// There's no record to be read in the range.  We'll report EOF when
 			// reading later. Usually, if fr.blocks is empty for one field, it's
 			// empty for any other field too.
 			return
 		}
-		coordRange.Start = coordRange.Start.Min(fr.blocks[0].StartAddr)
+		coordRange.Start = coordRange.Start.Min(blockStart)
 	}
 
 	// We need to advance the read pointer of each field to the first record at or
@@ -732,14 +296,9 @@ func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
 	// Read FieldCoord so that it covers all the recordioblocks read by other
 	// fields.
 	fr := r.fieldReaders[gbam.FieldCoord]
-	for _, b := range fr.index.Blocks {
-		if blockIntersectsRange(b.StartAddr, b.EndAddr, coordRange) {
-			fr.blocks = append(fr.blocks, b)
-		}
-	}
-	if len(fr.blocks) == 0 {
+	if _, ok := fr.Seek(coordRange); !ok {
 		// This shouldn't happen, unless is the file is corrupt
-		err := errors.Errorf("%v: Cannot find blocks for coords in range %+v, index: %+v", fr.label, coordRange, fr.index)
+		err := errors.Errorf("%v: Cannot find blocks for coords in range %+v", r.label, coordRange)
 		vlog.Error(err)
 		r.err.Set(err)
 		return
@@ -750,16 +309,16 @@ func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
 
 	// getReader() returns a fieldReader for the given reader, or nil if the field
 	// is dropped by the user, or all its data blocks are after "addr"
-	getReader := func(f gbam.FieldType, addr biopb.Coord) *fieldReader {
+	getReader := func(f gbam.FieldType, addr biopb.Coord) *fieldio.Reader {
 		fr = r.fieldReaders[f]
 		if fr != nil {
-			if !fr.maybeReadNextBlock() {
-				vlog.Fatalf("%v: EOF while reading %+v", fr.label, addr)
+			if !fr.MaybeReadNextBlock() {
+				vlog.Fatalf("%v: EOF while reading %+v", fr.Label(), addr)
 			}
 			if readingField[f] {
 				return fr
 			}
-			if addr.GE(fr.fb.index.StartAddr) {
+			if addr.GE(fr.BlockStartAddr()) {
 				readingField[f] = true
 				return fr
 			}
@@ -769,49 +328,46 @@ func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
 
 	// Seek the field pointers to requestedRange.Start
 	for {
-		if !r.maybeReadNextCoordBlock() {
-			// No data to read
-			vlog.VI(1).Infof("Reached end of data, %+v", r.addrGenerator)
-			return
-		}
 		fr := r.fieldReaders[gbam.FieldCoord]
-		refID, pos := fr.fb.peekCoordField()
-		save := r.addrGenerator
-		addr := r.addrGenerator.Generate(refID, pos)
-		if addr.GE(requestedRange.Start) {
-			r.addrGenerator = save
+		if !fr.MaybeReadNextBlock() {
+			// No data to read
+			vlog.VI(1).Infof("%v: Reached end of data", fr.Label())
 			return
 		}
-		fr.fb.readCoordField()
+		addr := fr.PeekCoordField()
+		if addr.GE(requestedRange.Start) {
+			return
+		}
+		fr.ReadCoordField()
 		if fr := getReader(gbam.FieldFlags, addr); fr != nil {
-			fr.fb.readFlagsField()
+			fr.ReadFlagsField()
 		}
 		if fr := getReader(gbam.FieldMapq, addr); fr != nil {
-			fr.fb.readMapqField()
+			fr.ReadMapqField()
 		}
 		if fr := getReader(gbam.FieldMateRefID, addr); fr != nil {
-			fr.fb.readVarintDeltaField()
+			fr.ReadVarintDeltaField()
 		}
 		if fr := getReader(gbam.FieldMatePos, addr); fr != nil {
-			fr.fb.readVarintDeltaField()
+			fr.ReadVarintDeltaField()
 		}
 		if fr := getReader(gbam.FieldTempLen, addr); fr != nil {
-			fr.fb.readVarintField()
+			fr.ReadVarintField()
 		}
 		if fr := getReader(gbam.FieldCigar, addr); fr != nil {
-			fr.fb.skipCigarField()
+			fr.SkipCigarField()
 		}
 		if fr := getReader(gbam.FieldName, addr); fr != nil {
-			fr.fb.skipStringDeltaField()
+			fr.SkipStringDeltaField()
 		}
 		if fr := getReader(gbam.FieldSeq, addr); fr != nil {
-			fr.fb.skipSeqField()
+			fr.SkipSeqField()
 		}
 		if fr := getReader(gbam.FieldQual, addr); fr != nil {
-			fr.fb.skipQualField()
+			fr.SkipQualField()
 		}
 		if fr := getReader(gbam.FieldAux, addr); fr != nil {
-			fr.fb.skipAuxField()
+			fr.SkipAuxField()
 		}
 	}
 }
@@ -828,12 +384,11 @@ func NewShardReader(
 	pamIndex FileInfo,
 	errp *errorreporter.T) *ShardReader {
 	r := &ShardReader{
-		label:          fmt.Sprintf("%s:s%s:u%s", filepath.Base(pamIndex.Dir), CoordRangePathString(pamIndex.Range), CoordRangePathString(requestedRange)),
+		label:          fmt.Sprintf("%s:s%s:u%s", filepath.Base(pamIndex.Dir), pamutil.CoordRangePathString(pamIndex.Range), pamutil.CoordRangePathString(requestedRange)),
 		path:           pamIndex.Dir,
 		shardRange:     pamIndex.Range,
 		requestedRange: requestedRange,
 		err:            errp,
-		addrGenerator:  gbam.NewCoordGenerator(),
 	}
 	vlog.VI(1).Infof("%v: NewShardReader", r.label)
 	for i := range r.needField {
@@ -860,7 +415,7 @@ func NewShardReader(
 
 	for f := range r.needField {
 		if r.needField[f] {
-			r.fieldReaders[f], err = newFieldReader(pamIndex.Dir, pamIndex.Range, r.requestedRange, gbam.FieldType(f), errp)
+			r.fieldReaders[f], err = fieldio.NewReader(pamIndex.Dir, pamIndex.Range, r.requestedRange, gbam.FieldType(f), errp)
 			if err != nil {
 				r.err.Set(err)
 				return r
@@ -873,16 +428,9 @@ func NewShardReader(
 
 // Close must be called exactly once. After close, no method may be called.
 func (r *ShardReader) Close() {
-	ctx := vcontext.Background()
 	for f := range r.fieldReaders {
-		fr := r.fieldReaders[f]
-		if fr != nil {
-			if fr.rio != nil { // fr.rio =nil on error
-				fr.err.Set(fr.rio.Finish())
-			}
-			if fr.in != nil { // fr.in =nil on error
-				r.err.Set(fr.in.Close(ctx))
-			}
+		if fr := r.fieldReaders[f]; fr != nil {
+			fr.Close()
 		}
 	}
 }
@@ -916,7 +464,7 @@ func NewReader(opts ReadOpts, dir string) *Reader {
 	if r.err.Err() != nil {
 		return r
 	}
-	r.label = fmt.Sprintf("%s:u%s", filepath.Base(dir), CoordRangePathString(r.opts.Range))
+	r.label = fmt.Sprintf("%s:u%s", filepath.Base(dir), pamutil.CoordRangePathString(r.opts.Range))
 	var err error
 	if r.indexFiles, err = findIndexFilesInRange(dir, r.opts.Range); err != nil {
 		r.err.Set(err)
