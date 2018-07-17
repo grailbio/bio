@@ -7,8 +7,17 @@
 package biosimd
 
 import (
-	"github.com/grailbio/base/simd"
+	"reflect"
+	"unsafe"
+
+	_ "github.com/grailbio/base/simd" // linkname dependency
 )
+
+//go:linkname countNibblesInSetSSE41Asm github.com/grailbio/base/simd.countNibblesInSetSSE41Asm
+func countNibblesInSetSSE41Asm(src unsafe.Pointer, tablePtr *[16]byte, nByte int) int
+
+//go:linkname countNibblesInTwoSetsSSE41Asm github.com/grailbio/base/simd.countNibblesInTwoSetsSSE41Asm
+func countNibblesInTwoSetsSSE41Asm(cnt2Ptr *int, src unsafe.Pointer, table1Ptr, table2Ptr *[16]byte, nByte int) int
 
 // It's generally cleaner to unpack first, and then use base/simd's byte
 // counting functions.  However, we have some preexisting code which doesn't
@@ -36,7 +45,16 @@ func PackedSeqCount(seq4 []byte, tablePtr *[16]byte, startPos, endPos int) int {
 		startOffset++
 	}
 	endOffset := endPos >> 1
-	cnt += simd.CountNibblesInSet(seq4[startOffset:endOffset], tablePtr)
+	nByte := endOffset - startOffset
+	if nByte < 16 {
+		for pos := startOffset; pos < endOffset; pos++ {
+			seq4Byte := seq4[pos]
+			cnt += int(tablePtr[seq4Byte&15] + tablePtr[seq4Byte>>4])
+		}
+	} else {
+		seq4Header := (*reflect.SliceHeader)(unsafe.Pointer(&seq4))
+		cnt += countNibblesInSetSSE41Asm(unsafe.Pointer(seq4Header.Data+uintptr(startOffset)), tablePtr, nByte)
+	}
 	if endPos&1 == 1 {
 		cnt += int(tablePtr[seq4[endOffset]>>4])
 	}
@@ -64,11 +82,23 @@ func PackedSeqCountTwo(seq4 []byte, table1Ptr, table2Ptr *[16]byte, startPos, en
 		startOffset++
 	}
 	endOffset := endPos >> 1
-	cnt1Main, cnt2Main := simd.CountNibblesInTwoSets(seq4[startOffset:endOffset], table1Ptr, table2Ptr)
+	nByte := endOffset - startOffset
+	if nByte < 16 {
+		for pos := startOffset; pos < endOffset; pos++ {
+			seq4Byte := seq4[pos]
+			lowBits := seq4Byte & 15
+			highBits := seq4Byte >> 4
+			cnt1 += int(table1Ptr[lowBits] + table1Ptr[highBits])
+			cnt2 += int(table2Ptr[lowBits] + table2Ptr[highBits])
+		}
+	} else {
+		seq4Header := (*reflect.SliceHeader)(unsafe.Pointer(&seq4))
+		cnt1 += countNibblesInTwoSetsSSE41Asm(&cnt2, unsafe.Pointer(seq4Header.Data+uintptr(startOffset)), table1Ptr, table2Ptr, nByte)
+	}
 	if endPos&1 == 1 {
 		highBits := seq4[endOffset] >> 4
 		cnt1 += int(table1Ptr[highBits])
 		cnt2 += int(table2Ptr[highBits])
 	}
-	return (cnt1 + cnt1Main), (cnt2 + cnt2Main)
+	return cnt1, cnt2
 }

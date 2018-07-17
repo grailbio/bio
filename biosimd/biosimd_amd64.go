@@ -37,10 +37,10 @@ var bytesPerVec int
 // log2BytesPerVec supports efficient division by bytesPerVec.
 var log2BytesPerVec uint
 
-// *** the following functions are defined in biosimd_amd64.s
-
-//go:noescape
+//go:linkname hasSSE42Asm github.com/grailbio/base/simd.hasSSE42Asm
 func hasSSE42Asm() bool
+
+// *** the following functions are defined in biosimd_amd64.s
 
 //go:noescape
 func unpackSeqSSE2Asm(dst, src unsafe.Pointer, nSrcByte int)

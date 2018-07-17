@@ -19,21 +19,20 @@ Initial benchmark results:
   MacBook Pro (15-inch, 2016)
   2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
 
-Benchmark_CountCGShort1-8             10         151588354 ns/op
-Benchmark_CountCGShort4-8             30          41357284 ns/op
-Benchmark_CountCGShortMax-8           50          38025097 ns/op
-Benchmark_CountCGLong1-8               1        1482233706 ns/op
-Benchmark_CountCGLong4-8               1        1538342966 ns/op
-Benchmark_CountCGLongMax-8             1        2275901424 ns/op
+Benchmark_CountCGShort1-8             10         126673237 ns/op
+Benchmark_CountCGShort4-8             50          33829967 ns/op
+Benchmark_CountCGShortMax-8           50          32196349 ns/op
+Benchmark_CountCGLong1-8               1        1158824068 ns/op
+Benchmark_CountCGLong4-8               5         274960020 ns/op
+Benchmark_CountCGLongMax-8             5         376000031 ns/op
 
 For comparison, packedSeqCountTwoSlow:
-
-Benchmark_CountCGShort1-8              1        3037693285 ns/op
-Benchmark_CountCGShort4-8              2         828886560 ns/op
-Benchmark_CountCGShortMax-8            2         583392296 ns/op
-Benchmark_CountCGLong1-8               1        48948330693 ns/op
-Benchmark_CountCGLong4-8               1        13488150212 ns/op
-Benchmark_CountCGLongMax-8             1        12380475709 ns/op
+Benchmark_CountCGShort1-8              1        2939036568 ns/op
+Benchmark_CountCGShort4-8              2         790582580 ns/op
+Benchmark_CountCGShortMax-8            2         527043097 ns/op
+Benchmark_CountCGLong1-8               1        46681459494 ns/op
+Benchmark_CountCGLong4-8               1        24380671980 ns/op
+Benchmark_CountCGLongMax-8             1        13357966952 ns/op
 */
 
 func init() {
@@ -52,6 +51,8 @@ func countCGSubtask(src []byte, nIter int) int {
 	baseCt := len(src) * 2
 	for iter := 0; iter < nIter; iter++ {
 		tot += biosimd.PackedSeqCount(src, &countCGTable, 0, baseCt)
+		// Leave this here to make it easier to switch benchmarks.
+		// packedSeqCountTwoSlow(src, 0, baseCt, 2, 4)
 	}
 	return tot
 }
@@ -69,10 +70,10 @@ func multiCountCG(srcs [][]byte, cpus int, nJob int) {
 	shardSizeP1 := shardSizeBase + 1
 	var taskIdx int
 	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = countCGSubtaskFuture(srcs[taskIdx], shardSizeP1)
+		sumFutures[taskIdx] = countCGSubtaskFuture(srcs[0], shardSizeP1)
 	}
 	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = countCGSubtaskFuture(srcs[taskIdx], shardSizeBase)
+		sumFutures[taskIdx] = countCGSubtaskFuture(srcs[0], shardSizeBase)
 	}
 	var sum int
 	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
@@ -85,13 +86,10 @@ func benchmarkCountCG(cpus int, nByte int, nJob int, b *testing.B) {
 		b.Skipf("only have %v cpus", runtime.NumCPU())
 	}
 
-	mainSlices := make([][]byte, cpus)
+	mainSlices := make([][]byte, 1)
 	for ii := range mainSlices {
 		// Add 63 to prevent false sharing.
 		newArr := simd.MakeUnsafe(nByte + 63)
-		for jj := 0; jj < nByte; jj++ {
-			newArr[jj] = byte(jj * 3)
-		}
 		mainSlices[ii] = newArr[:nByte]
 	}
 	for i := 0; i < b.N; i++ {

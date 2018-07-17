@@ -49,18 +49,6 @@
         DATA ·AllN<>+0x08(SB)/8, $0x4e4e4e4e4e4e4e4e
         GLOBL ·AllN<>(SB), 24, $16
 
-
-// This was forked from github.com/willf/bitset .
-// Some form of AVX2/AVX-512 detection will probably be added later.
-TEXT ·hasSSE42Asm(SB),4,$0-1
-        MOVQ    $1, AX
-        CPUID
-        // CPUID function fills CX register.
-        SHRQ    $23, CX
-        ANDQ    $1, CX
-        MOVB    CX, ret+0(FP)
-        RET
-
 TEXT ·unpackSeqSSE2Asm(SB),4,$0-24
         // Based on packedNibbleLookupSSSE3Asm() in base/simd/simd_amd64.s.
         // DI = pointer to current src[] element.
