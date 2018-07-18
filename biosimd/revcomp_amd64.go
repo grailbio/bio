@@ -56,9 +56,11 @@ var revComp8Table16 = [16]byte{
 // ReverseComp8InplaceNoValidate reverse-complements ascii8[], assuming that
 // it's using ASCII encoding, and all values are in {0, '0', 'A', 'C', 'G',
 // 'T', 'N', 'a', 'c', 'g', 't', 'n'}.
+//
 // If the input assumption is satisfied, output is restricted to
 // 'A'/'C'/'G'/'T'/'N'.  Other bytes may be written if the input assumption is
 // not satisfied.
+//
 // This usually takes ~35% less time than the validating function.
 func ReverseComp8InplaceNoValidate(ascii8 []byte) {
 	nByte := len(ascii8)
@@ -98,9 +100,11 @@ func ReverseComp8Inplace(ascii8 []byte) {
 // ReverseComp8NoValidate writes the reverse-complement of src[] to dst[],
 // assuming src is using ASCII encoding, and all values are in {0, '0', 'A',
 // 'C', 'G', 'T', 'N', 'a', 'c', 'g', 't', 'n'}.
+//
 // If the input assumption is satisfied, output is restricted to
 // 'A'/'C'/'G'/'T'/'N'.  Other bytes may be written if the input assumption is
 // not satisfied.
+//
 // It panics if len(dst) != len(src).
 func ReverseComp8NoValidate(dst, src []byte) {
 	nByte := len(src)
@@ -122,16 +126,20 @@ var revComp4Table = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 
 
 // ReverseComp4UnsafeInplace reverse-complements seq8[], assuming that it's
 // using .bam seq-field encoding with one 4-bit byte per base.
+//
 // WARNING: This is a function designed to be used in inner loops, which makes
 // assumptions about length and capacity which aren't checked at runtime.  Use
 // the safe version of this function when that's a problem.
 // Assumptions #2-3 are always satisfied when the last
 // potentially-size-increasing operation on seq8[] is simd.{Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe().
+//
 // 1. All elements of seq8[] are less than 16.
+//
 // 2. Capacity of seq8 is at least RoundUpPow2(len(seq8) + 1, bytesPerVec).
+//
 // 3. The caller does not care if a few bytes past the end of seq8[] are
-//    changed.
+// changed.
 func ReverseComp4UnsafeInplace(seq8 []byte) {
 	nByte := len(seq8)
 	seq8Header := (*reflect.SliceHeader)(unsafe.Pointer(&seq8))
@@ -144,6 +152,7 @@ func ReverseComp4UnsafeInplace(seq8 []byte) {
 
 // ReverseComp4Inplace reverse-complements seq8[], assuming that it's using
 // .bam seq-field encoding with one 4-bit byte per base.
+//
 // WARNING: If a seq8[] value is larger than 15, it's possible for this to
 // immediately crash, and it's also possible for this to return and fill seq8[]
 // with garbage.  Only promise is that we don't scribble over arbitrary memory.
@@ -167,18 +176,23 @@ func ReverseComp4Inplace(seq8 []byte) {
 
 // ReverseComp4Unsafe saves the reverse-complement of src[] to dst[], assuming
 // .bam seq-field encoding with one 4-bit byte per base.
+//
 // WARNING: This is a function designed to be used in inner loops, which makes
 // assumptions about length and capacity which aren't checked at runtime.  Use
 // the safe version of this function when that's a problem.
 // Assumptions #3-4 are always satisfied when the last
 // potentially-size-increasing operation on src[] is simd.{Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true of dst[].
+//
 // 1. len(src) == len(dst).
+//
 // 2. All elements of src[] are less than 16.
+//
 // 3. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
-//    the same is true of dst.
+// the same is true of dst.
+//
 // 4. The caller does not care if a few bytes past the end of dst[] are
-//    changed.
+// changed.
 func ReverseComp4Unsafe(dst, src []byte) {
 	nByte := len(src)
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
@@ -193,6 +207,7 @@ func ReverseComp4Unsafe(dst, src []byte) {
 // ReverseComp4 saves the reverse-complement of src[] to dst[], assuming .bam
 // seq-field encoding with one 4-bit byte per base.
 // It panics if len(dst) != len(src).
+//
 // WARNING: If a src[] value is larger than 15, it's possible for this to
 // immediately crash, and it's also possible for this to return and fill src[]
 // with garbage.  Only promise is that we don't scribble over arbitrary memory.
@@ -216,15 +231,18 @@ var revComp2Table = [...]byte{3, 2, 1, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x
 
 // ReverseComp2UnsafeInplace reverse-complements acgt8[], assuming that it's
 // encoded with one byte per base, ACGT=0123.
+//
 // WARNING: This is a function designed to be used in inner loops, which makes
 // assumptions about length and capacity which aren't checked at runtime.  Use
 // the safe version of this function when that's a problem.
 // These assumptions are always satisfied when the last
 // potentially-size-increasing operation on acgt8[] is simd.{Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe().
+//
 // 1. Capacity of acgt8[] is at least RoundUpPow2(len(acgt8) + 1, bytesPerVec).
+//
 // 2. The caller does not care if a few bytes past the end of acgt8[] are
-//    changed.
+// changed.
 func ReverseComp2UnsafeInplace(acgt8 []byte) {
 	nByte := len(acgt8)
 	acgt8Header := (*reflect.SliceHeader)(unsafe.Pointer(&acgt8))
@@ -252,17 +270,21 @@ func ReverseComp2Inplace(acgt8 []byte) {
 
 // ReverseComp2Unsafe saves the reverse-complement of src[] to dst[], assuming
 // that they're encoded with one byte per base, ACGT=0123.
+//
 // WARNING: This is a function designed to be used in inner loops, which makes
 // assumptions about length and capacity which aren't checked at runtime.  Use
 // the safe version of this function when that's a problem.
 // Assumptions #2-3 are always satisfied when the last
 // potentially-size-increasing operation on src[] is simd.{Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true of dst[].
+//
 // 1. len(src) == len(dst).
+//
 // 2. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
-//    the same is true of dst.
+// the same is true of dst.
+//
 // 3. The caller does not care if a few bytes past the end of dst[] are
-//    changed.
+// changed.
 func ReverseComp2Unsafe(dst, src []byte) {
 	nByte := len(src)
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))

@@ -32,6 +32,7 @@ const Log2BytesPerWord = simd.Log2BytesPerWord
 // bytesPerVec is the size of the maximum-width vector that may be used.  It is
 // currently always 16, but it will be set to larger values at runtime in the
 // future when AVX2/AVX-512/etc. is detected.
+// (Probably use exported version of this from base/simd in the future.)
 var bytesPerVec int
 
 // log2BytesPerVec supports efficient division by bytesPerVec.
@@ -85,17 +86,21 @@ func init() {
 // UnpackSeqUnsafe sets the bytes in dst[] as follows:
 //   if pos is even, dst[pos] := src[pos / 2] >> 4
 //   if pos is odd, dst[pos] := src[pos / 2] & 15
+//
 // WARNING: This is a function designed to be used in inner loops, which makes
 // assumptions about length and capacity which aren't checked at runtime.  Use
 // the safe version of this function when that's a problem.
 // Assumptions #2-3 are always satisfied when the last
 // potentially-size-increasing operation on src[] is simd.{Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
+//
 // 1. len(src) = (len(dst) + 1) / 2.
+//
 // 2. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
-//    the same is true for dst.
+// the same is true for dst.
+//
 // 3. The caller does not care if a few bytes past the end of dst[] are
-//    changed.
+// changed.
 func UnpackSeqUnsafe(dst, src []byte) {
 	// Based on simd.PackedNibbleLookupUnsafe().  Differences are (i) even/odd is
 	// swapped, and (ii) no table lookup is necessary.
@@ -108,6 +113,7 @@ func UnpackSeqUnsafe(dst, src []byte) {
 //   if pos is even, dst[pos] := src[pos / 2] >> 4
 //   if pos is odd, dst[pos] := src[pos / 2] & 15
 // It panics if len(src) != (len(dst) + 1) / 2.
+//
 // Nothing bad happens if len(dst) is odd and some low bits in the last src[]
 // byte are set, though it's generally good practice to ensure that case
 // doesn't come up.
@@ -142,18 +148,23 @@ func UnpackSeq(dst, src []byte) {
 //   if pos is odd, low 4 bits of dst[pos / 2] := src[pos]
 //   if len(src) is odd, the low 4 bits of dst[len(src) / 2] are zero
 // This is the inverse of UnpackSeqUnsafe().
+//
 // WARNING: This is a function designed to be used in inner loops, which makes
 // assumptions about length and capacity which aren't checked at runtime.  Use
 // the safe version of this function when that's a problem.
 // Assumptions #3-4 are always satisfied when the last
 // potentially-size-increasing operation on src[] is simd.{Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
+//
 // 1. len(dst) = (len(src) + 1) / 2.
+//
 // 2. All elements of src[] are less than 16.
+//
 // 3. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
-//    the same is true for dst.
+// the same is true for dst.
+//
 // 4. The caller does not care if a few bytes past the end of dst[] are
-//    changed.
+// changed.
 func PackSeqUnsafe(dst, src []byte) {
 	srcLen := len(src)
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
@@ -170,7 +181,9 @@ func PackSeqUnsafe(dst, src []byte) {
 //   if pos is odd, low 4 bits of dst[pos / 2] := src[pos]
 //   if len(src) is odd, the low 4 bits of dst[len(src) / 2] are zero
 // It panics if len(dst) != (len(src) + 1) / 2.
+//
 // This is the inverse of UnpackSeq().
+//
 // WARNING: Actual values in dst[] bytes may be garbage if any src[] bytes are
 // greater than 15; this function only guarantees that no buffer overflow will
 // occur.
@@ -201,17 +214,21 @@ func PackSeq(dst, src []byte) {
 //   if pos is even, dst[pos] := table[src[pos / 2] >> 4]
 //   if pos is odd, dst[pos] := table[src[pos / 2] & 15]
 // It panics if len(src) != (len(dst) + 1) / 2.
+//
 // WARNING: This is a function designed to be used in inner loops, which makes
 // assumptions about length and capacity which aren't checked at runtime.  Use
 // the safe version of this function when that's a problem.
 // Assumptions #2-#3 are always satisfied when the last
 // potentially-size-increasing operation on src[] is {Re}makeUnsafe(),
 // ResizeUnsafe(), or XcapUnsafe(), and the same is true for dst[].
+//
 // 1. len(src) == (len(dst) + 1) / 2.
+//
 // 2. Capacity of src is at least RoundUpPow2(len(src) + 1, bytesPerVec), and
-//    the same is true for dst.
+// the same is true for dst.
+//
 // 3. The caller does not care if a few bytes past the end of dst[] are
-//    changed.
+// changed.
 func UnpackAndReplaceSeqUnsafe(dst, src []byte, tablePtr *[16]byte) {
 	// Minor variant of simd.PackedNibbleLookupUnsafe().
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
@@ -223,6 +240,7 @@ func UnpackAndReplaceSeqUnsafe(dst, src []byte, tablePtr *[16]byte) {
 //   if pos is even, dst[pos] := table[src[pos / 2] >> 4]
 //   if pos is odd, dst[pos] := table[src[pos / 2] & 15]
 // It panics if len(src) != (len(dst) + 1) / 2.
+//
 // Nothing bad happens if len(dst) is odd and some low bits in the last src[]
 // byte are set, though it's generally good practice to ensure that case
 // doesn't come up.

@@ -29,8 +29,10 @@ func countNibblesInTwoSetsSSE41Asm(cnt2Ptr *int, src unsafe.Pointer, table1Ptr, 
 // PackedSeqCount counts the number of .bam base codes in positions
 // startPos..(endPos - 1) of seq4 in the given set, where seq4 is in .bam
 // packed 4-bit big-endian format.
+//
 // The set must be represented as table[x] == 1 when code x is in the set, and
 // table[x] == 0 when code x isn't.
+//
 // WARNING: This function does not validate the table, startPos, or endPos.  It
 // may crash or return a garbage result on invalid input.  (However, it won't
 // corrupt memory.)
@@ -64,8 +66,10 @@ func PackedSeqCount(seq4 []byte, tablePtr *[16]byte, startPos, endPos int) int {
 // PackedSeqCountTwo counts the number of .bam base codes in positions
 // startPos..(endPos - 1) of seq4 in the given two set, where seq4 is in .bam
 // packed 4-bit big-endian format.
+//
 // The sets must be represented as table[x] == 1 when code x is in the set, and
 // table[x] == 0 when code x isn't.
+//
 // WARNING: This function does not validate the tables, startPos, or endPos.
 // It may crash or return garbage results on invalid input.  (However, it won't
 // corrupt memory.)
