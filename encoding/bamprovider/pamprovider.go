@@ -83,6 +83,7 @@ func (p *PAMProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, err
 		SplitUnmappedCoords:                opts.SplitUnmappedCoords,
 		AlwaysSplitMappedAndUnmappedCoords: opts.AlwaysSplitMappedAndUnmappedCoords,
 		BytesPerShard:                      opts.BytesPerShard,
+		NumShards:                          opts.NumShards,
 	}
 	if !opts.IncludeUnmapped {
 		popts.Range = gbam.MappedRange

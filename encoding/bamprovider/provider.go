@@ -67,6 +67,10 @@ type GenerateShardsOpts struct {
 	// ByteBased sharding strategy.
 	BytesPerShard int64
 
+	// NumShards is the target shard count. It is consulted by the ByteBased sharding
+	// strategy, and is ignored if BytesPerShard is set.
+	NumShards int
+
 	// MinBasesPerShard defines the nimimum number of bases in each shard. This is
 	// consulted only in ByteBased sharding strategy.
 	MinBasesPerShard int

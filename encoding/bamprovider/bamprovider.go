@@ -206,7 +206,16 @@ func (b *BAMProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, err
 		return nil, err
 	}
 	if opts.BytesPerShard <= 0 {
-		opts.BytesPerShard = DefaultBytesPerShard
+		if opts.NumShards > 0 {
+			info, err := file.Stat(vcontext.Background(), b.Path)
+			if err != nil {
+				return nil, err
+			}
+			opts.BytesPerShard = info.Size() / int64(opts.NumShards)
+		}
+		if opts.BytesPerShard < DefaultBytesPerShard {
+			opts.BytesPerShard = DefaultBytesPerShard
+		}
 	}
 	if opts.MinBasesPerShard <= 0 {
 		opts.MinBasesPerShard = DefaultMinBasesPerShard
