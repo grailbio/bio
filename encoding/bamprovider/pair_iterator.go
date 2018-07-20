@@ -61,6 +61,7 @@ type PairIterator struct {
 func NewPairIterators(provider Provider, includeUnmapped bool) ([]*PairIterator, error) {
 	parallelism := runtime.NumCPU()
 	shards, err := provider.GenerateShards(GenerateShardsOpts{
+		Strategy:            ByteBased,
 		Padding:             0,
 		IncludeUnmapped:     includeUnmapped,
 		SplitUnmappedCoords: true})
