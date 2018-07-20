@@ -37,7 +37,12 @@ type BAMProvider struct {
 	mu        sync.Mutex
 	nActive   int
 	freeIters []*bamIterator
-	header    *sam.Header
+
+	indexOnce sync.Once
+	index     *bam.Index
+
+	headerOnce sync.Once
+	header     *sam.Header
 }
 
 type bamIterator struct {
@@ -64,28 +69,62 @@ func (b *BAMProvider) indexPath() string {
 	return index
 }
 
+// readIndex reads the *.bai file and caches its contents in b.index.  Repeated
+// calls to this function returns b.index.
+func (b *BAMProvider) readIndex() (*bam.Index, error) {
+	b.indexOnce.Do(func() {
+		ctx := vcontext.Background()
+		in, err := file.Open(ctx, b.indexPath())
+		if err != nil {
+			b.err.Set(err)
+			return
+		}
+		var i *bam.Index
+		if i, err = bam.ReadIndex(in.Reader(ctx)); err != nil {
+			b.err.Set(err)
+			return
+		}
+		if err = in.Close(ctx); err != nil {
+			b.err.Set(err)
+			return
+		}
+		b.index = i
+	})
+	if err := b.err.Err(); err != nil {
+		return nil, err
+	}
+	return b.index, nil
+}
+
 // GetHeader implements the Provider interface.
 func (b *BAMProvider) GetHeader() (*sam.Header, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.header != nil {
-		return b.header, nil
-	}
-
-	ctx := vcontext.Background()
-	reader, err := file.Open(ctx, b.Path)
-	if err != nil {
-		b.err.Set(err)
+	b.headerOnce.Do(func() {
+		ctx := vcontext.Background()
+		reader, err := file.Open(ctx, b.Path)
+		if err != nil {
+			b.err.Set(err)
+			return
+		}
+		bamReader, err := bam.NewReader(reader.Reader(ctx), 1)
+		if err != nil {
+			b.err.Set(err)
+			reader.Close(ctx) // nolint: errcheck
+			return
+		}
+		b.header = bamReader.Header()
+		if err := bamReader.Close(); err != nil {
+			b.err.Set(err)
+			reader.Close(ctx) // nolint: errcheck
+			return
+		}
+		if err := reader.Close(ctx); err != nil {
+			b.err.Set(err)
+			return
+		}
+	})
+	if err := b.err.Err(); err != nil {
 		return nil, err
 	}
-	defer reader.Close(ctx)
-	bamReader, err := bam.NewReader(reader.Reader(ctx), 1)
-	if err != nil {
-		b.err.Set(err)
-		return nil, err
-	}
-	defer bamReader.Close()
-	b.header = bamReader.Header()
 	return b.header, nil
 }
 
@@ -108,6 +147,7 @@ func (b *BAMProvider) freeIterator(i *bamIterator) {
 	i.active = false
 	if i.Err() != nil {
 		// The iter may be invalid. Don't reuse it.
+		vlog.Errorf("freeiterator: %v", i.Err())
 		i.internalClose() // Will set b.err
 		i = nil
 	}
@@ -145,17 +185,11 @@ func (b *BAMProvider) allocateIterator() *bamIterator {
 		provider: b,
 		active:   true,
 	}
+	if iter.index, iter.err = b.readIndex(); iter.err != nil {
+		return &iter
+	}
 	ctx := vcontext.Background()
 	if iter.in, iter.err = file.Open(ctx, b.Path); iter.err != nil {
-		return &iter
-	}
-
-	var indexIn file.File
-	if indexIn, iter.err = file.Open(ctx, b.indexPath()); iter.err != nil {
-		return &iter
-	}
-	defer indexIn.Close(ctx)
-	if iter.index, iter.err = bam.ReadIndex(indexIn.Reader(ctx)); iter.err != nil {
 		return &iter
 	}
 	if iter.reader, iter.err = bam.NewReader(iter.in.Reader(ctx), 1); iter.err != nil {
