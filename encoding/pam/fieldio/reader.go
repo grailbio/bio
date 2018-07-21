@@ -1,13 +1,11 @@
+// Package fieldio provides a reader and a writer for individual column (field).
 package fieldio
 
 import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"path/filepath"
 	"reflect"
-	"sync"
-	"sync/atomic"
 	"unsafe"
 
 	"github.com/biogo/hts/sam"
@@ -25,36 +23,33 @@ import (
 
 // Reader reads a sequence of values for one field type.
 type Reader struct {
-	field          gbam.FieldType
-	requestedRange biopb.CoordRange           // copy of ReadOpts.Range.
-	label          string                     // for vlogging only.
-	in             file.File                  // For reading the data file.
-	rin            io.ReadSeeker              // in.Reader
-	rio            recordio.Scanner           // recordio wrapper for "in".
-	index          biopb.PAMFieldIndex        // Contents of *<fieldname>.index file.
-	blocks         []biopb.PAMBlockIndexEntry // Subset of index.Blocks that intersect requestedRange.
-	fb             fieldReadBuf               // Current buffer being parsed.
-	err            *errorreporter.T
+	label  string                     // for vlogging only.
+	in     file.File                  // For reading the data file.
+	rin    io.ReadSeeker              // in.Reader
+	rio    recordio.Scanner           // recordio wrapper for "in".
+	index  biopb.PAMFieldIndex        // Contents of *<fieldname>.index file.
+	blocks []biopb.PAMBlockIndexEntry // Subset of index.Blocks that intersect requestedRange.
+	fb     fieldReadBuf               // Current buffer being parsed.
+	err    *errorreporter.T
 
-	// addrGenerator is used only when field==bam.FieldCoord
-	addrGenerator gbam.CoordGenerator
+	coordField    bool                // True if the field is gbam.FieldCoord.
+	addrGenerator gbam.CoordGenerator // Computes biopb.Coord.Seq. Used only when coordField=true.
 }
 
-// NewReader creates a new Reader. (path,shardRange) defines the path prefix and
-// the rowshard range of the data/index files. requestedRange is the coordinate
-// range to read, as requested by the user.
-func NewReader(path string, shardRange biopb.CoordRange, requestedRange biopb.CoordRange, f gbam.FieldType, errp *errorreporter.T) (*Reader, error) {
+// NewReader creates a new Reader that reads from the given path. Label is shown
+// in log messages. coordField should be true if the file stores the genomic
+// coordinate. Setting setting coordField=true enables the codepath that
+// computes biopb.Coord.Seq values.
+func NewReader(path, label string, coordField bool, errp *errorreporter.T) (*Reader, error) {
 	fr := &Reader{
-		field: f,
-		label: fmt.Sprintf("%s:s%s:u%s(%v)",
-			filepath.Base(path), pamutil.CoordRangePathString(shardRange), pamutil.CoordRangePathString(requestedRange), f),
-		requestedRange: requestedRange,
-		err:            errp,
+		coordField: coordField,
+		label:      label,
+		err:        errp,
 	}
 	ctx := vcontext.Background()
-	in, err := file.Open(ctx, pamutil.FieldDataPath(path, shardRange, f))
+	in, err := file.Open(ctx, path)
 	if err != nil {
-		return fr, errors.E(err, fmt.Sprintf("%v: Failed to open field data file for %v", path, f))
+		return fr, errors.E(err, fmt.Sprintf("%s: Failed to open field file for %s", label, path))
 	}
 	fr.in = in
 	fr.rin = fr.in.Reader(ctx)
@@ -65,7 +60,7 @@ func NewReader(path string, shardRange biopb.CoordRange, requestedRange biopb.Co
 		return fr, fmt.Errorf("%v: file does not contain an index: %v", path, fr.rio.Err())
 	}
 	if err := fr.index.Unmarshal(trailer); err != nil {
-		return fr, errors.E(err, fmt.Sprintf("%v: Failed to unmarshal field index for %v", path, f))
+		return fr, errors.E(err, fmt.Sprintf("%s: Failed to unmarshal field index for %s", label, path))
 	}
 	return fr, nil
 }
@@ -104,19 +99,26 @@ type StringDeltaMetadata struct {
 // ReadStringDeltaMetadata reads the length information for delta-encoded
 // string.  Pass the result to readStringDeltaField() to actually decode the
 // string.
-func (fr *Reader) ReadStringDeltaMetadata() StringDeltaMetadata {
+func (fr *Reader) ReadStringDeltaMetadata() (StringDeltaMetadata, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return StringDeltaMetadata{}, false
+	}
 	rb := &fr.fb
 	return StringDeltaMetadata{
 		PrefixLen: int(rb.defaultBuf.Uvarint32()),
 		DeltaLen:  int(rb.defaultBuf.Uvarint32()),
-	}
+	}, true
 }
 
 // SkipStringDeltaField skips a delta-encoded string.
+// It panics on EOF or any error.
 func (fr *Reader) SkipStringDeltaField() {
 	rb := &fr.fb
 	rb.remaining--
-	md := fr.ReadStringDeltaMetadata()
+	md, ok := fr.ReadStringDeltaMetadata()
+	if !ok {
+		panic(fr)
+	}
 	prefix := rb.prevString[:md.PrefixLen]
 	resizeBuf(&rb.prevString, md.PrefixLen+md.DeltaLen)
 	copy(rb.prevString, prefix)
@@ -144,34 +146,80 @@ func (fr *Reader) ReadStringDeltaField(md StringDeltaMetadata, arena *UnsafeAren
 }
 
 // ReadVarintDeltaField reads a field containing a delta-encoded int.
-func (fr *Reader) ReadVarintDeltaField() int64 {
+// It returns false on EOF or any error.
+func (fr *Reader) ReadVarintDeltaField() (int64, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
 	rb := &fr.fb
 	rb.remaining--
 	delta := rb.defaultBuf.Varint64()
 	value := rb.prevInt64Value0 + delta
 	rb.prevInt64Value0 = value
-	return value
+	return value, true
+}
+
+// SkipVarintDeltaField skips a varint-delta-encoded string.
+// It panics on EOF or any error.
+func (fr *Reader) SkipVarintDeltaField() {
+	if _, ok := fr.ReadVarintDeltaField(); !ok {
+		panic(fr)
+	}
 }
 
 // ReadVarintField reads a field containing a varint.
-func (fr *Reader) ReadVarintField() int64 {
+// It returns false on EOF or any error.
+func (fr *Reader) ReadVarintField() (int64, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
 	rb := &fr.fb
 	rb.remaining--
-	return rb.defaultBuf.Varint64()
+	return rb.defaultBuf.Varint64(), true
 }
 
-// ReadMapqField reads a mapq value.
-func (fr *Reader) ReadMapqField() byte {
-	rb := &fr.fb
-	rb.remaining--
-	return rb.defaultBuf.Uint8()
+// SkipVarintField skips the next varint-encoded field.
+// It panics on EOF or any error.
+func (fr *Reader) SkipVarintField() {
+	if _, ok := fr.ReadVarintField(); !ok {
+		panic(fr)
+	}
 }
 
-// ReadFlagsField reads a flags value.
-func (fr *Reader) ReadFlagsField() sam.Flags {
+// ReadUint8Field reads a mapq value. It returns false on EOF or any error.
+func (fr *Reader) ReadUint8Field() (uint8, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
 	rb := &fr.fb
 	rb.remaining--
-	return sam.Flags(rb.defaultBuf.Uint16())
+	return rb.defaultBuf.Uint8(), true
+}
+
+// SkipUint8Field skips the next uint8 value.  It panics on EOF or any
+// error.
+func (fr *Reader) SkipUint8Field() {
+	if _, ok := fr.ReadUint8Field(); !ok {
+		panic(fr)
+	}
+}
+
+// ReadUint16Field reads a uint16 value. It returns false on EOF or any error.
+func (fr *Reader) ReadUint16Field() (uint16, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
+	rb := &fr.fb
+	rb.remaining--
+	return rb.defaultBuf.Uint16(), true
+}
+
+// SkipUint16Field skips the next uint16 value.  It panics on EOF or any
+// error.
+func (fr *Reader) SkipUint16Field() {
+	if _, ok := fr.ReadUint16Field(); !ok {
+		panic(fr)
+	}
 }
 
 // Read a block from recordio and uncompress it.
@@ -216,6 +264,11 @@ func (fr *Reader) readNextBlock() bool {
 	fb.reset(addr,
 		fb.buf[fb.header.Offset:fb.header.BlobOffset],
 		fb.buf[fb.header.BlobOffset:limitOffset])
+
+	if fr.coordField {
+		start := fr.fb.index.StartAddr
+		fr.addrGenerator.LastRec = biopb.Coord{start.RefId, start.Pos, start.Seq - 1}
+	}
 	log.Debug.Printf("%v: Read block %+v, %d remaining", fr.label, addr, len(fr.blocks))
 	return true
 }
@@ -224,15 +277,21 @@ func (fr *Reader) readNextBlock() bool {
 func (fr *Reader) SkipCigarField() {
 	rb := &fr.fb
 	rb.remaining--
-	nOps := fr.ReadCigarLen()
+	nOps, ok := fr.ReadCigarLen()
+	if !ok {
+		panic(fr)
+	}
 	for i := 0; i < nOps; i++ {
 		rb.defaultBuf.Uvarint32()
 	}
 }
 
 // ReadCigarLen reads the the # of cigar ops.
-func (fr *Reader) ReadCigarLen() int {
-	return int(fr.fb.defaultBuf.Uvarint32())
+func (fr *Reader) ReadCigarLen() (int, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
+	return int(fr.fb.defaultBuf.Uvarint32()), true
 }
 
 // ReadCigarField reads next the Cigar field. The function call must be preceded
@@ -248,6 +307,7 @@ func (fr *Reader) ReadCigarField(nOps int, arena *UnsafeArena) sam.Cigar {
 }
 
 // SkipSeqField skips the next seq field.
+// It panics on EOF or any error.
 func (fr *Reader) SkipSeqField() {
 	rb := &fr.fb
 	rb.remaining--
@@ -263,8 +323,11 @@ func SeqBytes(n int) int {
 }
 
 // ReadSeqMetadata returns the length of the next seq field.
-func (fr *Reader) ReadSeqMetadata() int {
-	return int(fr.fb.defaultBuf.Uvarint32())
+func (fr *Reader) ReadSeqMetadata() (int, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
+	return int(fr.fb.defaultBuf.Uvarint32()), true
 }
 
 // ReadSeqField reads the Seq field. nBases must be obtained by calling
@@ -282,6 +345,7 @@ func (fr *Reader) ReadSeqField(nBases int, arena *UnsafeArena) sam.Seq {
 }
 
 // SkipQualField skips the next qual field.
+// It panics on EOF or any error.
 func (fr *Reader) SkipQualField() {
 	rb := &fr.fb
 	rb.remaining--
@@ -290,8 +354,11 @@ func (fr *Reader) SkipQualField() {
 }
 
 // ReadQualMetadata returns the size of the qual field.
-func (fr *Reader) ReadQualMetadata() int {
-	return int(fr.fb.defaultBuf.Uvarint32())
+func (fr *Reader) ReadQualMetadata() (int, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
+	return int(fr.fb.defaultBuf.Uvarint32()), true
 }
 
 // ReadQualField reads the next qual field. The function call must be preceded
@@ -316,7 +383,10 @@ type AuxMetadata struct {
 }
 
 // ReadAuxMetadata reads the number and the size information of the aux field.
-func (fr *Reader) ReadAuxMetadata() AuxMetadata {
+func (fr *Reader) ReadAuxMetadata() (AuxMetadata, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return AuxMetadata{}, false
+	}
 	rb := &fr.fb
 	nAux := int(rb.defaultBuf.Uvarint32())
 	if cap(rb.tmpAuxMd.Tags) < nAux {
@@ -341,14 +411,18 @@ func (fr *Reader) ReadAuxMetadata() AuxMetadata {
 			log.Panicf("Unknown aux tag: %+v", t)
 		}
 	}
-	return rb.tmpAuxMd
+	return rb.tmpAuxMd, true
 }
 
 // SkipAuxField skips the next aux field.
+// It panics on EOF or any error.
 func (fr *Reader) SkipAuxField() {
 	rb := &fr.fb
 	rb.remaining--
-	md := fr.ReadAuxMetadata()
+	md, ok := fr.ReadAuxMetadata()
+	if !ok {
+		panic(fr)
+	}
 	for _, tag := range md.Tags {
 		rb.blobBuf.RawBytes(tag.Len)
 	}
@@ -386,20 +460,27 @@ func (fr *Reader) ReadAuxField(md AuxMetadata, arena *UnsafeArena) []sam.Aux {
 	return aux
 }
 
-// ReadCoordField reads the next coordinate value.
-func (fr *Reader) ReadCoordField() biopb.Coord {
+// ReadCoordField reads the next coordinate value.  It returns false on EOF or
+// any error.
+func (fr *Reader) ReadCoordField() (biopb.Coord, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return biopb.Coord{}, false
+	}
 	rb := &fr.fb
 	rb.remaining--
 	refID := rb.prevInt64Value0 + rb.defaultBuf.Varint64()
 	rb.prevInt64Value0 = refID
 	pos := rb.prevInt64Value1 + rb.blobBuf.Varint64()
 	rb.prevInt64Value1 = pos
-	return fr.addrGenerator.Generate(int32(refID), int32(pos))
+	return fr.addrGenerator.Generate(int32(refID), int32(pos)), true
 }
 
 // PeekCoordField reads the next coordinate value without advancing the read
-// pointer.
-func (fr *Reader) PeekCoordField() biopb.Coord {
+// pointer. It returns false on EOF or any error.
+func (fr *Reader) PeekCoordField() (biopb.Coord, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return biopb.Coord{}, false
+	}
 	rb := &fr.fb
 	s0 := rb.defaultBuf.n
 	s1 := rb.blobBuf.n
@@ -411,71 +492,16 @@ func (fr *Reader) PeekCoordField() biopb.Coord {
 	save := fr.addrGenerator
 	coord := fr.addrGenerator.Generate(int32(refID), int32(pos))
 	fr.addrGenerator = save
-	return coord
+	return coord, true
 }
 
 // BlockStartAddr returns the coordinate of the first record in the current
 // block.
-func (fr *Reader) BlockStartAddr() biopb.Coord {
-	return fr.fb.index.StartAddr
-}
-
-// MaybeReadNextBlock reads the next recordio block if the current block had
-// been fully consumed, or no block has ever been read.
-func (fr *Reader) MaybeReadNextBlock() bool {
-	if fr.fb.remaining > 0 {
-		return true
+func (fr *Reader) BlockStartAddr() (biopb.Coord, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return biopb.Coord{}, false
 	}
-	if !fr.readNextBlock() {
-		return false
-	}
-	if fr.field == gbam.FieldCoord {
-		start := fr.fb.index.StartAddr
-		fr.addrGenerator.LastRec = biopb.Coord{start.RefId, start.Pos, start.Seq - 1}
-	}
-	return true
-}
-
-// Field returns the field type of the reader.
-func (fr *Reader) Field() gbam.FieldType { return fr.field }
-
-var (
-	dummyMu   sync.Mutex
-	dummyQual unsafe.Pointer // stores *[]byte
-	dummySeq  unsafe.Pointer // stores *[]sam.Doublet
-)
-
-// GetDummyQual returns a singleton qual string that contains dummy data.
-func GetDummyQual(length int) []byte {
-	buf := (*[]byte)(atomic.LoadPointer(&dummyQual))
-	if buf != nil && len(*buf) >= length {
-		return (*buf)[:length]
-	}
-	dummyMu.Lock()
-	newBuf := make([]byte, length)
-	for i := 0; i < length; i++ {
-		newBuf[i] = 0xff
-	}
-	atomic.StorePointer(&dummyQual, unsafe.Pointer(&newBuf))
-	dummyMu.Unlock()
-	return newBuf[:length]
-}
-
-// GetDummySeq returns a singleton seq string that contains dummy data.
-func GetDummySeq(length int) sam.Seq {
-	n := (length + 1) / 2
-	buf := (*[]sam.Doublet)(atomic.LoadPointer(&dummySeq))
-	if buf != nil && len(*buf) >= n {
-		return sam.Seq{Length: length, Seq: (*buf)[:n]}
-	}
-	dummyMu.Lock()
-	newBuf := make([]sam.Doublet, length)
-	for i := 0; i < length; i++ {
-		newBuf[i] = 0xf
-	}
-	atomic.StorePointer(&dummySeq, unsafe.Pointer(&newBuf))
-	dummyMu.Unlock()
-	return sam.Seq{Length: length, Seq: newBuf[:n]}
+	return fr.fb.index.StartAddr, true
 }
 
 func readBlockHeader(buf *[]byte) (biopb.PAMBlockHeader, error) {
@@ -521,7 +547,7 @@ func (fr *Reader) Close() {
 // requested.  It returns the start coordinate of the first recordio block to be
 // read.
 //
-// REQUIRES: MaybeReadNextBlock has never been called.
+// REQUIRES: maybeReadNextBlock has never been called.
 func (fr *Reader) Seek(requestedRange biopb.CoordRange) (biopb.Coord, bool) {
 	fr.blocks = nil
 	for _, b := range fr.Index().Blocks {

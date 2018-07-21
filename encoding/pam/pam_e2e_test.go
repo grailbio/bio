@@ -27,7 +27,6 @@ import (
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/bio/encoding/converter"
 	"github.com/grailbio/bio/encoding/pam"
-	"github.com/grailbio/bio/encoding/pam/fieldio"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
@@ -197,7 +196,7 @@ func TestReadSubsetColumns(t *testing.T) {
 	for r.Scan() {
 		rec := r.Record()
 		m := model[n]
-		m.Qual = fieldio.GetDummyQual(rec.Seq.Length)
+		m.Qual = pam.GetDummyQual(rec.Seq.Length)
 		m.Name = ""
 		require.Equal(t, rec.String(), m.String())
 		n++
@@ -226,7 +225,7 @@ func TestReadSubsetColumns(t *testing.T) {
 	for r.Scan() {
 		rec := r.Record()
 		m := model[n]
-		m.Seq = fieldio.GetDummySeq(len(m.Qual))
+		m.Seq = pam.GetDummySeq(len(m.Qual))
 		m.AuxFields = nil
 		require.Equal(t, rec.String(), m.String())
 		n++

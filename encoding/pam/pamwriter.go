@@ -6,6 +6,7 @@ package pam
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	"github.com/biogo/hts/sam"
@@ -163,7 +164,7 @@ func (w *Writer) Write(r *sam.Record) {
 		w.fieldWriters[gbam.FieldFlags].PutUint16Field(addr, uint16(r.Flags))
 	}
 	if w.fieldWriters[gbam.FieldMapq] != nil {
-		w.fieldWriters[gbam.FieldMapq].PutByteField(addr, r.MapQ)
+		w.fieldWriters[gbam.FieldMapq].PutUint8Field(addr, r.MapQ)
 	}
 	if w.fieldWriters[gbam.FieldCigar] != nil {
 		w.fieldWriters[gbam.FieldCigar].PutCigarField(addr, r.Cigar)
@@ -252,7 +253,10 @@ func NewWriter(wo WriteOpts, samHeader *sam.Header, dir string) *Writer {
 		if dropField[f] {
 			continue
 		}
-		fw := fieldio.NewWriter(dir, w.opts.Range, w.opts.Transformers, gbam.FieldType(f), w.bufPool, &w.err)
+
+		path := pamutil.FieldDataPath(dir, w.opts.Range, gbam.FieldType(f))
+		label := fmt.Sprintf("%s:%s:%v", filepath.Base(dir), pamutil.CoordRangePathString(w.opts.Range), gbam.FieldType(f))
+		fw := fieldio.NewWriter(path, label, w.opts.Transformers, w.bufPool, &w.err)
 		w.fieldWriters[f] = fw
 	}
 	return w

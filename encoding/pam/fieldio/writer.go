@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"path/filepath"
 	"sync"
 
 	"github.com/biogo/hts/sam"
@@ -28,13 +27,10 @@ const (
 
 // Writer buffers values of one field and writes them to a recordio file.
 type Writer struct {
-	field      gbam.FieldType   // const after construction
-	label      string           // for logging
-	path       string           // The PAM path prefix
-	shardRange biopb.CoordRange // The shard record range; passed from Opts.Range
-	out        file.File        // output destination.
-	wout       io.Writer        // out.Writer
-	rio        recordio.Writer  // recordio wrapper for out.
+	label string          // for logging
+	out   file.File       // output destination.
+	wout  io.Writer       // out.Writer
+	rio   recordio.Writer // recordio wrapper for out.
 
 	// Value to be assigned to the "seq" field of a new fieldWriteBuf.
 	nextBlockSeq int
@@ -58,7 +54,6 @@ type Writer struct {
 // fieldWriteBuf contains bytes for one field but for sam.Records in a
 // compression block.
 type fieldWriteBuf struct {
-	field      gbam.FieldType
 	label      string      // for logging only.
 	seq        int         // sequence number, 0, 1, 2, ...
 	numRecords int         // # of records written so far.
@@ -84,8 +79,7 @@ func (wb *fieldWriteBuf) totalLen() int {
 
 // Reset the state so that it can be reused for serializing another set of
 // records. It avoids unnecessary memory allocation.
-func (wb *fieldWriteBuf) reset(seq int, label string, f gbam.FieldType) {
-	wb.field = f
+func (wb *fieldWriteBuf) reset(seq int, label string) {
 	wb.seq = seq
 	wb.label = label
 	wb.defaultBuf.n = 0
@@ -150,8 +144,8 @@ func (fw *Writer) PutUint16Field(addr biopb.Coord, v uint16) {
 	wb.defaultBuf.PutUint16(v)
 }
 
-// PutUint16Field adds a byte field.
-func (fw *Writer) PutByteField(addr biopb.Coord, v byte) {
+// PutUint8Field adds a byte field.
+func (fw *Writer) PutUint8Field(addr biopb.Coord, v byte) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
 	wb.defaultBuf.PutByte(v)
@@ -271,7 +265,6 @@ func (fw *Writer) marshalBlock(scratch []byte, v interface{}) ([]byte, error) {
 	blobOffset := len(defaultData)
 
 	header := biopb.PAMBlockHeader{
-		Field:      int32(wb.field),
 		Offset:     uint32(defaultOffset),
 		BlobOffset: uint32(blobOffset),
 	}
@@ -329,7 +322,7 @@ func (fw *Writer) NewBuf() {
 	wb := vv.(*fieldWriteBuf)
 	seq := fw.nextBlockSeq
 	fw.nextBlockSeq++
-	wb.reset(seq, fmt.Sprintf("%s:%d", fw.label, seq), fw.field)
+	wb.reset(seq, fmt.Sprintf("%s:%d", fw.label, seq))
 	fw.buf = wb
 }
 
@@ -351,7 +344,6 @@ func (fw *Writer) Close() {
 		index := biopb.PAMFieldIndex{
 			Magic:   FieldIndexMagic,
 			Version: pamutil.DefaultVersion,
-			Field:   int32(fw.field),
 			Blocks:  fw.blockIndexes,
 		}
 		log.Debug.Printf("creating index with %d blocks", len(index.Blocks))
@@ -369,13 +361,12 @@ func (fw *Writer) Close() {
 	}
 }
 
-func NewWriter(path string, shardRange biopb.CoordRange, transformers []string, f gbam.FieldType, bufFreePool *WriteBufPool, errReporter *errorreporter.T) *Writer {
+// NewWriter creates a new field writer that writes to the given path. Label is
+// used for logging. Transformers is set as the recordio transformers.
+func NewWriter(path, label string, transformers []string, bufFreePool *WriteBufPool, errReporter *errorreporter.T) *Writer {
 	mu := &sync.Mutex{}
 	fw := &Writer{
-		field:            f,
-		label:            fmt.Sprintf("%s:%s:%v", filepath.Base(path), pamutil.CoordRangePathString(shardRange), f),
-		path:             path,
-		shardRange:       shardRange,
+		label:            label,
 		bufFreePool:      bufFreePool,
 		mu:               mu,
 		cond:             sync.NewCond(mu),
@@ -385,7 +376,7 @@ func NewWriter(path string, shardRange biopb.CoordRange, transformers []string, 
 	fw.NewBuf()
 	// Create a recordio file
 	ctx := vcontext.Background()
-	out, err := file.Create(ctx, pamutil.FieldDataPath(path, shardRange, f))
+	out, err := file.Create(ctx, path)
 	if err != nil {
 		fw.err.Set(err)
 		return fw
