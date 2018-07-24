@@ -131,7 +131,7 @@ func (b *BAMProvider) GetHeader() (*sam.Header, error) {
 // Close implements the Provider interface.
 func (b *BAMProvider) Close() error {
 	if b.nActive > 0 {
-		vlog.Fatalf("%d iterators still active for %+v", b.nActive, b)
+		vlog.Panicf("%d iterators still active for %+v", b.nActive, b)
 	}
 	for _, iter := range b.freeIters {
 		iter.internalClose()
@@ -142,7 +142,7 @@ func (b *BAMProvider) Close() error {
 
 func (b *BAMProvider) freeIterator(i *bamIterator) {
 	if !i.active {
-		vlog.Fatal(i)
+		vlog.Panic(i)
 	}
 	i.active = false
 	if i.Err() != nil {
@@ -157,7 +157,7 @@ func (b *BAMProvider) freeIterator(i *bamIterator) {
 	}
 	b.nActive--
 	if b.nActive < 0 {
-		vlog.Fatalf("Negative active count for %+v", b)
+		vlog.Panicf("Negative active count for %+v", b)
 	}
 	b.mu.Unlock()
 }
@@ -358,7 +358,7 @@ func (i *bamIterator) findRecordOffset(ref *sam.Reference, startPos, endPos int)
 
 func (i *bamIterator) Scan() bool {
 	if !i.active {
-		vlog.Fatal("Reusing iterator")
+		vlog.Panic("Reusing iterator")
 	}
 	if i.err != nil {
 		return false

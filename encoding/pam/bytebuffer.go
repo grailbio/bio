@@ -113,7 +113,7 @@ func (b *byteBuffer) PutBytes(data []byte) {
 	dataLen := len(data)
 	b.ensure(dataLen)
 	if dataLen > len(b.buf)-b.n {
-		vlog.Fatalf("dataLen: %v, remaining: %v %v", dataLen, len(b.buf)-b.n, b.n)
+		vlog.Panicf("dataLen: %v, remaining: %v %v", dataLen, len(b.buf)-b.n, b.n)
 	}
 	copy(b.buf[b.n:], data)
 	b.n += dataLen
@@ -124,7 +124,7 @@ func (b *byteBuffer) PutString(data string) {
 	dataLen := len(data)
 	b.ensure(dataLen)
 	if dataLen > len(b.buf)-b.n {
-		vlog.Fatalf("dataLen: %v, remaining: %v %v", dataLen, len(b.buf)-b.n, b.n)
+		vlog.Panicf("dataLen: %v, remaining: %v %v", dataLen, len(b.buf)-b.n, b.n)
 	}
 	copy(b.buf[b.n:], data)
 	b.n += dataLen

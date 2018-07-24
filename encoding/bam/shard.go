@@ -189,14 +189,14 @@ func (g *CoordGenerator) Generate(refID, pos int32) biopb.Coord {
 		pos = 0
 	}
 	if refID < biopb.UnmappedRefID || pos < 0 {
-		vlog.Fatalf("Illegal addr: %v %v", refID, pos)
+		vlog.Panicf("Illegal addr: %v %v", refID, pos)
 	}
 	// See if the (refid,pos) has changed. If not, increment the "Seq" part.
 	a := biopb.Coord{RefId: refID, Pos: pos, Seq: 0}
 	p := biopb.Coord{RefId: g.LastRec.RefId, Pos: g.LastRec.Pos, Seq: 0}
 	cmp := a.Compare(p)
 	if cmp < 0 {
-		vlog.Fatalf("Record coordinate decreased from %+v to %v:%v", g.LastRec, refID, pos)
+		vlog.Panicf("Record coordinate decreased from %+v to %v:%v", g.LastRec, refID, pos)
 	}
 	if cmp == 0 {
 		g.LastRec.Seq++
@@ -338,7 +338,7 @@ func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, 
 				var err error
 				rec, err = GetCoordAtOffset(bamr, offset)
 				if err != nil {
-					vlog.Fatal(err)
+					vlog.Panic(err)
 				}
 				if int(rec.RefId) != refId {
 					vlog.VI(1).Infof("No more reads in refid %d %s, filepos %d", refId, ref.Name(), offset.File)
@@ -423,32 +423,32 @@ func ValidateShardList(shardList []Shard, padding int) {
 	var prevRef *sam.Reference
 	for i, shard := range shardList {
 		if shard.Start >= shard.End {
-			vlog.Fatalf("Shard start must preceed end for ref %s: %d, %d", shard.StartRef.Name(), shard.Start, shard.End)
+			vlog.Panicf("Shard start must preceed end for ref %s: %d, %d", shard.StartRef.Name(), shard.Start, shard.End)
 		}
 
 		if shard.StartRef == nil {
 			if i == len(shardList)-1 {
 				continue
 			}
-			vlog.Fatalf("Only the last shard may have nil Ref, not shard %d", i)
+			vlog.Panicf("Only the last shard may have nil Ref, not shard %d", i)
 		}
 
 		if i == 0 || shard.StartRef != prevRef {
 			prevRef = shard.StartRef
 			if shard.Start != 0 {
-				vlog.Fatalf("First shard of ref %s should start at 0, not %d", shard.StartRef.Name(), shard.Start)
+				vlog.Panicf("First shard of ref %s should start at 0, not %d", shard.StartRef.Name(), shard.Start)
 			}
 		} else {
 			if shard.Start != shardList[i-1].End {
-				vlog.Fatalf("Shard gap for ref %s between %d and %d", shard.StartRef.Name(), shardList[i-1].End, shard.Start)
+				vlog.Panicf("Shard gap for ref %s between %d and %d", shard.StartRef.Name(), shardList[i-1].End, shard.Start)
 			}
 		}
 		if i < len(shardList)-1 && shardList[i+1].StartRef != shard.StartRef && shard.End != shard.StartRef.Len() {
-			vlog.Fatalf("Last shard of %s should end at reference end: %d, %d", shard.StartRef.Name(), shard.End, shard.StartRef.Len())
+			vlog.Panicf("Last shard of %s should end at reference end: %d, %d", shard.StartRef.Name(), shard.End, shard.StartRef.Len())
 		}
 
 		if shard.Padding < 0 {
-			vlog.Fatalf("Padding must be non-negative: %d", shard.Padding)
+			vlog.Panicf("Padding must be non-negative: %d", shard.Padding)
 		}
 	}
 }

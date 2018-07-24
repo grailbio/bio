@@ -105,7 +105,7 @@ type ShardedBAMCompressor struct {
 // crash.
 func (c *ShardedBAMCompressor) StartShard(shardNum int) error {
 	if c.output != nil {
-		vlog.Fatalf("existing shard still in progress")
+		vlog.Panicf("existing shard still in progress")
 	}
 	c.output = &shardedBAMBuffer{
 		// The client sees shardNum start at 0, but internally,

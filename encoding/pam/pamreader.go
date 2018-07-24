@@ -242,7 +242,7 @@ func (r *ShardReader) readRecord() *sam.Record {
 	if coord.LT(r.requestedRange.Start) {
 		// This can't happen; seek() should have moved the read pointer >=
 		// requestedRange.Start.
-		vlog.Fatalf("Record too small: %v, requested %+v", r, r.requestedRange)
+		vlog.Panicf("Record too small: %v, requested %+v", r, r.requestedRange)
 	}
 	if coord.GE(r.requestedRange.Limit) {
 		return nil
@@ -453,7 +453,7 @@ func NewShardReader(
 		return r
 	}
 	if !r.requestedRange.Intersects(r.shardRange) {
-		vlog.Fatalf("%v: Range doesn't intersect", r.label)
+		vlog.Panicf("%v: Range doesn't intersect", r.label)
 	}
 
 	for f := range r.needField {

@@ -115,13 +115,13 @@ func generateShardBoundaries(bamPath, baiPath string, bytesPerShard int64) ([]ba
 		if chunk.File >= nextGoalOff {
 			coord, err := gbam.GetCoordAtOffset(bamr, chunk)
 			if err != nil {
-				vlog.Fatal(err)
+				vlog.Panic(err)
 				continue
 			}
 			if len(bounds) > 0 {
 				cmp := coord.Compare(bounds[len(bounds)-1].rec)
 				if cmp < 0 {
-					vlog.Fatalf("BAM record not sorted properly: %+v %+v", coord, bounds)
+					vlog.Panicf("BAM record not sorted properly: %+v %+v", coord, bounds)
 				}
 				if cmp == 0 {
 					continue

@@ -103,7 +103,7 @@ func readAndSubsetIndexes(ctx context.Context, files []FileInfo, recRange biopb.
 		const sampledField = gbam.FieldSeq
 		index, err := readFieldIndex(ctx, indexFile.Dir, indexFile.Range, sampledField)
 		if err != nil {
-			vlog.Fatalf("%+v: failed to read index: %v", indexFile, err)
+			vlog.Panicf("%+v: failed to read index: %v", indexFile, err)
 			return nil, err
 		}
 		vlog.VI(1).Infof("Read index: %+v", index)
@@ -240,7 +240,7 @@ func GenerateReadShards(opts GenerateReadShardsOpts, path string) ([]biopb.Coord
 	appendShard := func(limit biopb.Coord) { // Add shard [prevLimit, limit).
 		cmp := limit.Compare(prevLimit)
 		if cmp < 0 {
-			vlog.Fatalf("limit decreased %+v %+v", prevLimit, limit)
+			vlog.Panicf("limit decreased %+v %+v", prevLimit, limit)
 		}
 		if cmp == 0 {
 			return
