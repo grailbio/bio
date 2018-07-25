@@ -29,29 +29,29 @@ import (
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"github.com/grailbio/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/grailbio/testutil/assert"
+	"github.com/grailbio/testutil/expect"
 	"v.io/x/lib/vlog"
 )
 
 func mustOpenBAM(t testing.TB, bamPath string) *bam.Reader {
 	in, err := os.Open(bamPath)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	r, err := bam.NewReader(in, runtime.NumCPU())
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	// Note: file descriptor for "in" leaks here.
 	return r
 }
 
 func generatePAM(t testing.TB, opts pam.WriteOpts, pamPath, bamPath string) {
-	require.NoError(t, pam.ValidateCoordRange(&opts.Range))
+	assert.NoError(t, pam.ValidateCoordRange(&opts.Range))
 	rbam := mustOpenBAM(t, bamPath)
 	w := pam.NewWriter(opts, rbam.Header(), pamPath)
 	n := 0
 	for {
 		rec, err := rbam.Read()
 		if err != nil {
-			require.Equal(t, err, io.EOF)
+			assert.EQ(t, io.EOF, err)
 			break
 		}
 		vlog.VI(1).Infof("Org: %v", rec)
@@ -60,11 +60,11 @@ func generatePAM(t testing.TB, opts pam.WriteOpts, pamPath, bamPath string) {
 			continue
 		}
 		w.Write(rec)
-		require.NoError(t, w.Err())
+		assert.NoError(t, w.Err())
 		sam.PutInFreePool(rec)
 		n++
 	}
-	require.NoError(t, w.Close())
+	assert.NoError(t, w.Close())
 	vlog.Infof("Converted %v -> %v (%+v), %d records", bamPath, pamPath, opts, n)
 }
 
@@ -78,12 +78,12 @@ func verifyPAM(t *testing.T, opts pam.ReadOpts, pamPath, bamPath string) {
 }
 
 func verifyPAMWithShardedReader(t *testing.T, opts pam.ReadOpts, pamPath, bamPath string, shards []biopb.CoordRange) {
-	require.NoError(t, pam.ValidateCoordRange(&opts.Range))
+	assert.NoError(t, pam.ValidateCoordRange(&opts.Range))
 	in, err := os.Open(bamPath)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	defer in.Close()
 	rbam, err := bam.NewReader(in, 1)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	bamAddr := gbam.NewCoordGenerator()
 	readBAM := func() *sam.Record {
 		for {
@@ -114,13 +114,13 @@ func verifyPAMWithShardedReader(t *testing.T, opts pam.ReadOpts, pamPath, bamPat
 		for rpam.Scan() {
 			recPAM := rpam.Record()
 			recBAM := readBAM()
-			require.NotNilf(t, recBAM, "%d: missing BAM record for %v, with opts %+v", n, recPAM, localOpts)
-			require.Equal(t, recBAM.String(), recPAM.String())
+			assert.NotNil(t, recBAM, "%d: missing BAM record for %v, with opts %+v", n, recPAM, localOpts)
+			assert.EQ(t, recPAM.String(), recBAM.String())
 			sam.PutInFreePool(recPAM)
 			sam.PutInFreePool(recBAM)
 			n++
 		}
-		require.NoError(t, rpam.Close())
+		assert.NoError(t, rpam.Close())
 	}
 	if rec := readBAM(); rec != nil {
 		t.Fatalf("%d: Excess record in BAM: %v", n, rec)
@@ -133,7 +133,7 @@ func TestReadWriteMultipleBlocks(t *testing.T) {
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")
 	pamPath := filepath.Join(tempDir, "test")
 
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{MaxBufSize: 150}, pamPath, bamPath, "", math.MaxInt64))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{MaxBufSize: 150}, pamPath, bamPath, "", math.MaxInt64))
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
 }
 
@@ -143,31 +143,31 @@ func TestWriteEmptyFile(t *testing.T) {
 	rbam := mustOpenBAM(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam"))
 	pamPath := filepath.Join(tempDir, "test")
 	w := pam.NewWriter(pam.WriteOpts{}, rbam.Header(), pamPath)
-	require.NoError(t, w.Close())
+	assert.NoError(t, w.Close())
 	r := pam.NewReader(pam.ReadOpts{}, pamPath)
-	require.False(t, r.Scan(), "There should be no record")
-	require.NoError(t, r.Close())
+	assert.False(t, r.Scan(), "There should be no record")
+	assert.NoError(t, r.Close())
 }
 
 func TestNewWriterError(t *testing.T) {
 	rbam := mustOpenBAM(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam"))
 	rec, err := rbam.Read()
-	require.NoError(t, err)
-	require.NoError(t, rbam.Close())
+	assert.NoError(t, err)
+	assert.NoError(t, rbam.Close())
 
 	w := pam.NewWriter(pam.WriteOpts{}, rbam.Header(), "/non/existing")
 	w.Write(rec)
 	err = w.Close()
-	require.Error(t, err)
-	require.Regexp(t, "no such file or directory", err.Error())
+	assert.NotNil(t, err)
+	assert.Regexp(t, err.Error(), "no such file or directory")
 }
 
 func TestNewReaderError0(t *testing.T) {
 	r := pam.NewReader(pam.ReadOpts{}, "/non/existing")
-	require.False(t, r.Scan(), "No record is expected")
+	assert.False(t, r.Scan(), "No record is expected")
 	err := r.Close()
-	require.Error(t, err)
-	require.Regexp(t, ".*no index files found.*", err)
+	assert.NotNil(t, err)
+	assert.Regexp(t, err, ".*no index files found.*")
 }
 
 func TestReadSubsetColumns(t *testing.T) {
@@ -182,14 +182,14 @@ func TestReadSubsetColumns(t *testing.T) {
 			if err == io.EOF {
 				break
 			}
-			require.NoError(t, err)
+			assert.NoError(t, err)
 			model = append(model, rec)
 		}
 		return model
 	}
 
 	pamPath := newPAMPath(bamPath, tempDir)
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 	r := pam.NewReader(pam.ReadOpts{DropFields: []gbam.FieldType{gbam.FieldQual, gbam.FieldName}}, pamPath)
 	n := 0
 	model := readModel()
@@ -198,11 +198,11 @@ func TestReadSubsetColumns(t *testing.T) {
 		m := model[n]
 		m.Qual = pam.GetDummyQual(rec.Seq.Length)
 		m.Name = ""
-		require.Equal(t, rec.String(), m.String())
+		assert.EQ(t, m.String(), rec.String())
 		n++
 	}
-	require.Equal(t, n, len(model))
-	require.NoError(t, r.Close())
+	assert.EQ(t, len(model), n)
+	assert.NoError(t, r.Close())
 
 	r = pam.NewReader(pam.ReadOpts{DropFields: []gbam.FieldType{gbam.FieldQual, gbam.FieldSeq}}, pamPath)
 	model = readModel()
@@ -213,11 +213,11 @@ func TestReadSubsetColumns(t *testing.T) {
 		m.Qual = nil
 		m.Seq.Length = 0
 		m.Seq.Seq = nil
-		require.Equal(t, rec.String(), m.String())
+		assert.EQ(t, m.String(), rec.String())
 		n++
 	}
-	require.Equal(t, n, len(model))
-	require.NoError(t, r.Close())
+	assert.EQ(t, len(model), n)
+	assert.NoError(t, r.Close())
 
 	r = pam.NewReader(pam.ReadOpts{DropFields: []gbam.FieldType{gbam.FieldSeq, gbam.FieldAux}}, pamPath)
 	model = readModel()
@@ -227,11 +227,11 @@ func TestReadSubsetColumns(t *testing.T) {
 		m := model[n]
 		m.Seq = pam.GetDummySeq(len(m.Qual))
 		m.AuxFields = nil
-		require.Equal(t, rec.String(), m.String())
+		assert.EQ(t, m.String(), rec.String())
 		n++
 	}
-	require.Equal(t, n, len(model))
-	require.NoError(t, r.Close())
+	assert.EQ(t, len(model), n)
+	assert.NoError(t, r.Close())
 }
 
 func TestReadWriteUnmapped(t *testing.T) {
@@ -240,7 +240,7 @@ func TestReadWriteUnmapped(t *testing.T) {
 
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
 	// Test subrange reads.
 	testCases := []struct {
@@ -266,12 +266,12 @@ func TestReadWriteUnmapped(t *testing.T) {
 		vlog.VI(1).Infof("Start test %+v", tc)
 		r := pam.NewReader(tc.opts, pamPath)
 		for _, name := range tc.expected {
-			require.True(t, r.Scan(), tc)
+			assert.True(t, r.Scan(), tc)
 			rec := r.Record()
-			require.Equal(t, rec.Name, name, tc)
+			assert.EQ(t, name, rec.Name, tc)
 		}
-		require.False(t, r.Scan(), "extra rec", tc)
-		require.NoError(t, r.Close(), tc)
+		assert.False(t, r.Scan(), "extra rec", tc)
+		assert.NoError(t, r.Close(), tc)
 	}
 	// Do GC frequently and make sure we haven't screwed up unsafe arena
 	// management.
@@ -281,9 +281,9 @@ func TestReadWriteUnmapped(t *testing.T) {
 			s0 := r.Record().String()
 			runtime.GC()
 			s1 := r.Record().String()
-			require.Equal(t, s0, s1)
+			assert.EQ(t, s1, s0)
 		}
-		require.NoError(t, r.Close())
+		assert.NoError(t, r.Close())
 	}
 }
 
@@ -294,13 +294,13 @@ func TestReadWriteLarge(t *testing.T) {
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
 
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
 }
 
 func mustGenerateReadShards(t *testing.T, opts pam.GenerateReadShardsOpts, pamPath string) []biopb.CoordRange {
 	shards, err := pam.GenerateReadShards(opts, pamPath)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	return shards
 }
 
@@ -315,26 +315,26 @@ func TestSharder0(t *testing.T) {
 	defer cleanup()
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 
 	ranges := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 1}, pamPath)
-	assert.Equal(t, "0:0,-:-", boundString(ranges))
+	expect.EQ(t, boundString(ranges), "0:0,-:-")
 	ranges = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
 		NumShards:                          1,
 		AlwaysSplitMappedAndUnmappedCoords: true,
 	}, pamPath)
-	assert.Equal(t, "0:0,-:0 -:0,-:-", boundString(ranges))
+	expect.EQ(t, boundString(ranges), "0:0,-:0 -:0,-:-")
 	ranges = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
 		Range:     newRange(1, 2, 2, 100),
 		NumShards: 1,
 	}, pamPath)
-	assert.Equal(t, "1:2,2:100", boundString(ranges))
+	expect.EQ(t, boundString(ranges), "1:2,2:100")
 	ranges = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
 		Range:                              newRange(1, 2, 2, 100),
 		NumShards:                          1,
 		AlwaysSplitMappedAndUnmappedCoords: true,
 	}, pamPath)
-	assert.Equal(t, "1:2,2:100", boundString(ranges))
+	expect.EQ(t, boundString(ranges), "1:2,2:100")
 }
 
 func boundString(bounds []biopb.CoordRange) string {
@@ -354,18 +354,18 @@ func TestConvert(t *testing.T) {
 
 	// The bam file is 2.8MB, so with 1MB shard size, we expect three PAM
 	// shard files.
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<20))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<20))
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
 	indexes, err := pam.ListIndexes(pamPath)
-	require.NoError(t, err)
-	require.Equal(t, len(indexes), 3, "Index:", indexes)
+	assert.NoError(t, err)
+	assert.EQ(t, 3, len(indexes), "Index:", indexes)
 
 	// Try 256KB shard size.
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<18))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<18))
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
 	indexes, err = pam.ListIndexes(pamPath)
-	require.NoError(t, err)
-	require.Equal(t, len(indexes), 11, "Index:", indexes)
+	assert.NoError(t, err)
+	assert.EQ(t, 11, len(indexes), "Index:", indexes)
 }
 
 func TestSharder1(t *testing.T) {
@@ -387,12 +387,12 @@ func TestSharder1(t *testing.T) {
 
 	// Try creating just one shard. There will be one shard for each file.
 	shards := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 1}, pamPath)
-	require.Equal(t, 3, len(shards))
+	assert.EQ(t, len(shards), 3)
 	verifyPAMWithShardedReader(t, pam.ReadOpts{}, pamPath, bamPath, shards)
 
 	// The same test, but specify the params via BytesPerShard.
 	shards = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{BytesPerShard: math.MaxInt64}, pamPath)
-	require.Equal(t, 3, len(shards))
+	assert.EQ(t, len(shards), 3)
 	verifyPAMWithShardedReader(t, pam.ReadOpts{}, pamPath, bamPath, shards)
 }
 
@@ -444,11 +444,11 @@ func (st *syntheticTester) generatePAM(opts pam.WriteOpts, nRecords int,
 		ref, pos := posCallback(i)
 		rec, err := sam.NewRecord(fmt.Sprintf("seq%06d", i), ref, st.header.Refs()[1],
 			pos /*pos*/, pos+100 /*matepos*/, 10 /*templen*/, 60 /*mapq*/, cigar, seq, qual, nil)
-		require.NoErrorf(st.t, err, "ref=%v, pos=%d", ref, pos)
+		assert.NoError(st.t, err, "ref=%v, pos=%d", ref, pos)
 		w.Write(rec)
 		st.recs = append(st.recs, rec)
 	}
-	require.NoError(st.t, w.Close())
+	assert.NoError(st.t, w.Close())
 	return path
 }
 
@@ -463,13 +463,13 @@ func (st *syntheticTester) verifyPAM(shards []biopb.CoordRange) {
 		r := pam.NewReader(opts, st.pamPath)
 		for r.Scan() {
 			rec := r.Record()
-			require.Truef(st.t, n < len(st.recs), "n=%d, len=%d", n, len(st.recs))
-			require.Equalf(st.t, st.recs[n].String(), rec.String(), "n=%d", n)
+			assert.True(st.t, n < len(st.recs), "n=%d, len=%d", n, len(st.recs))
+			assert.EQ(st.t, rec.String(), st.recs[n].String(), "n=%d", n)
 			n++
 		}
-		require.NoError(st.t, r.Close())
+		assert.NoError(st.t, r.Close())
 	}
-	require.Equal(st.t, len(st.recs), n)
+	assert.EQ(st.t, n, len(st.recs))
 }
 
 // Create a synthetic PAM file where reads have unique coordinates.
@@ -482,9 +482,9 @@ func TestSyntheticUniquePositions(t *testing.T) {
 	ref := st.header.Refs()[0]
 	tmpPAMPath := st.generatePAM(writeOpts, nRecords, func(index int) (*sam.Reference, int) { return ref, index })
 	shards := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 16}, tmpPAMPath)
-	assert.Equalf(t, 16, len(shards), "Shards: %+v", shards)
+	expect.EQ(t, len(shards), 16, "Shards: %+v", shards)
 	for _, shard := range shards {
-		require.Truef(t, shard.Start.Seq == 0 && shard.Limit.Seq == 0, "Shard: %+v", shard)
+		assert.True(t, shard.Start.Seq == 0 && shard.Limit.Seq == 0, "Shard: %+v", shard)
 	}
 	st.verifyPAM(shards)
 }
@@ -499,8 +499,8 @@ func TestSyntheticAllReadsAtZero(t *testing.T) {
 	tmpPAMPath := st.generatePAM(writeOpts, nRecords, func(index int) (*sam.Reference, int) { return st.header.Refs()[0], 0 })
 	// With the default sharder, there will be only one shard.
 	shards := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 16}, tmpPAMPath)
-	assert.Equalf(t, 1, len(shards), "Shards: %+v", shards)
-	require.Truef(t, shards[0].Start.Seq == 0 && shards[0].Limit.Seq == 0, "Shards: %+v", shards)
+	expect.EQ(t, len(shards), 1, "Shards: %+v", shards)
+	assert.True(t, shards[0].Start.Seq == 0 && shards[0].Limit.Seq == 0, "Shards: %+v", shards)
 	st.verifyPAM(shards)
 
 	// Allow splitting positions.
@@ -509,17 +509,18 @@ func TestSyntheticAllReadsAtZero(t *testing.T) {
 		SplitMappedCoords:   true,
 		SplitUnmappedCoords: true,
 		NumShards:           numShards}, tmpPAMPath)
-	assert.Equal(t, numShards, len(shards))
+	expect.EQ(t, len(shards), numShards)
 	expectedRecordsPerShard := nRecords / numShards
 	for i, shard := range shards {
 		if shard.Limit.RefId == 0 {
-			assert.Equalf(t, int(shard.Start.RefId), 0, "shard=%v i=%v shards=%v", shard, i, shards)
-			assert.Equalf(t, int(shard.Limit.Pos), 0, "shard=%v i=%v shards=%v", shard, i, shards)
-			assert.True(t, shard.Limit.Seq > 0, "shard=%v i=%v shards=%v", shard, i, shards)
+			expect.EQ(t, 0, int(shard.Start.RefId), "shard=%v i=%v shards=%v", shard, i, shards)
+			expect.EQ(t, 0, int(shard.Limit.Pos), "shard=%v i=%v shards=%v", shard, i, shards)
+			expect.True(t, shard.Limit.Seq > 0, "shard=%v i=%v shards=%v", shard, i, shards)
 			nRecords := float64(shard.Limit.Seq - shard.Start.Seq)
-			assert.True(t,
+			expect.True(t,
 				nRecords > float64(expectedRecordsPerShard)*0.8 && nRecords < float64(expectedRecordsPerShard)*1.2,
 				"shard=%v nrecords=%v, expected=%v", shard, nRecords, expectedRecordsPerShard)
+
 		}
 	}
 	st.verifyPAM(shards)
@@ -542,12 +543,14 @@ func TestSyntheticHalfUnmapped(t *testing.T) {
 		SplitMappedCoords:   false,
 		SplitUnmappedCoords: true,
 		NumShards:           16}, tmpPAMPath)
-	assert.True(t, len(shards) > 1 && len(shards) < 16, shards)
+	expect.True(t, len(shards) > 1 && len(shards) < 16, shards)
 	for i, shard := range shards {
-		assert.Equalf(t,
-			shard.Start.Seq != 0,
-			shard.Start.RefId == biopb.UnmappedRefID,
+		expect.EQ(t,
+
+			shard.Start.RefId == biopb.UnmappedRefID, shard.Start.Seq != 0,
+
 			"Shard %d: %+v", i, shard)
+
 	}
 	st.verifyPAM(shards)
 
@@ -555,13 +558,15 @@ func TestSyntheticHalfUnmapped(t *testing.T) {
 		SplitMappedCoords:   true,
 		SplitUnmappedCoords: false,
 		NumShards:           16}, tmpPAMPath)
-	assert.True(t, len(shards) > 1 && len(shards) < 16, shards)
+	expect.True(t, len(shards) > 1 && len(shards) < 16, shards)
 	t.Logf("Found %v shards, %+v", len(shards), shards)
 	for i, shard := range shards {
-		assert.Equalf(t,
-			shard.Limit.Seq != 0,
-			shard.Limit.RefId != biopb.UnmappedRefID,
+		expect.EQ(t,
+
+			shard.Limit.RefId != biopb.UnmappedRefID, shard.Limit.Seq != 0,
+
 			"Shard %d: %+v", i, shard)
+
 	}
 	st.verifyPAM(shards)
 }
@@ -621,7 +626,7 @@ func BenchmarkConvert(b *testing.B) {
 		pamPath = filepath.Join(tempDir, "bench.pam")
 	}
 	for n := 0; n < b.N; n++ {
-		require.NoError(b, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, *bamFlag, "", math.MaxInt64))
+		assert.NoError(b, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, *bamFlag, "", math.MaxInt64))
 	}
 }
 
@@ -638,7 +643,7 @@ func BenchmarkReadPAM(b *testing.B) {
 	}
 	if files, err := filepath.Glob(pamPath + "*.index"); err != nil || len(files) == 0 {
 		vlog.Infof("Generating PAM files %v", pamPath)
-		require.NoError(b, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, *bamFlag, "", math.MaxInt64))
+		assert.NoError(b, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, *bamFlag, "", math.MaxInt64))
 	} else {
 		vlog.Infof("Reusing PAM files %v", pamPath)
 	}
@@ -648,7 +653,7 @@ func BenchmarkReadPAM(b *testing.B) {
 		if *dropFieldsFlag != "" {
 			for _, fieldName := range strings.Split(*dropFieldsFlag, ",") {
 				f, err := gbam.ParseFieldType(fieldName)
-				require.NoError(b, err)
+				assert.NoError(b, err)
 				opts.DropFields = append(opts.DropFields, f)
 			}
 		}
@@ -657,7 +662,7 @@ func BenchmarkReadPAM(b *testing.B) {
 			opts.Range = gbam.MappedRange
 		}
 		bounds, err := pam.GenerateReadShards(pam.GenerateReadShardsOpts{Range: opts.Range}, pamPath)
-		require.NoError(b, err)
+		assert.NoError(b, err)
 		boundCh := make(chan biopb.CoordRange, len(bounds))
 		for _, r := range bounds {
 			boundCh <- r
@@ -679,7 +684,7 @@ func BenchmarkReadPAM(b *testing.B) {
 						sam.PutInFreePool(rec)
 						nRecs++
 					}
-					require.NoError(b, r.Close())
+					assert.NoError(b, r.Close())
 					atomic.AddInt64(&totalRecs, nRecs)
 					end := time.Now()
 					vlog.Infof("Finish read %+v, %d recs %d ms", bound, nRecs, end.Sub(start)/time.Millisecond)
@@ -698,11 +703,11 @@ func BenchmarkReadBAM(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		provider := bamprovider.NewProvider(*bamFlag)
 		header, err := provider.GetHeader()
-		require.NoError(b, err)
+		assert.NoError(b, err)
 		shardList, err := gbam.GetPositionBasedShards(header, 100000, 0, *unmappedFlag)
-		require.NoError(b, err)
+		assert.NoError(b, err)
 		shardCh := gbam.NewShardChannel(shardList)
-		require.NoError(b, err)
+		assert.NoError(b, err)
 		parallelism := runtime.NumCPU()
 		totalRecs := int64(0)
 		wg := sync.WaitGroup{}
@@ -723,21 +728,21 @@ func BenchmarkReadBAM(b *testing.B) {
 						sam.PutInFreePool(record)
 					}
 					atomic.AddInt64(&totalRecs, nRecs)
-					require.NoError(b, iter.Close())
+					assert.NoError(b, iter.Close())
 				}
 			}()
 		}
 		wg.Wait()
-		require.NoError(b, provider.Close())
+		assert.NoError(b, provider.Close())
 		vlog.Infof("%v: read %d records", *bamFlag, totalRecs)
 	}
 }
 
 func mustCreate(t *testing.T, path string) {
 	fd, err := os.Create(path)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	fd.WriteString("foo")
-	require.NoError(t, fd.Close())
+	assert.NoError(t, fd.Close())
 }
 
 func TestRemove(t *testing.T) {
@@ -745,45 +750,45 @@ func TestRemove(t *testing.T) {
 	defer cleanup()
 
 	// Removing non-existing file should get no error.
-	require.NoError(t, pam.Remove(filepath.Join(tempDir, "gg")))
+	assert.NoError(t, pam.Remove(filepath.Join(tempDir, "gg")))
 
 	path := filepath.Join(tempDir, "f")
-	require.NoError(t, os.MkdirAll(path, 0777))
+	assert.NoError(t, os.MkdirAll(path, 0777))
 	mustCreate(t, filepath.Join(path, "0:0,2:123.index"))
 	mustCreate(t, filepath.Join(path, "0:0,2:123.aux"))
 
 	_, err := os.Stat(path)
-	require.NoError(t, err)
-	require.NoError(t, pam.Remove(path))
+	assert.NoError(t, err)
+	assert.NoError(t, pam.Remove(path))
 	_, err = os.Stat(path)
-	require.True(t, os.IsNotExist(err))
+	assert.True(t, os.IsNotExist(err))
 }
 
 func TestListIndexes(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 	path := filepath.Join(tempDir, "f")
-	require.NoError(t, os.MkdirAll(path, 0777))
+	assert.NoError(t, os.MkdirAll(path, 0777))
 	mustCreate(t, path+"/0:0,2:123.index")
 	mustCreate(t, path+"/2:123,10:200.index")
 	mustCreate(t, path+"/10:200,-:-.index")
 
 	indexes, err := pam.ListIndexes(path)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	expected := []biopb.CoordRange{
 		biopb.CoordRange{biopb.Coord{0, 0, 0}, biopb.Coord{2, 123, 0}},
 		biopb.CoordRange{biopb.Coord{2, 123, 0}, biopb.Coord{10, 200, 0}},
 		biopb.CoordRange{biopb.Coord{10, 200, 0}, biopb.Coord{biopb.InfinityRefID, biopb.InfinityPos, 0}}}
-	assert.Equal(t, len(indexes), len(expected))
+	expect.EQ(t, len(expected), len(indexes))
 	for i, e := range expected {
-		assert.Equal(t, e, indexes[i].Range)
+		expect.EQ(t, indexes[i].Range, e)
 	}
 
 	indexes, err = pam.ListIndexes(path + "/")
-	require.NoError(t, err)
-	assert.Equal(t, len(indexes), len(expected))
+	assert.NoError(t, err)
+	expect.EQ(t, len(expected), len(indexes))
 	for i, e := range expected {
-		assert.Equal(t, e, indexes[i].Range)
+		expect.EQ(t, indexes[i].Range, e)
 	}
 }
 

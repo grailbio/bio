@@ -9,17 +9,17 @@ import (
 
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
-	"github.com/stretchr/testify/assert"
+	"github.com/grailbio/testutil/expect"
 )
 
 func TestFieldType(t *testing.T) {
-	assert.Equal(t, gbam.FieldAux.String(), "aux")
+	expect.EQ(t, "aux", gbam.FieldAux.String())
 	f, err := gbam.ParseFieldType("aux")
-	assert.NoError(t, err)
-	assert.Equal(t, f, gbam.FieldAux)
+	expect.NoError(t, err)
+	expect.EQ(t, gbam.FieldAux, f)
 	f, err = gbam.ParseFieldType("coord")
-	assert.NoError(t, err)
-	assert.Equal(t, f, gbam.FieldCoord)
+	expect.NoError(t, err)
+	expect.EQ(t, gbam.FieldCoord, f)
 }
 
 func TestRecAddr(t *testing.T) {
@@ -36,8 +36,8 @@ func TestRecAddr(t *testing.T) {
 		// {biopb.Coord{0, 709305, 0}, biopb.Coord{0, 44478570, 0}, true, false},
 	}
 	for _, test := range tests {
-		assert.Equal(t, test.r0.LT(test.r1), test.lt, "LT: %+v", test)
-		assert.Equal(t, test.r0.GE(test.r1), test.ge, "GE: %+v", test)
+		expect.EQ(t, test.lt, test.r0.LT(test.r1), "LT: %+v", test)
+		expect.EQ(t, test.ge, test.r0.GE(test.r1), "GE: %+v", test)
 	}
 }
 
@@ -57,7 +57,7 @@ func TestRecRangeIntersects(t *testing.T) {
 			biopb.Coord{test.limitRefid0, test.limitPos0, 0}}
 		r1 := biopb.CoordRange{biopb.Coord{test.startRefid1, test.startPos1, 0},
 			biopb.Coord{test.limitRefid1, test.limitPos1, 0}}
-		assert.Equal(t, r0.Intersects(r1), test.intersect, test)
+		expect.EQ(t, test.intersect, r0.Intersects(r1), test)
 	}
 }
 
@@ -74,7 +74,7 @@ func TestRecRangeContains(t *testing.T) {
 	}
 	r := biopb.CoordRange{biopb.Coord{10, 20, 0}, biopb.Coord{15, 5, 0}}
 	for _, test := range tests {
-		assert.Equal(t, r.Contains(test.a), test.contains, test)
+		expect.EQ(t, test.contains, r.Contains(test.a), test)
 	}
 }
 
@@ -99,18 +99,18 @@ func TestParsePath(t *testing.T) {
 	for _, test := range tests {
 		fi, err := ParsePath(test.path)
 		if test.expectError {
-			assert.Error(t, err)
+			expect.NotNil(t, err)
 		} else {
-			assert.NoError(t, err)
+			expect.NoError(t, err)
 		}
-		assert.Equal(t, fi.Type, test.expectedType, "Test", test)
+		expect.EQ(t, test.expectedType, fi.Type, "Test", test)
 		if fi.Type != FileTypeUnknown {
-			assert.Equal(t, fi.Dir, test.expectedDir, "Test", test)
+			expect.EQ(t, test.expectedDir, fi.Dir, "Test", test)
 		}
-		assert.Equal(t, fi.Range.Start, test.expectedStart, "Test", test)
-		assert.Equal(t, fi.Range.Limit, test.expectedLimit, "Test", test)
+		expect.EQ(t, test.expectedStart, fi.Range.Start, "Test", test)
+		expect.EQ(t, test.expectedLimit, fi.Range.Limit, "Test", test)
 		if test.expectedField != gbam.FieldInvalid {
-			assert.Equal(t, fi.Field, test.expectedField, "Test", test)
+			expect.EQ(t, test.expectedField, fi.Field, "Test", test)
 		}
 	}
 }

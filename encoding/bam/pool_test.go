@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/grailbio/testutil/assert"
 )
 
 // Test the case where each goroutine calls Get immediately followed by Put.
@@ -22,14 +22,14 @@ func TestIndependentGets(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 10000; i++ {
 				v := p.Get()
-				require.Equal(t, Magic, v.Magic)
+				assert.EQ(t, v.Magic, Magic)
 				p.Put(v)
 			}
 		}()
 	}
 	wg.Wait()
 	// Allow some slack per thread.,
-	require.Truef(t, p.ApproxLen() <= numThreads*2, "Pool too large: %v", p.ApproxLen())
+	assert.True(t, p.ApproxLen() <= numThreads*2, "Pool too large: %v", p.ApproxLen())
 }
 
 // Test the case where each goroutine calls Get, and lets another goroutine calls Put.
@@ -46,7 +46,7 @@ func TestPutsByAnotherThread(t *testing.T) {
 			defer getterWg.Done()
 			for i := 0; i < getsPerThread; i++ {
 				v := p.Get()
-				require.Equal(t, Magic, v.Magic)
+				assert.EQ(t, v.Magic, Magic)
 				ch <- v
 			}
 		}()
@@ -59,7 +59,7 @@ func TestPutsByAnotherThread(t *testing.T) {
 		go func() {
 			defer putterWg.Done()
 			for v := range ch {
-				require.Equal(t, Magic, v.Magic)
+				assert.EQ(t, v.Magic, Magic)
 				p.Put(v)
 			}
 		}()
@@ -68,5 +68,5 @@ func TestPutsByAnotherThread(t *testing.T) {
 	close(ch)
 	putterWg.Wait()
 	// Allow some slack
-	require.Truef(t, p.ApproxLen() <= numThreads*getsPerThread/20, "Pool too large: %v", p.ApproxLen())
+	assert.True(t, p.ApproxLen() <= numThreads*getsPerThread/20, "Pool too large: %v", p.ApproxLen())
 }

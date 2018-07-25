@@ -16,9 +16,9 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/testutil"
+	"github.com/grailbio/testutil/assert"
+	"github.com/grailbio/testutil/expect"
 	"github.com/klauspost/compress/gzip"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"v.io/x/lib/vlog"
 )
 
@@ -37,20 +37,20 @@ var (
 
 func verifyBAM(t *testing.T, records []*sam.Record, bamBuffer *bytes.Buffer) {
 	reader, err := bam.NewReader(bamBuffer, 1)
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 	i := 0
 	for {
 		r, err := reader.Read()
 		if err == io.EOF {
-			assert.Equal(t, len(records), i, "not enough records in bam output %d vs %d", len(records), i)
+			expect.EQ(t, i, len(records), "not enough records in bam output %d vs %d", len(records), i)
 			break
 		}
 		expected, err := records[i].MarshalText()
-		assert.Nil(t, err)
+		expect.Nil(t, err)
 		actual, err := r.MarshalText()
-		assert.Nil(t, err)
+		expect.Nil(t, err)
 
-		assert.Equal(t, expected, actual, "record[%d] does not match %v vs %v", i, records[i], r)
+		expect.EQ(t, actual, expected, "record[%d] does not match %v vs %v", i, records[i], r)
 		i++
 	}
 }
@@ -77,35 +77,35 @@ func writeAndVerify(t *testing.T, header *sam.Header, records []*sam.Record, com
 
 		c := shardNum % compressors
 		err := shardCompressors[c].StartShard(shardNum)
-		require.Nil(t, err)
+		assert.Nil(t, err)
 
 		for _, r := range records[shardNum*(len(records)/shards) : (shardNum+1)*(len(records)/shards)] {
 			err := shardCompressors[c].AddRecord(r)
-			assert.Nil(t, err)
+			expect.Nil(t, err)
 		}
 		// If there are remainders from uneven division, then add them to the last shard.
 		if shardNum == shards-1 {
 			for _, r := range records[(shardNum+1)*(len(records)/shards):] {
 				err := shardCompressors[c].AddRecord(r)
-				assert.Nil(t, err)
+				expect.Nil(t, err)
 			}
 		}
 
 		err = shardCompressors[c].CloseShard()
-		assert.Nil(t, err)
+		expect.Nil(t, err)
 	}
 	err = w.Close()
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 	verifyBAM(t, records, &bamBuffer)
 }
 
 func TestShardedBAMSmall(t *testing.T) {
 	chr1, err := sam.NewReference("chr1", "", "", 1000, nil, nil)
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 	chr2, err := sam.NewReference("chr2", "", "", 2000, nil, nil)
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 	header, err := sam.NewHeader(nil, []*sam.Reference{chr1, chr2})
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 	cigar := []sam.CigarOp{
 		sam.NewCigarOp(sam.CigarSoftClipped, 1),
 		sam.NewCigarOp(sam.CigarMatch, 8),
@@ -136,9 +136,9 @@ func TestShardedBAMSmall(t *testing.T) {
 func TestShardedBAMLarge(t *testing.T) {
 	filename := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	f, err := os.Open(filename)
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 	reader, err := bam.NewReader(f, 1)
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 
 	records := []*sam.Record{}
 	for {
@@ -171,7 +171,7 @@ func processShards(b *testing.B, provider bamprovider.Provider, worker int, chan
 		iter := provider.NewIterator(shard)
 		vlog.VI(1).Infof("starting shard (%s,%d,%d,%d)", shard.StartRef.Name(), shard.Start, shard.End, shard.ShardIdx)
 		if *useShardedBAMWriter {
-			require.NoError(b, compressor.StartShard(shard.ShardIdx))
+			assert.NoError(b, compressor.StartShard(shard.ShardIdx))
 		}
 
 		outlist := make([]*sam.Record, 0)
@@ -193,7 +193,7 @@ func processShards(b *testing.B, provider bamprovider.Provider, worker int, chan
 			biogoout <- outlist
 		}
 		vlog.VI(1).Infof("finished shard (%s,%d,%d,%d)", shard.StartRef.Name(), shard.Start, shard.End, shard.ShardIdx)
-		require.NoError(b, iter.Close())
+		assert.NoError(b, iter.Close())
 	}
 }
 
@@ -255,7 +255,7 @@ func shardedCopy(b *testing.B, inFile, outFile string) {
 	// start workers
 	var workerGroup sync.WaitGroup
 	shardList, err := gbam.GetPositionBasedShards(header, *shardSize, 0, true)
-	assert.Nil(b, err)
+	expect.Nil(b, err)
 	shardChannel := gbam.NewShardChannel(shardList)
 	for i := 0; i < *parallelism; i++ {
 		vlog.VI(1).Infof("Creating worker %d", i)

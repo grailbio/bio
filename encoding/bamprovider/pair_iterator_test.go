@@ -9,8 +9,8 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/grailbio/testutil/assert"
+	"github.com/grailbio/testutil/expect"
 	"v.io/x/lib/vlog"
 )
 
@@ -79,7 +79,7 @@ func pairsEqualAnyOrder(t *testing.T, testName string, expected, actual []pair) 
 	}
 	sort.Sort(pairByR1Pos(expected))
 	sort.Sort(pairByR1Pos(actual))
-	assert.Equal(t, expected, actual, "test %v", testName)
+	expect.EQ(t, actual, expected, "test %v", testName)
 }
 
 func TestGetPairs(t *testing.T) {
@@ -130,13 +130,13 @@ func TestGetPairs(t *testing.T) {
 		vlog.Infof("Start test %v %+v", i, test)
 		provider := bamprovider.NewFakeProvider(processHeader, test.records)
 		iters, err := bamprovider.NewPairIterators(provider, test.unmapped)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 
 		var pairs []pair
 		for _, iter := range iters {
 			for iter.Scan() {
 				pairOrError := iter.Record()
-				require.NoError(t, pairOrError.Err)
+				assert.NoError(t, pairOrError.Err)
 				pairs = append(pairs, pair{pairOrError.R1, pairOrError.R2})
 			}
 		}

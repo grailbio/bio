@@ -11,13 +11,13 @@ import (
 	"testing"
 
 	"github.com/biogo/hts/bgzf"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/grailbio/testutil/assert"
+	"github.com/grailbio/testutil/expect"
 )
 
 func toInt(t *testing.T, s string) int {
 	i, err := strconv.Atoi(s)
-	require.Nil(t, err)
+	assert.Nil(t, err)
 	return i
 }
 
@@ -25,24 +25,24 @@ func writeBin(t *testing.T, w io.Writer, s string) {
 	bins := strings.Split(s, ":")
 	// Write the number of bins
 	err := binary.Write(w, binary.LittleEndian, int32(len(bins)))
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 
 	for _, bin := range bins {
 		binContent := strings.Split(bin, ",")
 
 		// Write the bin number
 		err = binary.Write(w, binary.LittleEndian, uint32(toInt(t, binContent[0])))
-		assert.Nil(t, err)
+		expect.Nil(t, err)
 		binContent = binContent[1:]
 
 		// Write the number of chunks
 		err = binary.Write(w, binary.LittleEndian, int32(len(binContent)/2))
-		assert.Nil(t, err)
+		expect.Nil(t, err)
 
 		// Write the chunks
 		for _, voffset := range binContent {
 			err = binary.Write(w, binary.LittleEndian, uint64(toInt(t, voffset)))
-			assert.Nil(t, err)
+			expect.Nil(t, err)
 		}
 	}
 }
@@ -52,11 +52,11 @@ func writeIntervals(t *testing.T, w io.Writer, s string) {
 
 	// Write the number of intervals
 	err := binary.Write(w, binary.LittleEndian, int32(len(intervals)))
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 
 	for _, voffset := range intervals {
 		err = binary.Write(w, binary.LittleEndian, uint64(toInt(t, voffset)))
-		assert.Nil(t, err)
+		expect.Nil(t, err)
 	}
 }
 
@@ -64,11 +64,11 @@ func writeIndex(t *testing.T, bins, intervals []string, unmapped int) *bytes.Buf
 	var buf bytes.Buffer
 	magic := []byte{'B', 'A', 'I', 0x1}
 	_, err := buf.Write(magic)
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 
 	// Two references
 	err = binary.Write(&buf, binary.LittleEndian, int32(len(bins)))
-	assert.Nil(t, err)
+	expect.Nil(t, err)
 
 	for i := range bins {
 		writeBin(t, &buf, bins[i])
@@ -78,7 +78,7 @@ func writeIndex(t *testing.T, bins, intervals []string, unmapped int) *bytes.Buf
 	// Write unmapped count
 	if unmapped >= 0 {
 		err = binary.Write(&buf, binary.LittleEndian, uint64(unmapped))
-		assert.Nil(t, err)
+		expect.Nil(t, err)
 	}
 
 	return &buf
@@ -122,10 +122,10 @@ func TestReadIndex(t *testing.T) {
 		// Write an index to buf.
 		buf := writeIndex(t, test.bins, test.intervals, test.unmapped)
 		index, err := ReadIndex(buf)
-		require.Nil(t, err)
+		assert.Nil(t, err)
 
-		assert.Equal(t, [4]byte{'B', 'A', 'I', 0x1}, index.Magic)
-		assert.Equal(t, len(test.bins), len(index.Refs))
+		expect.EQ(t, index.Magic, [4]byte{'B', 'A', 'I', 0x1})
+		expect.EQ(t, len(index.Refs), len(test.bins))
 		for refId := range test.bins {
 			expectedOffsets[refId] = make([]bgzf.Offset, 0)
 
@@ -136,40 +136,40 @@ func TestReadIndex(t *testing.T) {
 				binInfo := strings.Split(binString, ",")
 				if toInt(t, binInfo[0]) == 37450 {
 					// Check meta chunk info
-					assert.Equal(t, uint64(toInt(t, binInfo[1])), index.Refs[refId].Meta.UnmappedBegin)
-					assert.Equal(t, uint64(toInt(t, binInfo[2])), index.Refs[refId].Meta.UnmappedEnd)
-					assert.Equal(t, uint64(toInt(t, binInfo[3])), index.Refs[refId].Meta.MappedCount)
-					assert.Equal(t, uint64(toInt(t, binInfo[4])), index.Refs[refId].Meta.UnmappedCount)
+					expect.EQ(t, index.Refs[refId].Meta.UnmappedBegin, uint64(toInt(t, binInfo[1])))
+					expect.EQ(t, index.Refs[refId].Meta.UnmappedEnd, uint64(toInt(t, binInfo[2])))
+					expect.EQ(t, index.Refs[refId].Meta.MappedCount, uint64(toInt(t, binInfo[3])))
+					expect.EQ(t, index.Refs[refId].Meta.UnmappedCount, uint64(toInt(t, binInfo[4])))
 				} else {
 					// Check regular chunk offsets
-					assert.Equal(t, uint32(toInt(t, binInfo[0])), index.Refs[refId].Bins[binNum].BinNum)
+					expect.EQ(t, index.Refs[refId].Bins[binNum].BinNum, uint32(toInt(t, binInfo[0])))
 					for i := 1; i < len(binInfo)-1; i += 2 {
 						beginFile := int64(toInt(t, binInfo[i])) >> 16
 						beginBlock := uint16(toInt(t, binInfo[i]))
 						endFile := int64(toInt(t, binInfo[i+1])) >> 16
 						endBlock := uint16(toInt(t, binInfo[i+1]))
 
-						assert.Equal(t, beginFile, index.Refs[refId].Bins[binNum].Chunks[(i-1)/2].Begin.File)
-						assert.Equal(t, beginBlock, index.Refs[refId].Bins[binNum].Chunks[(i-1)/2].Begin.Block)
-						assert.Equal(t, endFile, index.Refs[refId].Bins[binNum].Chunks[(i-1)/2].End.File)
-						assert.Equal(t, endBlock, index.Refs[refId].Bins[binNum].Chunks[(i-1)/2].End.Block)
+						expect.EQ(t, index.Refs[refId].Bins[binNum].Chunks[(i-1)/2].Begin.File, beginFile)
+						expect.EQ(t, index.Refs[refId].Bins[binNum].Chunks[(i-1)/2].Begin.Block, beginBlock)
+						expect.EQ(t, index.Refs[refId].Bins[binNum].Chunks[(i-1)/2].End.File, endFile)
+						expect.EQ(t, index.Refs[refId].Bins[binNum].Chunks[(i-1)/2].End.Block, endBlock)
 
 						expectedOffsets[refId] = append(expectedOffsets[refId], bgzf.Offset{beginFile, beginBlock})
 					}
 					binCount++
 				}
 			}
-			assert.Equal(t, binCount, len(index.Refs[refId].Bins))
+			expect.EQ(t, len(index.Refs[refId].Bins), binCount)
 
 			// Check the intervals
 			intervals := strings.Split(test.intervals[refId], ",")
-			assert.Equal(t, len(intervals), len(index.Refs[refId].Intervals))
+			expect.EQ(t, len(index.Refs[refId].Intervals), len(intervals))
 			for i, intervalStr := range intervals {
 				intervalFile := int64(toInt(t, intervalStr)) >> 16
 				intervalBlock := uint16(toInt(t, intervalStr))
 
-				assert.Equal(t, intervalFile, index.Refs[refId].Intervals[i].File)
-				assert.Equal(t, intervalBlock, index.Refs[refId].Intervals[i].Block)
+				expect.EQ(t, index.Refs[refId].Intervals[i].File, intervalFile)
+				expect.EQ(t, index.Refs[refId].Intervals[i].Block, intervalBlock)
 
 				expectedOffsets[refId] = append(expectedOffsets[refId], bgzf.Offset{intervalFile, intervalBlock})
 			}
@@ -195,18 +195,18 @@ func TestReadIndex(t *testing.T) {
 
 		}
 		if test.unmapped >= 0 {
-			assert.Equal(t, uint64(test.unmapped), *index.UnmappedCount)
+			expect.EQ(t, *index.UnmappedCount, uint64(test.unmapped))
 		} else {
-			assert.Nil(t, index.UnmappedCount)
+			expect.Nil(t, index.UnmappedCount)
 		}
 
 		// Verify AllOffsets output.
 		actualOffsets := index.AllOffsets()
-		assert.Equal(t, len(expectedOffsets), len(actualOffsets))
+		expect.EQ(t, len(actualOffsets), len(expectedOffsets))
 		for refId, expected := range expectedOffsets {
 			actual, found := actualOffsets[refId]
-			require.True(t, found)
-			assert.True(t, reflect.DeepEqual(expected, actual), "%v %v", expected, actual)
+			assert.True(t, found)
+			expect.True(t, reflect.DeepEqual(expected, actual), "%v %v", expected, actual)
 		}
 	}
 }

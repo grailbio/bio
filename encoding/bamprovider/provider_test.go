@@ -21,7 +21,7 @@ import (
 	"github.com/grailbio/bio/encoding/converter"
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/testutil"
-	"github.com/stretchr/testify/require"
+	"github.com/grailbio/testutil/assert"
 	"v.io/x/lib/vlog"
 )
 
@@ -36,7 +36,7 @@ func doRead(t *testing.T, path string) []string {
 	p := bamprovider.NewProvider(path)
 	shards, err := p.GenerateShards(bamprovider.GenerateShardsOpts{
 		IncludeUnmapped: true})
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	var names []string
 	// Repeat the test to test iterator-reuse code path.
@@ -47,10 +47,10 @@ func doRead(t *testing.T, path string) []string {
 			for i.Scan() {
 				names = append(names, i.Record().Name)
 			}
-			require.NoError(t, i.Err())
-			require.NoError(t, i.Close())
+			assert.NoError(t, i.Err())
+			assert.NoError(t, i.Close())
 		}
-		require.NoError(t, p.Close())
+		assert.NoError(t, p.Close())
 	}
 	return names
 }
@@ -60,9 +60,9 @@ func TestPAMSmall(t *testing.T) {
 	defer cleanup()
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")
 	pamPath := filepath.Join(tmpDir, "test-unmapped.pam")
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
-	require.Equal(t, doRead(t, pamPath),
-		[]string{"read1", "read2", "read3", "read10", "read10"})
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
+	assert.EQ(t, []string{"read1", "read2", "read3", "read10", "read10"}, doRead(t, pamPath))
+
 }
 
 func TestPAMLarge(t *testing.T) {
@@ -71,19 +71,19 @@ func TestPAMLarge(t *testing.T) {
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := filepath.Join(tmpDir, "large.pam")
 	// The bam file is 2.8MB, so with 1MB shard size, we expect 3 shards.
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<20))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<20))
 
 	p := bamprovider.NewProvider(pamPath)
 	shards, err := p.GetFileShards()
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	header, err := p.GetHeader()
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	const n = 3
-	require.Equal(t, n, len(shards), "Shards:", shards)
-	require.Equal(t, shards[0].StartRef, header.Refs()[0], "Shards:", shards)
-	require.Equal(t, shards[0].Start, 0, "Shards:", shards)
-	require.True(t, shards[n-1].EndRef == nil, "Shards:", shards) // the last shard is always unmapped
-	require.Equal(t, shards[n-1].End, math.MaxInt32, "Shards:", shards)
+	assert.EQ(t, len(shards), n, "Shards:", shards)
+	assert.EQ(t, header.Refs()[0], shards[0].StartRef, "Shards:", shards)
+	assert.EQ(t, 0, shards[0].Start, "Shards:", shards)
+	assert.True(t, shards[n-1].EndRef == nil, "Shards:", shards) // the last shard is always unmapped
+	assert.EQ(t, math.MaxInt32, shards[n-1].End, "Shards:", shards)
 }
 
 func TestError(t *testing.T) {
@@ -93,30 +93,33 @@ func TestError(t *testing.T) {
 	} {
 		p := bamprovider.NewProvider(test.path)
 		_, err := p.GenerateShards(bamprovider.GenerateShardsOpts{IncludeUnmapped: true})
-		require.Regexp(t, test.errRe, err.Error())
+		assert.Regexp(t, err.Error(), test.errRe)
 
 		iter := p.NewIterator(gbam.Shard{StartRef: nil, EndRef: nil, Start: 0, End: 1})
-		require.Regexp(t, test.errRe, iter.Close())
-		require.Regexp(t, test.errRe, p.Close().Error())
+		assert.Regexp(t, iter.Close(), test.errRe)
+		assert.Regexp(t, p.Close().Error(), test.errRe)
 	}
 }
 
 func TestBAM(t *testing.T) {
-	require.Equal(t,
-		doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")),
-		[]string{"read1", "read2", "read3"})
+	assert.EQ(t,
+
+		[]string{"read1", "read2", "read3"}, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")))
+
 }
 
 func TestBAMUnmapped(t *testing.T) {
-	require.Equal(t,
-		doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")),
-		[]string{"read1", "read2", "read3", "read10", "read10"})
+	assert.EQ(t,
+
+		[]string{"read1", "read2", "read3", "read10", "read10"}, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")))
+
 }
 
 func TestBAMUnmappedOnly(t *testing.T) {
-	require.Equal(t,
-		doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped-only.bam")),
-		[]string{"read10", "read10"})
+	assert.EQ(t,
+
+		[]string{"read10", "read10"}, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped-only.bam")))
+
 }
 
 // Test reading random ranges.
@@ -129,7 +132,7 @@ func testRandom(t *testing.T, randomSeed int64) {
 	bamProvider := bamprovider.NewProvider(bamPath)
 
 	pamPath := filepath.Join(tmpDir, "test.pam")
-	require.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
+	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 	pamProvider := bamprovider.NewProvider(pamPath)
 
 	for i := 0; i < 20; i++ {
@@ -206,19 +209,20 @@ func (r *randomTester) testOnce(provider bamprovider.Provider, start, limit biop
 	expected := r.findRecordsInRange(start, limit)
 	n := 0
 	for iter.Scan() {
-		require.Equalf(r.t, expected[n].String(), iter.Record().String(),
+		assert.EQ(r.t, iter.Record().String(), expected[n].String(),
 			`Record %d mismatch, for range [%+v,%+v),
 expected:%v
 found:   %v`,
 			n, start, limit, expected[n], iter.Record())
+
 		n++
 	}
 	if len(expected) != n {
 		vlog.Infof("Missed record, %v", expected[n])
 		vlog.Infof("Missed record(2), %v", expected[n+1])
 	}
-	require.Equal(r.t, len(expected), n)
-	require.NoError(r.t, iter.Close())
+	assert.EQ(r.t, n, len(expected))
+	assert.NoError(r.t, iter.Close())
 }
 
 func newRandomTester(t *testing.T, bamPath string, randomSeed int64) *randomTester {
@@ -227,24 +231,24 @@ func newRandomTester(t *testing.T, bamPath string, randomSeed int64) *randomTest
 		r: rand.New(rand.NewSource(randomSeed)),
 	}
 	in, err := os.Open(bamPath)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	bamr, err := bam.NewReader(in, 64)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	tester.header = bamr.Header()
 	in, err = os.Open(bamPath)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	gen := gbam.NewCoordGenerator()
 	for {
 		rec, err := bamr.Read()
 		if err == io.EOF {
 			break
 		}
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		tester.allRecs = append(tester.allRecs, rec)
 		tester.allCoords = append(tester.allCoords, gen.GenerateFromRecord(rec))
 	}
-	require.NoError(t, bamr.Close())
-	require.NoError(t, in.Close())
+	assert.NoError(t, bamr.Close())
+	assert.NoError(t, in.Close())
 	return tester
 }
 
@@ -256,7 +260,7 @@ var (
 func BenchmarkSequentialRead(b *testing.B) {
 	provider := bamprovider.NewProvider(*inputFlag)
 	header, err := provider.GetHeader()
-	require.NoError(b, err)
+	assert.NoError(b, err)
 	for n := 0; n < b.N; n++ {
 		shard := gbam.Shard{
 			StartRef: header.Refs()[0],
@@ -271,10 +275,10 @@ func BenchmarkSequentialRead(b *testing.B) {
 			nRecs++
 			sam.PutInFreePool(record)
 		}
-		require.NoError(b, iter.Close())
-		require.True(b, nRecs > 0)
+		assert.NoError(b, iter.Close())
+		assert.True(b, nRecs > 0)
 	}
-	require.NoError(b, provider.Close())
+	assert.NoError(b, provider.Close())
 }
 
 // Example of reading a BAM file in parallel.
