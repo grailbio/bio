@@ -94,12 +94,6 @@ func TestCompareKeys(t *testing.T) {
 	}
 }
 
-const invalidRefID = -99 // -1 is taken by unmapped reads, so use -99.
-type recordPos struct {
-	refID int // ID of the reference sequence
-	pos   int // aligned position
-}
-
 // Read the header and list of records from a BAM or PAM file.
 func readRecords(t *testing.T, path string) (*sam.Header, []*sam.Record) {
 	records := []*sam.Record{}
@@ -479,9 +473,17 @@ func generateShards(b *testing.B, bamPath, baiPath string, bytesPerShard int64) 
 
 	in, err := os.Open(bamPath)
 	require.NoError(b, err)
-	defer in.Close()
+	defer func() {
+		if err := in.Close(); err != nil {
+			b.Fatal(err)
+		}
+	}()
 	bamr, err := bam.NewReader(in, 1)
-	defer bamr.Close()
+	defer func() {
+		if err := bamr.Close(); err != nil {
+			b.Fatal(err)
+		}
+	}()
 	header := bamr.Header()
 	require.NoError(b, err)
 	if baiPath == "" {
@@ -496,9 +498,7 @@ func generateShards(b *testing.B, bamPath, baiPath string, bytesPerShard int64) 
 	// Get chunks
 	chunks := []bgzf.Offset{}
 	for _, chunksForRef := range index.AllOffsets() {
-		for _, c := range chunksForRef {
-			chunks = append(chunks, c)
-		}
+		chunks = append(chunks, chunksForRef...)
 	}
 	sort.SliceStable(chunks,
 		func(a, b int) bool {
@@ -536,7 +536,7 @@ func generateShards(b *testing.B, bamPath, baiPath string, bytesPerShard int64) 
 }
 
 // Read a BAM file then random-shuffle the records within.
-func shuffleRecords(t require.TestingT, bamPath, baiPath string) (*sam.Header, []*sam.Record) {
+func shuffleRecords(t testing.TB, bamPath, baiPath string) (*sam.Header, []*sam.Record) {
 	provider := bamprovider.NewProvider(bamPath, bamprovider.ProviderOpts{Index: baiPath})
 	header, err := provider.GetHeader()
 	require.NoError(t, err)

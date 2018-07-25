@@ -34,7 +34,7 @@ import (
 	"v.io/x/lib/vlog"
 )
 
-func mustOpenBAM(t require.TestingT, bamPath string) *bam.Reader {
+func mustOpenBAM(t testing.TB, bamPath string) *bam.Reader {
 	in, err := os.Open(bamPath)
 	require.NoError(t, err)
 	r, err := bam.NewReader(in, runtime.NumCPU())
@@ -43,7 +43,7 @@ func mustOpenBAM(t require.TestingT, bamPath string) *bam.Reader {
 	return r
 }
 
-func generatePAM(t require.TestingT, opts pam.WriteOpts, pamPath, bamPath string) {
+func generatePAM(t testing.TB, opts pam.WriteOpts, pamPath, bamPath string) {
 	require.NoError(t, pam.ValidateCoordRange(&opts.Range))
 	rbam := mustOpenBAM(t, bamPath)
 	w := pam.NewWriter(opts, rbam.Header(), pamPath)

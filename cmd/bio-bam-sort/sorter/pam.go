@@ -52,7 +52,7 @@ func computePAMShardBounds(
 	recordsPerBlock := float64(totalRecords) / float64(totalBlocks)
 	curNumRecords := float64(0)
 	for _, key := range allKeys[1:] {
-		curNumRecords += float64(recordsPerBlock)
+		curNumRecords += recordsPerBlock
 		if curNumRecords < nextGoalRecords {
 			continue
 		}

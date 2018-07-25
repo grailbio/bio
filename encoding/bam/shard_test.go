@@ -9,66 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	chr8, _          = sam.NewReference("chr8", "", "", 2000000, nil, nil)
-	chr9, _          = sam.NewReference("chr9", "", "", 3000000, nil, nil)
-	processHeader, _ = sam.NewHeader(nil, []*sam.Reference{chr8, chr9})
-	read4            = &sam.Record{
-		Name:  "ABCDEFG",
-		Ref:   chr8,
-		Pos:   123,
-		Flags: sam.Read2,
-	}
-	read5 = &sam.Record{
-		Name:  "ABCDEFG",
-		Ref:   chr8,
-		Pos:   456,
-		Flags: sam.Read1,
-	}
-	read6 = &sam.Record{
-		Name:  "XYZ",
-		Ref:   chr8,
-		Pos:   1024,
-		Flags: sam.Read1,
-	}
-	read7 = &sam.Record{
-		Name:  "foo",
-		Ref:   chr9,
-		Pos:   777,
-		Flags: sam.Read2,
-	}
-	read8 = &sam.Record{
-		Name:  "foo",
-		Ref:   chr9,
-		Pos:   1000001,
-		Flags: sam.Read1,
-	}
-	read9 = &sam.Record{
-		Name:  "XYZ",
-		Ref:   chr9,
-		Pos:   2000000,
-		Flags: sam.Read2,
-	}
-	read9Secondary = &sam.Record{
-		Name:  "XYZ",
-		Ref:   chr9,
-		Pos:   2000002,
-		Flags: sam.Read2 | sam.Secondary,
-	}
-	read10 = &sam.Record{
-		Name:  "unmapped",
-		Ref:   nil,
-		Pos:   0,
-		Flags: sam.Read1 | sam.Unmapped | sam.MateUnmapped,
-	}
-	read11 = &sam.Record{
-		Name:  "unmapped",
-		Ref:   nil,
-		Pos:   0,
-		Flags: sam.Read2 | sam.Unmapped | sam.MateUnmapped,
-	}
-)
-
 func TestShard(t *testing.T) {
 	ref1, err := sam.NewReference("chr1", "", "", 100, nil, nil)
 	assert.NoError(t, err)

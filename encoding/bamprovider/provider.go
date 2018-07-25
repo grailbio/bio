@@ -174,7 +174,7 @@ func GuessFileType(path string) FileType {
 	if strings.HasSuffix(path, ".bam") {
 		return BAM
 	}
-	if strings.Index(path, ".pam") >= 0 {
+	if strings.Contains(path, ".pam") {
 		return PAM
 	}
 	if _, err := pam.ListIndexes(path); err == nil {

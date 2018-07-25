@@ -135,7 +135,7 @@ func ShardToCoordRange(shard Shard) biopb.CoordRange {
 	}
 }
 
-// RecRangeToBAMShard converts RecRange to bam.Shard.
+// CoordRangeToShard converts RecRange to bam.Shard.
 func CoordRangeToShard(header *sam.Header, r biopb.CoordRange, padding, shardIdx int) Shard {
 	var startRef *sam.Reference
 	if r.Start.RefId >= 0 {
@@ -349,7 +349,7 @@ func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, 
 				if i == 0 {
 					boundaries = append(boundaries, boundary{0, offset.File})
 				} else {
-					boundaries = append(boundaries, boundary{int32(rec.Pos), offset.File})
+					boundaries = append(boundaries, boundary{rec.Pos, offset.File})
 				}
 				prevFilePos = offset.File
 			}
@@ -365,7 +365,7 @@ func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, 
 				bytesSubdivisions := ((boundaries[i].filePos - boundaries[i-1].filePos) / bytesPerShard) - 1
 				subdivisions := int32(0)
 				if int64(genomeSubdivisions) < bytesSubdivisions {
-					subdivisions = int32(genomeSubdivisions)
+					subdivisions = genomeSubdivisions
 				} else {
 					subdivisions = int32(bytesSubdivisions)
 				}
@@ -423,7 +423,7 @@ func ValidateShardList(shardList []Shard, padding int) {
 	var prevRef *sam.Reference
 	for i, shard := range shardList {
 		if shard.Start >= shard.End {
-			vlog.Panicf("Shard start must preceed end for ref %s: %d, %d", shard.StartRef.Name(), shard.Start, shard.End)
+			vlog.Panicf("Shard start must precede end for ref %s: %d, %d", shard.StartRef.Name(), shard.Start, shard.End)
 		}
 
 		if shard.StartRef == nil {

@@ -176,7 +176,7 @@ func Unmarshal(b []byte, header *sam.Header) (*Record, error) {
 	var sliceHdr *reflect.SliceHeader
 	if nCigar > 0 {
 		for i := 0; i < nCigar; i++ {
-			*(*uint32)(unsafe.Pointer(&shadowBuf[shadowCigarOffset+(i*4)])) = uint32(binary.LittleEndian.Uint32(shadowBuf[shadowOffset+(i*4):]))
+			*(*uint32)(unsafe.Pointer(&shadowBuf[shadowCigarOffset+(i*4)])) = binary.LittleEndian.Uint32(shadowBuf[shadowOffset+(i*4):])
 		}
 		rec.Cigar = UnsafeBytesToCigar(shadowBuf[shadowCigarOffset : shadowCigarOffset+nCigar*4])
 		shadowOffset += nCigar * 4
@@ -184,7 +184,7 @@ func Unmarshal(b []byte, header *sam.Header) (*Record, error) {
 		rec.Cigar = nil
 	}
 
-	rec.Seq.Length = int(lSeq)
+	rec.Seq.Length = lSeq
 	rec.Seq.Seq = UnsafeBytesToDoublets(shadowBuf[shadowOffset : shadowOffset+nDoubletBytes])
 	shadowOffset += nDoubletBytes
 

@@ -239,15 +239,6 @@ type sortShardBlockParser struct {
 	buf     []byte  // Records that remain to be read.
 }
 
-func newSortShardBlockParser(buf sortShardBlock) (r sortShardBlockParser) {
-	r.buf = []byte(buf)
-	r.next()
-	if r.done() {
-		vlog.Fatalf("empty buf: %v", len(buf))
-	}
-	return r
-}
-
 func (r *sortShardBlockParser) reset(buf sortShardBlock) {
 	r.buf = []byte(buf)
 	r.next()
@@ -305,14 +296,13 @@ func (r *sortShardBlockParser) body() []byte {
 //   }
 //   if err.err() != nil { panic(err) }
 type sortShardReader struct {
-	path        string
-	rawIn       file.File
-	rio         recordio.Scanner
-	indexOffset int64
-	index       biopb.SortShardIndex
-	pool        *sortShardBlockPool
-	err         *errorreporter.T
-	lastKey     sortKey // last key read.
+	path    string
+	rawIn   file.File
+	rio     recordio.Scanner
+	index   biopb.SortShardIndex
+	pool    *sortShardBlockPool
+	err     *errorreporter.T
+	lastKey sortKey // last key read.
 
 	parser sortShardBlockParser
 	buf    []byte
@@ -434,7 +424,7 @@ func (r *sortShardReader) drain() {
 	go func() {
 		n := 0
 		atomic.StoreInt32(&r.draining, 1)
-		for _ = range r.ch {
+		for range r.ch {
 			n++
 		}
 		vlog.VI(1).Infof("drain %v: dropped %d blocks", r.path, n)

@@ -57,26 +57,7 @@ import (
 //
 //   if w.Close() != nil { panic }
 
-const (
-	// uncompressedBlockSize is the maximum size of the uncompressed
-	// data for a Bgzf block.  Technically, the maximum size is 2^16,
-	// but this threshold is slightly lower to avoid exceeding the
-	// maximum size of the compressed block.  This value is the same
-	// in both sambamba and biogo.  See the SAM/BAM specification for
-	// details.
-	uncompressedBlockSize = 0x0ff00
-
-	// compressedBlockSize is the maximum size of the compressed data
-	// for a Bgzf block.  See the SAM/BAM specification for details.
-	compressedBlockSize = 0x10000
-)
-
 var (
-	// bgzfExtra goes into the gzip's Extra subfield, with subfield
-	// ids: 66, 67, and length 2.  See the SAM/BAM spec.
-	bgzfExtra       = []byte{66, 67, 2, 0, 0, 0}
-	bgzfExtraPrefix = []byte(bgzfExtra[:4])
-
 	// magicBlock is the Bgzf EOF terminator.  It belongs at the end
 	// of a valid Bgzf file.  See the SAM/BAM spec.
 	magicBlock = []byte{
@@ -181,7 +162,9 @@ func NewShardedBAMWriter(w io.Writer, gzLevel, queueSize int, header *sam.Header
 	}
 
 	c := bw.GetCompressor()
-	c.StartShard(-1)
+	if err := c.StartShard(-1); err != nil {
+		return nil, err
+	}
 	if err := c.addHeader(header); err != nil {
 		return nil, err
 	}
@@ -228,7 +211,7 @@ func (bw *ShardedBAMWriter) writeShards() {
 		_, err = shard.buf.WriteTo(bw.w)
 		if err != nil {
 			bw.err = err
-			bw.queue.Close(err)
+			bw.queue.Close(err) // nolint: errcheck
 			return
 		}
 	}
@@ -246,6 +229,6 @@ func (bw *ShardedBAMWriter) Close() error {
 		return err
 	}
 
-	_, err = bw.w.Write([]byte(magicBlock))
+	_, err = bw.w.Write(magicBlock)
 	return err
 }

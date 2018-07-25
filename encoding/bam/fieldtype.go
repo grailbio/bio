@@ -50,7 +50,7 @@ var fieldNames = []string{
 }
 
 func (f FieldType) String() string {
-	if f >= 0 && int(f) < len(fieldNames) {
+	if int(f) < len(fieldNames) {
 		return fieldNames[f]
 	}
 	return fmt.Sprintf("Field%d", f)
