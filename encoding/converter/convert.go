@@ -14,6 +14,7 @@ import (
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errorreporter"
 	"github.com/grailbio/base/file"
+	"github.com/grailbio/base/traverse"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
@@ -207,31 +208,26 @@ func ConvertToPAM(opts pam.WriteOpts, pamPath, bamPath, baiPath string, bytesPer
 		return e
 	}
 
-	wg := sync.WaitGroup{}
-	var err errorreporter.T
 	var totalRecs int64
 	bam := bamprovider.BAMProvider{Path: bamPath, Index: baiPath}
-
-	for i, shard := range shards {
-		wg.Add(1)
-		go func(i int, shard bamShardBound) {
-			defer wg.Done()
-			nextShard := bamShardBound{
-				rec: biopb.Coord{biopb.InfinityRefID, biopb.InfinityPos, 0},
-				off: bgzf.Offset{math.MaxInt64, math.MaxUint16},
-			}
-			if i < len(shards)-1 {
-				nextShard = shards[i+1]
-			}
-			nRecs, e := convertShard(opts, pamPath, &bam, shard, nextShard)
-			err.Set(e)
-			atomic.AddInt64(&totalRecs, nRecs)
-		}(i, shard)
+	err := traverse.Each(len(shards)).Do(func(i int) error {
+		shard := shards[i]
+		nextShard := bamShardBound{
+			rec: biopb.Coord{biopb.InfinityRefID, biopb.InfinityPos, 0},
+			off: bgzf.Offset{math.MaxInt64, math.MaxUint16},
+		}
+		if i < len(shards)-1 {
+			nextShard = shards[i+1]
+		}
+		nRecs, err := convertShard(opts, pamPath, &bam, shard, nextShard)
+		atomic.AddInt64(&totalRecs, nRecs)
+		return err
+	})
+	if e := bam.Close(); e != nil && err == nil {
+		err = e
 	}
-	wg.Wait()
-	err.Set(bam.Close())
 	vlog.Infof("%v: Finished converting, written %d records, error %v", pamPath, totalRecs, err)
-	return err.Err()
+	return err
 }
 
 type convertRequest struct {

@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/grail"
+	"github.com/grailbio/base/traverse"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
@@ -669,29 +669,24 @@ func BenchmarkReadPAM(b *testing.B) {
 		}
 		close(boundCh)
 		totalRecs := int64(0)
-		wg := sync.WaitGroup{}
-		for i := 0; i < runtime.NumCPU(); i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for bound := range boundCh {
-					start := time.Now()
-					vlog.Infof("Start read %+v", bound)
-					r := pam.NewReader(pam.ReadOpts{DropFields: opts.DropFields, Range: bound}, pamPath)
-					nRecs := int64(0)
-					for r.Scan() {
-						rec := r.Record()
-						sam.PutInFreePool(rec)
-						nRecs++
-					}
-					assert.NoError(b, r.Close())
-					atomic.AddInt64(&totalRecs, nRecs)
-					end := time.Now()
-					vlog.Infof("Finish read %+v, %d recs %d ms", bound, nRecs, end.Sub(start)/time.Millisecond)
+		traverse.Each(runtime.NumCPU()).Do(func(_ int) error { // nolint: errcheck
+			for bound := range boundCh {
+				start := time.Now()
+				vlog.Infof("Start read %+v", bound)
+				r := pam.NewReader(pam.ReadOpts{DropFields: opts.DropFields, Range: bound}, pamPath)
+				nRecs := int64(0)
+				for r.Scan() {
+					rec := r.Record()
+					sam.PutInFreePool(rec)
+					nRecs++
 				}
-			}()
-		}
-		wg.Wait()
+				assert.NoError(b, r.Close())
+				atomic.AddInt64(&totalRecs, nRecs)
+				end := time.Now()
+				vlog.Infof("Finish read %+v, %d recs %d ms", bound, nRecs, end.Sub(start)/time.Millisecond)
+			}
+			return nil
+		})
 		vlog.Infof("%v: read %d records", pamPath, totalRecs)
 	}
 }
@@ -710,29 +705,25 @@ func BenchmarkReadBAM(b *testing.B) {
 		assert.NoError(b, err)
 		parallelism := runtime.NumCPU()
 		totalRecs := int64(0)
-		wg := sync.WaitGroup{}
-		for i := 0; i < parallelism; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for {
-					shard, ok := <-shardCh
-					if !ok {
-						break
-					}
-					nRecs := int64(0)
-					iter := provider.NewIterator(shard)
-					for iter.Scan() {
-						record := iter.Record()
-						nRecs++
-						sam.PutInFreePool(record)
-					}
-					atomic.AddInt64(&totalRecs, nRecs)
-					assert.NoError(b, iter.Close())
+
+		traverse.Each(parallelism).Do(func(_ int) error { // nolint: errcheck
+			for {
+				shard, ok := <-shardCh
+				if !ok {
+					break
 				}
-			}()
-		}
-		wg.Wait()
+				nRecs := int64(0)
+				iter := provider.NewIterator(shard)
+				for iter.Scan() {
+					record := iter.Record()
+					nRecs++
+					sam.PutInFreePool(record)
+				}
+				atomic.AddInt64(&totalRecs, nRecs)
+				assert.NoError(b, iter.Close())
+			}
+			return nil
+		})
 		assert.NoError(b, provider.Close())
 		vlog.Infof("%v: read %d records", *bamFlag, totalRecs)
 	}

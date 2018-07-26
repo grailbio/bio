@@ -7,13 +7,13 @@ package pam
 import (
 	"fmt"
 	"path/filepath"
-	"sync"
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errorreporter"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/recordio/recordiozstd"
+	"github.com/grailbio/base/traverse"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
@@ -201,19 +201,13 @@ func (w *Writer) Write(r *sam.Record) {
 // Close must be called exactly once. After close, no operation other than Err()
 // may be called.
 func (w *Writer) Close() error {
-	wg := sync.WaitGroup{}
-	for _, fw := range w.fieldWriters {
-		if fw == nil {
-			continue
-		}
-		wg.Add(1)
-		go func(fw *fieldio.Writer) {
+	traverse.Each(len(w.fieldWriters)).Do(func(i int) error { // nolint: errcheck
+		fw := w.fieldWriters[i]
+		if fw != nil {
 			fw.Close()
-			wg.Done()
-		}(fw)
-	}
-	// Wait for all flushing ops.
-	wg.Wait()
+		}
+		return nil
+	})
 	w.bufPool.Finish()
 	if w.err.Err() != nil {
 		return w.err.Err()
