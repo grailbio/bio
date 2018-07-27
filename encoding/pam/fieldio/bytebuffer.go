@@ -31,6 +31,13 @@ func (b *byteBuffer) Uint16() uint16 {
 	return value
 }
 
+// Float64 reads a float64 value.
+func (b *byteBuffer) Float64() float64 {
+	value := binary.LittleEndian.Uint64(b.buf[b.n:])
+	b.n += 8
+	return math.Float64frombits(value)
+}
+
 // Uint8 reads a fixed8 value.
 func (b *byteBuffer) Uint8() uint8 {
 	value := b.buf[b.n]
@@ -123,18 +130,18 @@ func (b *byteBuffer) PutString(data string) {
 	b.n += dataLen
 }
 
-// PutUint64 adds the value as a fixed64.
-func (b *byteBuffer) PutUint64(value uint64) {
-	b.ensure(binary.MaxVarintLen64)
-	binary.LittleEndian.PutUint64(b.buf[b.n:], value)
-	b.n += 8
-}
-
 // PutUint16 adds the value as a fixed16.
 func (b *byteBuffer) PutUint16(value uint16) {
-	b.ensure(binary.MaxVarintLen16)
+	b.ensure(2)
 	binary.LittleEndian.PutUint16(b.buf[b.n:], value)
 	b.n += 2
+}
+
+// PutFloat64 adds the value as a float64.
+func (b *byteBuffer) PutFloat64(value float64) {
+	b.ensure(8)
+	binary.LittleEndian.PutUint64(b.buf[b.n:], math.Float64bits(value))
+	b.n += 8
 }
 
 // PutVarint adds the value as a signed varint

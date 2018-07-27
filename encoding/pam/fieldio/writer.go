@@ -151,6 +151,13 @@ func (fw *Writer) PutUint8Field(addr biopb.Coord, v byte) {
 	wb.defaultBuf.PutByte(v)
 }
 
+// PutFloat64Field adds a float64 field.
+func (fw *Writer) PutFloat64Field(addr biopb.Coord, v float64) {
+	wb := fw.buf
+	wb.updateAddrBounds(addr)
+	wb.defaultBuf.PutFloat64(v)
+}
+
 func (wb *fieldWriteBuf) putLengthPrefixedBytes(data []byte) {
 	wb.defaultBuf.PutUvarint(uint64(len(data)))
 	wb.blobBuf.PutBytes(data)
@@ -191,14 +198,24 @@ func (fw *Writer) PutStringDeltaField(addr biopb.Coord, data string) {
 	copy(wb.prevString, data)
 }
 
-// PutQualField adds the qual field.
-func (fw *Writer) PutQualField(addr biopb.Coord, qual []byte) {
+// PutBytesField adds a field consisting of variable-length byte slice
+func (fw *Writer) PutBytesField(addr biopb.Coord, data []byte) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
-	wb.putLengthPrefixedBytes(qual)
+	wb.putLengthPrefixedBytes(data)
 }
 
-// PutQualField adds the aux field.
+// PutVarints32Field adds a variable-length int32 slice.
+func (fw *Writer) PutVarint32sField(addr biopb.Coord, data []int32) {
+	wb := fw.buf
+	wb.updateAddrBounds(addr)
+	wb.defaultBuf.PutUvarint(uint64(len(data)))
+	for _, v := range data {
+		wb.defaultBuf.PutVarint(int64(v))
+	}
+}
+
+// PutAuxField adds the aux field.
 func (fw *Writer) PutAuxField(addr biopb.Coord, aa []sam.Aux) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)

@@ -6,7 +6,6 @@ package pam
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errorreporter"
@@ -185,7 +184,7 @@ func (w *Writer) Write(r *sam.Record) {
 		w.fieldWriters[gbam.FieldSeq].PutSeqField(addr, r.Seq)
 	}
 	if w.fieldWriters[gbam.FieldQual] != nil {
-		w.fieldWriters[gbam.FieldQual].PutQualField(addr, r.Qual)
+		w.fieldWriters[gbam.FieldQual].PutBytesField(addr, r.Qual)
 	}
 	if w.fieldWriters[gbam.FieldAux] != nil {
 		w.fieldWriters[gbam.FieldAux].PutAuxField(addr, r.AuxFields)
@@ -249,7 +248,7 @@ func NewWriter(wo WriteOpts, samHeader *sam.Header, dir string) *Writer {
 		}
 
 		path := pamutil.FieldDataPath(dir, w.opts.Range, gbam.FieldType(f))
-		label := fmt.Sprintf("%s:%s:%v", filepath.Base(dir), pamutil.CoordRangePathString(w.opts.Range), gbam.FieldType(f))
+		label := fmt.Sprintf("%s:%s:%v", file.Base(dir), pamutil.CoordRangePathString(w.opts.Range), gbam.FieldType(f))
 		fw := fieldio.NewWriter(path, label, w.opts.Transformers, w.bufPool, &w.err)
 		w.fieldWriters[f] = fw
 	}

@@ -8,13 +8,13 @@ package pam
 
 import (
 	"fmt"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/recordio/recordiozstd"
@@ -23,7 +23,6 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam/fieldio"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
-	"github.com/pkg/errors"
 	"v.io/x/lib/vlog"
 )
 
@@ -190,7 +189,7 @@ func (r *ShardReader) readRecord() *sam.Record {
 	}
 	qualLen := 0
 	if r.needField[gbam.FieldQual] {
-		qualLen, ok = r.fieldReaders[gbam.FieldQual].ReadQualMetadata()
+		qualLen, ok = r.fieldReaders[gbam.FieldQual].ReadBytesMetadata()
 		if !ok {
 			return nil
 		}
@@ -224,14 +223,14 @@ func (r *ShardReader) readRecord() *sam.Record {
 	case r.needField[gbam.FieldSeq] && r.needField[gbam.FieldQual]:
 		// Common case
 		rec.Seq = r.fieldReaders[gbam.FieldSeq].ReadSeqField(rec.Seq.Length, &arena)
-		rec.Qual = r.fieldReaders[gbam.FieldQual].ReadQualField(qualLen, &arena)
+		rec.Qual = r.fieldReaders[gbam.FieldQual].ReadBytesField(qualLen, &arena)
 	case r.needField[gbam.FieldSeq] && !r.needField[gbam.FieldQual]:
 		// Fill qual with garbage data w/ the same length as seq
 		rec.Seq = r.fieldReaders[gbam.FieldSeq].ReadSeqField(rec.Seq.Length, &arena)
 		rec.Qual = GetDummyQual(rec.Seq.Length)
 	case !r.needField[gbam.FieldSeq] && r.needField[gbam.FieldQual]:
 		// Fill seq with garbage data w/ the same length as qual
-		rec.Qual = r.fieldReaders[gbam.FieldQual].ReadQualField(qualLen, &arena)
+		rec.Qual = r.fieldReaders[gbam.FieldQual].ReadBytesField(qualLen, &arena)
 		rec.Seq = GetDummySeq(len(rec.Qual))
 	}
 
@@ -258,23 +257,23 @@ func ReadShardIndex(dir string, recRange biopb.CoordRange) (biopb.PAMShardIndex,
 	ctx := vcontext.Background()
 	in, err := file.Open(ctx, path)
 	if err != nil {
-		return index, errors.Wrap(err, path)
+		return index, errors.E(err, path)
 	}
 	defer in.Close(ctx) // nolint: errcheck
 	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
 	defer rio.Finish() // nolint: errcheck
 	if !rio.Scan() {
-		return index, errors.Errorf("ReadShardIndex %v: Failed to read record: %v", path, rio.Err())
+		return index, errors.E(rio.Err(), fmt.Sprintf("ReadShardIndex %v: Failed to read record: %v", path))
 	}
 	err = index.Unmarshal(rio.Get().([]byte))
 	if err != nil {
 		return index, err
 	}
 	if index.Magic != ShardIndexMagic {
-		return index, errors.Errorf("Wrong index version '%v'; expect '%v'", index.Magic, ShardIndexMagic)
+		return index, fmt.Errorf("Wrong index version '%v'; expect '%v'", index.Magic, ShardIndexMagic)
 	}
 	if index.Version != pamutil.DefaultVersion {
-		return index, errors.Errorf("Wrong PAM version '%v'; expect '%v'", index.Version, pamutil.DefaultVersion)
+		return index, fmt.Errorf("Wrong PAM version '%v'; expect '%v'", index.Version, pamutil.DefaultVersion)
 	}
 	return index, rio.Err()
 }
@@ -282,7 +281,7 @@ func ReadShardIndex(dir string, recRange biopb.CoordRange) (biopb.PAMShardIndex,
 func validateFieldIndex(index biopb.PAMFieldIndex) error {
 	for _, block := range index.Blocks {
 		if block.NumRecords <= 0 {
-			return errors.Errorf("Corrupt block index: %+v", block)
+			return fmt.Errorf("Corrupt block index: %+v", block)
 		}
 	}
 	return nil
@@ -291,11 +290,11 @@ func validateFieldIndex(index biopb.PAMFieldIndex) error {
 func validateReadOpts(o *ReadOpts) error {
 	for _, fi := range o.DropFields {
 		if int(fi) < 0 || int(fi) >= gbam.NumFields {
-			return errors.Errorf("Invalid DropField %v in %+v", fi, *o)
+			return fmt.Errorf("Invalid DropField %v in %+v", fi, *o)
 		}
 		if fi == gbam.FieldCoord {
 			// Coord field is needed to support range reads.
-			return errors.Errorf("Dropping Coord field is not supported in %+v", *o)
+			return fmt.Errorf("Dropping Coord field is not supported in %+v", *o)
 		}
 	}
 	return ValidateCoordRange(&o.Range)
@@ -340,7 +339,7 @@ func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
 	fr := r.fieldReaders[gbam.FieldCoord]
 	if _, ok := fr.Seek(coordRange); !ok {
 		// This shouldn't happen, unless is the file is corrupt
-		err := errors.Errorf("%v: Cannot find blocks for coords in range %+v", r.label, coordRange)
+		err := fmt.Errorf("%v: Cannot find blocks for coords in range %+v", r.label, coordRange)
 		vlog.Error(err)
 		r.err.Set(err)
 		return
@@ -407,7 +406,7 @@ func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
 			fr.SkipSeqField()
 		}
 		if fr := getReader(gbam.FieldQual, addr); fr != nil {
-			fr.SkipQualField()
+			fr.SkipBytesField()
 		}
 		if fr := getReader(gbam.FieldAux, addr); fr != nil {
 			fr.SkipAuxField()
@@ -427,7 +426,7 @@ func NewShardReader(
 	pamIndex FileInfo,
 	errp *errorreporter.T) *ShardReader {
 	r := &ShardReader{
-		label:          fmt.Sprintf("%s:s%s:u%s", filepath.Base(pamIndex.Dir), pamutil.CoordRangePathString(pamIndex.Range), pamutil.CoordRangePathString(requestedRange)),
+		label:          fmt.Sprintf("%s:s%s:u%s", file.Base(pamIndex.Dir), pamutil.CoordRangePathString(pamIndex.Range), pamutil.CoordRangePathString(requestedRange)),
 		path:           pamIndex.Dir,
 		shardRange:     pamIndex.Range,
 		requestedRange: requestedRange,
@@ -443,13 +442,13 @@ func NewShardReader(
 	var err error
 	if r.index, err = ReadShardIndex(r.path, r.shardRange); err != nil {
 		vlog.Errorf("Failed to read shard index: %v", err)
-		r.err.Set(errors.Wrapf(err, "Failed to read shard index for %v", r.path))
+		r.err.Set(errors.E(err, fmt.Sprintf("Failed to read shard index for %v", r.path)))
 		return r
 	}
 
 	r.header, err = gbam.UnmarshalHeader(r.index.EncodedBamHeader)
 	if err != nil {
-		r.err.Set(errors.Wrapf(err, "%v: Failed to decode sam.Header in index", r.path))
+		r.err.Set(errors.E(err, fmt.Sprintf("%v: Failed to decode sam.Header in index", r.path)))
 		return r
 	}
 	if !r.requestedRange.Intersects(r.shardRange) {
@@ -460,7 +459,7 @@ func NewShardReader(
 		if r.needField[f] {
 			path := pamutil.FieldDataPath(pamIndex.Dir, pamIndex.Range, gbam.FieldType(f))
 			label := fmt.Sprintf("%s:s%s:u%s(%v)",
-				filepath.Base(pamIndex.Dir),
+				file.Base(pamIndex.Dir),
 				pamutil.CoordRangePathString(pamIndex.Range),
 				pamutil.CoordRangePathString(r.requestedRange),
 				gbam.FieldType(f))
@@ -513,14 +512,14 @@ func NewReader(opts ReadOpts, dir string) *Reader {
 	if r.err.Err() != nil {
 		return r
 	}
-	r.label = fmt.Sprintf("%s:u%s", filepath.Base(dir), pamutil.CoordRangePathString(r.opts.Range))
+	r.label = fmt.Sprintf("%s:u%s", file.Base(dir), pamutil.CoordRangePathString(r.opts.Range))
 	var err error
 	if r.indexFiles, err = findIndexFilesInRange(dir, r.opts.Range); err != nil {
 		r.err.Set(err)
 		return r
 	}
 	if len(r.indexFiles) == 0 {
-		r.err.Set(errors.Errorf("%v: No pam file found for range %+v", dir, r.opts))
+		r.err.Set(fmt.Errorf("%v: No pam file found for range %+v", dir, r.opts))
 		return r
 	}
 	vlog.VI(1).Infof("Found index files in range %+v: %+v", r.opts.Range, r.indexFiles)

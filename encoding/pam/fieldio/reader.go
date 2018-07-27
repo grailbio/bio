@@ -57,7 +57,7 @@ func NewReader(path, label string, coordField bool, errp *errorreporter.T) (*Rea
 	fr.addrGenerator = gbam.NewCoordGenerator()
 	trailer := fr.rio.Trailer()
 	if len(trailer) == 0 {
-		return fr, fmt.Errorf("%v: file does not contain an index: %v", path, fr.rio.Err())
+		return fr, errors.E(fr.rio.Err(), fmt.Sprintf("%v: file does not contain an index: %v", path))
 	}
 	if err := fr.index.Unmarshal(trailer); err != nil {
 		return fr, errors.E(err, fmt.Sprintf("%s: Failed to unmarshal field index for %s", label, path))
@@ -344,26 +344,26 @@ func (fr *Reader) ReadSeqField(nBases int, arena *UnsafeArena) sam.Seq {
 	}
 }
 
-// SkipQualField skips the next qual field.
+// SkipBytesField skips the next variable-length byteslice field.
 // It panics on EOF or any error.
-func (fr *Reader) SkipQualField() {
+func (fr *Reader) SkipBytesField() {
 	rb := &fr.fb
 	rb.remaining--
 	nBases := int(rb.defaultBuf.Uvarint32())
 	rb.blobBuf.RawBytes(nBases)
 }
 
-// ReadQualMetadata returns the size of the qual field.
-func (fr *Reader) ReadQualMetadata() (int, bool) {
+// ReadBytesMetadata returns the size of the variable-length byteslice field.
+func (fr *Reader) ReadBytesMetadata() (int, bool) {
 	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
 		return 0, false
 	}
 	return int(fr.fb.defaultBuf.Uvarint32()), true
 }
 
-// ReadQualField reads the next qual field. The function call must be preceded
-// by a call to ReadQualLen.
-func (fr *Reader) ReadQualField(nBases int, arena *UnsafeArena) []byte {
+// ReadBytesField reads the next variable-length byteslice field. The function
+// call must be preceded by a call to ReadBytesMetadata.
+func (fr *Reader) ReadBytesField(nBases int, arena *UnsafeArena) []byte {
 	rb := &fr.fb
 	rb.remaining--
 	qual := arena.Alloc(nBases)

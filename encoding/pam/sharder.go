@@ -6,15 +6,16 @@ package pam
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
-	"github.com/pkg/errors"
 	"v.io/x/lib/vlog"
 )
 
@@ -64,10 +65,10 @@ func readFieldIndex(ctx context.Context, dir string, recRange biopb.CoordRange, 
 	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
 	trailer := rio.Trailer()
 	if len(trailer) == 0 {
-		return index, errors.Errorf("%v: file does not contain an index: %v", path, rio.Err())
+		return index, errors.E(err, fmt.Sprintf("%v: file does not contain an index", path))
 	}
 	if err := index.Unmarshal(trailer); err != nil {
-		return index, errors.Wrapf(err, "%v: Failed to unmarshal field index for %v", path, f)
+		return index, errors.E(err, fmt.Sprintf("%v: Failed to unmarshal field index for %v", path, f))
 	}
 	err = validateFieldIndex(index)
 	if e := rio.Finish(); e != nil && err == nil {
@@ -135,7 +136,7 @@ func readAndSubsetIndexes(ctx context.Context, files []FileInfo, recRange biopb.
 		}
 		if seqFileBytes <= 0 {
 			// This shouldn't happen, given that we managed to read an nonempty index.
-			return nil, errors.Errorf("readandsubsetindexes %+v: seq file size is zero", indexFile)
+			return nil, fmt.Errorf("readandsubsetindexes %+v: seq file size is zero", indexFile)
 		}
 		rs := readSubshard{
 			shardRange:  indexFile.Range,
