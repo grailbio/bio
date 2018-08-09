@@ -4,8 +4,10 @@ import (
 	"strings"
 
 	"github.com/biogo/hts/sam"
+	"github.com/grailbio/base/vcontext"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam"
+	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"v.io/x/lib/vlog"
 )
 
@@ -181,7 +183,8 @@ func GuessFileType(path string) FileType {
 	if strings.Contains(path, ".pam") {
 		return PAM
 	}
-	if _, err := pam.ListIndexes(path); err == nil {
+	ctx := vcontext.Background()
+	if _, err := pamutil.ListIndexes(ctx, path); err == nil {
 		return PAM
 	}
 	vlog.VI(1).Infof("%v: could not detect file type.", path)

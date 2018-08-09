@@ -22,6 +22,7 @@ import (
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/grail"
 	"github.com/grailbio/base/traverse"
+	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
@@ -44,7 +45,7 @@ func mustOpenBAM(t testing.TB, bamPath string) *bam.Reader {
 }
 
 func generatePAM(t testing.TB, opts pam.WriteOpts, pamPath, bamPath string) {
-	assert.NoError(t, pam.ValidateCoordRange(&opts.Range))
+	assert.NoError(t, pamutil.ValidateCoordRange(&opts.Range))
 	rbam := mustOpenBAM(t, bamPath)
 	w := pam.NewWriter(opts, rbam.Header(), pamPath)
 	n := 0
@@ -78,7 +79,7 @@ func verifyPAM(t *testing.T, opts pam.ReadOpts, pamPath, bamPath string) {
 }
 
 func verifyPAMWithShardedReader(t *testing.T, opts pam.ReadOpts, pamPath, bamPath string, shards []biopb.CoordRange) {
-	assert.NoError(t, pam.ValidateCoordRange(&opts.Range))
+	assert.NoError(t, pamutil.ValidateCoordRange(&opts.Range))
 	in, err := os.Open(bamPath)
 	assert.NoError(t, err)
 	defer in.Close()
@@ -298,8 +299,8 @@ func TestReadWriteLarge(t *testing.T) {
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
 }
 
-func mustGenerateReadShards(t *testing.T, opts pam.GenerateReadShardsOpts, pamPath string) []biopb.CoordRange {
-	shards, err := pam.GenerateReadShards(opts, pamPath)
+func mustGenerateReadShards(t *testing.T, opts pamutil.GenerateReadShardsOpts, pamPath string) []biopb.CoordRange {
+	shards, err := pamutil.GenerateReadShards(vcontext.Background(), opts, pamPath, gbam.FieldNames)
 	assert.NoError(t, err)
 	return shards
 }
@@ -317,19 +318,19 @@ func TestSharder0(t *testing.T) {
 	pamPath := newPAMPath(bamPath, tempDir)
 	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 
-	ranges := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 1}, pamPath)
+	ranges := mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{NumShards: 1}, pamPath)
 	expect.EQ(t, boundString(ranges), "0:0,-:-")
-	ranges = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
+	ranges = mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{
 		NumShards:                          1,
 		AlwaysSplitMappedAndUnmappedCoords: true,
 	}, pamPath)
 	expect.EQ(t, boundString(ranges), "0:0,-:0 -:0,-:-")
-	ranges = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
+	ranges = mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{
 		Range:     newRange(1, 2, 2, 100),
 		NumShards: 1,
 	}, pamPath)
 	expect.EQ(t, boundString(ranges), "1:2,2:100")
-	ranges = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
+	ranges = mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{
 		Range:                              newRange(1, 2, 2, 100),
 		NumShards:                          1,
 		AlwaysSplitMappedAndUnmappedCoords: true,
@@ -348,7 +349,7 @@ func boundString(bounds []biopb.CoordRange) string {
 func TestConvert(t *testing.T) {
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
-
+	ctx := vcontext.Background()
 	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
 	pamPath := newPAMPath(bamPath, tempDir)
 
@@ -356,14 +357,14 @@ func TestConvert(t *testing.T) {
 	// shard files.
 	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<20))
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
-	indexes, err := pam.ListIndexes(pamPath)
+	indexes, err := pamutil.ListIndexes(ctx, pamPath)
 	assert.NoError(t, err)
 	assert.EQ(t, 3, len(indexes), "Index:", indexes)
 
 	// Try 256KB shard size.
 	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", 1<<18))
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
-	indexes, err = pam.ListIndexes(pamPath)
+	indexes, err = pamutil.ListIndexes(ctx, pamPath)
 	assert.NoError(t, err)
 	assert.EQ(t, 11, len(indexes), "Index:", indexes)
 }
@@ -386,12 +387,12 @@ func TestSharder1(t *testing.T) {
 	verifyPAM(t, pam.ReadOpts{}, pamPath, bamPath)
 
 	// Try creating just one shard. There will be one shard for each file.
-	shards := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 1}, pamPath)
+	shards := mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{NumShards: 1}, pamPath)
 	assert.EQ(t, len(shards), 3)
 	verifyPAMWithShardedReader(t, pam.ReadOpts{}, pamPath, bamPath, shards)
 
 	// The same test, but specify the params via BytesPerShard.
-	shards = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{BytesPerShard: math.MaxInt64}, pamPath)
+	shards = mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{BytesPerShard: math.MaxInt64}, pamPath)
 	assert.EQ(t, len(shards), 3)
 	verifyPAMWithShardedReader(t, pam.ReadOpts{}, pamPath, bamPath, shards)
 }
@@ -481,7 +482,7 @@ func TestSyntheticUniquePositions(t *testing.T) {
 	writeOpts := pam.WriteOpts{MaxBufSize: 1024}
 	ref := st.header.Refs()[0]
 	tmpPAMPath := st.generatePAM(writeOpts, nRecords, func(index int) (*sam.Reference, int) { return ref, index })
-	shards := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 16}, tmpPAMPath)
+	shards := mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{NumShards: 16}, tmpPAMPath)
 	expect.EQ(t, len(shards), 16, "Shards: %+v", shards)
 	for _, shard := range shards {
 		assert.True(t, shard.Start.Seq == 0 && shard.Limit.Seq == 0, "Shard: %+v", shard)
@@ -498,14 +499,14 @@ func TestSyntheticAllReadsAtZero(t *testing.T) {
 	writeOpts := pam.WriteOpts{MaxBufSize: 1024}
 	tmpPAMPath := st.generatePAM(writeOpts, nRecords, func(index int) (*sam.Reference, int) { return st.header.Refs()[0], 0 })
 	// With the default sharder, there will be only one shard.
-	shards := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 16}, tmpPAMPath)
+	shards := mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{NumShards: 16}, tmpPAMPath)
 	expect.EQ(t, len(shards), 1, "Shards: %+v", shards)
 	assert.True(t, shards[0].Start.Seq == 0 && shards[0].Limit.Seq == 0, "Shards: %+v", shards)
 	st.verifyPAM(shards)
 
 	// Allow splitting positions.
 	const numShards = 16
-	shards = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
+	shards = mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{
 		SplitMappedCoords:   true,
 		SplitUnmappedCoords: true,
 		NumShards:           numShards}, tmpPAMPath)
@@ -539,7 +540,7 @@ func TestSyntheticHalfUnmapped(t *testing.T) {
 		}
 		return nil, -1 // unmapped
 	})
-	shards := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
+	shards := mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{
 		SplitMappedCoords:   false,
 		SplitUnmappedCoords: true,
 		NumShards:           16}, tmpPAMPath)
@@ -554,7 +555,7 @@ func TestSyntheticHalfUnmapped(t *testing.T) {
 	}
 	st.verifyPAM(shards)
 
-	shards = mustGenerateReadShards(t, pam.GenerateReadShardsOpts{
+	shards = mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{
 		SplitMappedCoords:   true,
 		SplitUnmappedCoords: false,
 		NumShards:           16}, tmpPAMPath)
@@ -579,9 +580,9 @@ func TestShardedUnmappedReads(t *testing.T) {
 	generatePAM(t, pam.WriteOpts{MaxBufSize: 10000}, pamPath, bamPath)
 
 	// shards0 won't split unmapped sequences.
-	shards0 := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{NumShards: 2000}, pamPath)
+	shards0 := mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{NumShards: 2000}, pamPath)
 	// shards1 will split unmapped sequences.
-	shards1 := mustGenerateReadShards(t, pam.GenerateReadShardsOpts{SplitUnmappedCoords: true, NumShards: 2000}, pamPath)
+	shards1 := mustGenerateReadShards(t, pamutil.GenerateReadShardsOpts{SplitUnmappedCoords: true, NumShards: 2000}, pamPath)
 
 	// shards1 contain the same set of shards for mapped reads, but it also
 	// splits unmapped reads into multiple shards.
@@ -661,7 +662,8 @@ func BenchmarkReadPAM(b *testing.B) {
 			vlog.Infof("Skipping unmapped reads")
 			opts.Range = gbam.MappedRange
 		}
-		bounds, err := pam.GenerateReadShards(pam.GenerateReadShardsOpts{Range: opts.Range}, pamPath)
+		ctx := vcontext.Background()
+		bounds, err := pamutil.GenerateReadShards(ctx, pamutil.GenerateReadShardsOpts{Range: opts.Range}, pamPath, gbam.FieldNames)
 		assert.NoError(b, err)
 		boundCh := make(chan biopb.CoordRange, len(bounds))
 		for _, r := range bounds {
@@ -741,7 +743,7 @@ func TestRemove(t *testing.T) {
 	defer cleanup()
 
 	// Removing non-existing file should get no error.
-	assert.NoError(t, pam.Remove(filepath.Join(tempDir, "gg")))
+	assert.NoError(t, pamutil.Remove(filepath.Join(tempDir, "gg")))
 
 	path := filepath.Join(tempDir, "f")
 	assert.NoError(t, os.MkdirAll(path, 0777))
@@ -750,7 +752,7 @@ func TestRemove(t *testing.T) {
 
 	_, err := os.Stat(path)
 	assert.NoError(t, err)
-	assert.NoError(t, pam.Remove(path))
+	assert.NoError(t, pamutil.Remove(path))
 	_, err = os.Stat(path)
 	assert.True(t, os.IsNotExist(err))
 }
@@ -764,7 +766,8 @@ func TestListIndexes(t *testing.T) {
 	mustCreate(t, path+"/2:123,10:200.index")
 	mustCreate(t, path+"/10:200,-:-.index")
 
-	indexes, err := pam.ListIndexes(path)
+	ctx := vcontext.Background()
+	indexes, err := pamutil.ListIndexes(ctx, path)
 	assert.NoError(t, err)
 	expected := []biopb.CoordRange{
 		biopb.CoordRange{biopb.Coord{0, 0, 0}, biopb.Coord{2, 123, 0}},
@@ -775,7 +778,7 @@ func TestListIndexes(t *testing.T) {
 		expect.EQ(t, indexes[i].Range, e)
 	}
 
-	indexes, err = pam.ListIndexes(path + "/")
+	indexes, err = pamutil.ListIndexes(ctx, path+"/")
 	assert.NoError(t, err)
 	expect.EQ(t, len(expected), len(indexes))
 	for i, e := range expected {

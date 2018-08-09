@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/biogo/hts/sam"
+	gunsafe "github.com/grailbio/base/unsafe"
 	"v.io/x/lib/vlog"
 )
 
@@ -40,7 +41,7 @@ func ResizeScratch(buf *[]byte, n int) {
 		size := (n/16 + 1) * 16
 		*buf = make([]byte, n, size)
 	} else {
-		*buf = (*buf)[:n]
+		gunsafe.ExtendBytes(buf, n)
 	}
 }
 

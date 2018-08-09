@@ -35,7 +35,8 @@ const (
 	MaxNumCols = NumFields
 )
 
-var fieldNames = []string{
+// FieldNames lists all the bam Field names.
+var FieldNames = []string{
 	"coord",
 	"flags",
 	"mapq",
@@ -49,17 +50,19 @@ var fieldNames = []string{
 	"aux",
 }
 
+// String returns the name of the type.  The name is used as part of the PAM
+// filenames, so it shall not be changed.
 func (f FieldType) String() string {
-	if int(f) < len(fieldNames) {
-		return fieldNames[f]
+	if int(f) < len(FieldNames) {
+		return FieldNames[f]
 	}
 	return fmt.Sprintf("Field%d", f)
 }
 
-// ParseFieldType converts a string to FieldType. For example, "Cigar" will
+// ParseFieldType converts a string to FieldType. For example, "cigar" will
 // return FieldCigar.
 func ParseFieldType(v string) (FieldType, error) {
-	for f, name := range fieldNames {
+	for f, name := range FieldNames {
 		if name == v {
 			return FieldType(f), nil
 		}

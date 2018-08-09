@@ -11,6 +11,7 @@ import (
 	"github.com/grailbio/bio/biopb"
 	grailbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam"
+	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"v.io/x/lib/vlog"
 )
 
@@ -184,7 +185,7 @@ func PAMFromSortShards(paths []string, pamPath string, recordsPerShard int64, pa
 	}
 	vlog.VI(1).Infof("%v: Generate PAM, #recordspershard=%d", pamPath, recordsPerShard)
 	// Delete existing files to avoid mixing up files from multiple generations.
-	if err := pam.Remove(pamPath); err != nil {
+	if err := pamutil.Remove(pamPath); err != nil {
 		return err
 	}
 	errReporter := errorreporter.T{}

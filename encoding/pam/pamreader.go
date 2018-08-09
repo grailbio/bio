@@ -7,6 +7,7 @@
 package pam
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -16,7 +17,6 @@ import (
 	"github.com/grailbio/base/errorreporter"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
-	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/recordio/recordiozstd"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
@@ -249,44 +249,6 @@ func (r *ShardReader) readRecord() *sam.Record {
 	return rec
 }
 
-// ReadShardIndex reads the index file, "dir/coordRange.index".
-func ReadShardIndex(dir string, recRange biopb.CoordRange) (biopb.PAMShardIndex, error) {
-	path := pamutil.ShardIndexPath(dir, recRange)
-	var index biopb.PAMShardIndex
-
-	ctx := vcontext.Background()
-	in, err := file.Open(ctx, path)
-	if err != nil {
-		return index, errors.E(err, path)
-	}
-	defer in.Close(ctx) // nolint: errcheck
-	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
-	defer rio.Finish() // nolint: errcheck
-	if !rio.Scan() {
-		return index, errors.E(rio.Err(), fmt.Sprintf("ReadShardIndex %v: Failed to read record: %v", path))
-	}
-	err = index.Unmarshal(rio.Get().([]byte))
-	if err != nil {
-		return index, err
-	}
-	if index.Magic != ShardIndexMagic {
-		return index, fmt.Errorf("Wrong index version '%v'; expect '%v'", index.Magic, ShardIndexMagic)
-	}
-	if index.Version != pamutil.DefaultVersion {
-		return index, fmt.Errorf("Wrong PAM version '%v'; expect '%v'", index.Version, pamutil.DefaultVersion)
-	}
-	return index, rio.Err()
-}
-
-func validateFieldIndex(index biopb.PAMFieldIndex) error {
-	for _, block := range index.Blocks {
-		if block.NumRecords <= 0 {
-			return fmt.Errorf("Corrupt block index: %+v", block)
-		}
-	}
-	return nil
-}
-
 func validateReadOpts(o *ReadOpts) error {
 	for _, fi := range o.DropFields {
 		if int(fi) < 0 || int(fi) >= gbam.NumFields {
@@ -297,121 +259,47 @@ func validateReadOpts(o *ReadOpts) error {
 			return fmt.Errorf("Dropping Coord field is not supported in %+v", *o)
 		}
 	}
-	return ValidateCoordRange(&o.Range)
+	return pamutil.ValidateCoordRange(&o.Range)
+}
+
+type fieldSeeker struct {
+	r    *fieldio.Reader
+	skip func(*fieldio.Reader)
+}
+
+func (f *fieldSeeker) Seek(requestedRange biopb.CoordRange) (biopb.Coord, bool) {
+	return f.r.Seek(requestedRange)
+}
+
+func (f *fieldSeeker) Skip() {
+	f.skip(f.r)
 }
 
 // Set up the reader so that next call to readRecord() will read the first
 // record at or after requestedRange.Start.
 func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
-	// For each field (except coord; more on that below), find the subset of index
-	// blocks that contain requestedRange.
-	coordRange := requestedRange
-	for f := int(gbam.FieldCoord + 1); f < gbam.NumFields; f++ {
-		fr := r.fieldReaders[f]
-		if fr == nil {
-			continue
-		}
-		blockStart, ok := fr.Seek(requestedRange)
-		if !ok {
-			// There's no record to be read in the range.  We'll report EOF when
-			// reading later. Usually, if fr.blocks is empty for one field, it's
-			// empty for any other field too.
-			return
-		}
-		coordRange.Start = coordRange.Start.Min(blockStart)
+	var readers []fieldio.ColumnSeeker
+	fields := []struct {
+		field gbam.FieldType
+		skip  func(*fieldio.Reader)
+	}{
+		{gbam.FieldFlags, (*fieldio.Reader).SkipUint16Field},
+		{gbam.FieldMapq, (*fieldio.Reader).SkipUint8Field},
+		{gbam.FieldMateRefID, func(fr *fieldio.Reader) { fr.ReadVarintDeltaField() }},
+		{gbam.FieldMatePos, func(fr *fieldio.Reader) { fr.ReadVarintDeltaField() }},
+		{gbam.FieldTempLen, func(fr *fieldio.Reader) { fr.ReadVarintField() }},
+		{gbam.FieldCigar, (*fieldio.Reader).SkipCigarField},
+		{gbam.FieldName, (*fieldio.Reader).SkipStringDeltaField},
+		{gbam.FieldSeq, (*fieldio.Reader).SkipSeqField},
+		{gbam.FieldQual, (*fieldio.Reader).SkipBytesField},
+		{gbam.FieldAux, (*fieldio.Reader).SkipAuxField},
 	}
-
-	// We need to advance the read pointer of each field to the first record at or
-	// after requestedRange.Start. We do the following:
-	//
-	// 1. Assume that (say) FieldSeq has three recordio blocks {b0, b1, b2}, that
-	// intersect with requestedRange.
-	//
-	// 2. Read the recordio blocks for FieldCoord so that they cover (b0,b1,b2).
-	// Then sequentially scan these blocks and find b0.StartAddr.
-	//
-	// 3. Sequentially scan both FieldCoord and FieldSeq simultaneously, until the
-	// the read pointer for FieldCoord is at requestedRange.Start.
-	//
-	// The below code does this for all the fields in parallel.
-	// Read FieldCoord so that it covers all the recordioblocks read by other
-	// fields.
-	fr := r.fieldReaders[gbam.FieldCoord]
-	if _, ok := fr.Seek(coordRange); !ok {
-		// This shouldn't happen, unless is the file is corrupt
-		err := fmt.Errorf("%v: Cannot find blocks for coords in range %+v", r.label, coordRange)
-		vlog.Error(err)
-		r.err.Set(err)
-		return
-	}
-
-	// readingField is for eliding calls to addr.GE() below in the fast path.
-	var readingField [gbam.NumFields]bool
-
-	// getReader() returns a fieldReader for the given reader, or nil if the field
-	// is dropped by the user, or all its data blocks are after "addr"
-	getReader := func(f gbam.FieldType, addr biopb.Coord) *fieldio.Reader {
-		fr = r.fieldReaders[f]
-		if fr != nil {
-			if readingField[f] {
-				return fr
-			}
-			blockStartAddr, ok := fr.BlockStartAddr()
-			if !ok {
-				vlog.Fatalf("%v: EOF while reading %+v", fr.Label(), addr)
-			}
-			if addr.GE(blockStartAddr) {
-				readingField[f] = true
-				return fr
-			}
-		}
-		return nil
-	}
-
-	// Seek the field pointers to requestedRange.Start
-	for {
-		fr := r.fieldReaders[gbam.FieldCoord]
-		addr, ok := fr.PeekCoordField()
-		if !ok {
-			// No data to read
-			vlog.VI(1).Infof("%v: Reached end of data", fr.Label())
-			return
-		}
-		if addr.GE(requestedRange.Start) {
-			return
-		}
-		fr.ReadCoordField()
-		if fr := getReader(gbam.FieldFlags, addr); fr != nil {
-			fr.SkipUint16Field()
-		}
-		if fr := getReader(gbam.FieldMapq, addr); fr != nil {
-			fr.SkipUint8Field()
-		}
-		if fr := getReader(gbam.FieldMateRefID, addr); fr != nil {
-			fr.ReadVarintDeltaField()
-		}
-		if fr := getReader(gbam.FieldMatePos, addr); fr != nil {
-			fr.ReadVarintDeltaField()
-		}
-		if fr := getReader(gbam.FieldTempLen, addr); fr != nil {
-			fr.ReadVarintField()
-		}
-		if fr := getReader(gbam.FieldCigar, addr); fr != nil {
-			fr.SkipCigarField()
-		}
-		if fr := getReader(gbam.FieldName, addr); fr != nil {
-			fr.SkipStringDeltaField()
-		}
-		if fr := getReader(gbam.FieldSeq, addr); fr != nil {
-			fr.SkipSeqField()
-		}
-		if fr := getReader(gbam.FieldQual, addr); fr != nil {
-			fr.SkipBytesField()
-		}
-		if fr := getReader(gbam.FieldAux, addr); fr != nil {
-			fr.SkipAuxField()
+	for _, d := range fields {
+		if fr := r.fieldReaders[d.field]; fr != nil {
+			readers = append(readers, &fieldSeeker{fr, d.skip})
 		}
 	}
+	r.err.Set(fieldio.SeekReaders(requestedRange, r.fieldReaders[gbam.FieldCoord], readers))
 }
 
 // NewShardReader creates a reader for a rowshard.  requestedRange and
@@ -421,9 +309,10 @@ func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
 //
 // REQUIRES: requestedRange ∩ pamIndex.Range != ∅
 func NewShardReader(
+	ctx context.Context,
 	requestedRange biopb.CoordRange,
 	dropFields []gbam.FieldType,
-	pamIndex FileInfo,
+	pamIndex pamutil.FileInfo,
 	errp *errorreporter.T) *ShardReader {
 	r := &ShardReader{
 		label:          fmt.Sprintf("%s:s%s:u%s", file.Base(pamIndex.Dir), pamutil.CoordRangePathString(pamIndex.Range), pamutil.CoordRangePathString(requestedRange)),
@@ -440,7 +329,7 @@ func NewShardReader(
 		r.needField[f] = false
 	}
 	var err error
-	if r.index, err = ReadShardIndex(r.path, r.shardRange); err != nil {
+	if r.index, err = pamutil.ReadShardIndex(vcontext.Background(), r.path, r.shardRange); err != nil {
 		vlog.Errorf("Failed to read shard index: %v", err)
 		r.err.Set(errors.E(err, fmt.Sprintf("Failed to read shard index for %v", r.path)))
 		return r
@@ -457,13 +346,13 @@ func NewShardReader(
 
 	for f := range r.needField {
 		if r.needField[f] {
-			path := pamutil.FieldDataPath(pamIndex.Dir, pamIndex.Range, gbam.FieldType(f))
+			path := pamutil.FieldDataPath(pamIndex.Dir, pamIndex.Range, gbam.FieldType(f).String())
 			label := fmt.Sprintf("%s:s%s:u%s(%v)",
 				file.Base(pamIndex.Dir),
 				pamutil.CoordRangePathString(pamIndex.Range),
 				pamutil.CoordRangePathString(r.requestedRange),
 				gbam.FieldType(f))
-			r.fieldReaders[f], err = fieldio.NewReader(path, label, (f == int(gbam.FieldCoord)), errp)
+			r.fieldReaders[f], err = fieldio.NewReader(ctx, path, label, (f == int(gbam.FieldCoord)), errp)
 			if err != nil {
 				r.err.Set(err)
 				return r
@@ -475,10 +364,10 @@ func NewShardReader(
 }
 
 // Close must be called exactly once. After close, no method may be called.
-func (r *ShardReader) Close() {
+func (r *ShardReader) Close(ctx context.Context) {
 	for f := range r.fieldReaders {
 		if fr := r.fieldReaders[f]; fr != nil {
-			fr.Close()
+			fr.Close(ctx)
 		}
 	}
 }
@@ -486,12 +375,13 @@ func (r *ShardReader) Close() {
 // Reader is the main PAM reader class. It can read across multiple rowshard
 // files.
 type Reader struct {
-	label string // for vlogging only.
+	label string          // for vlogging only.
+	ctx   context.Context // passed into NewReader
 	opts  ReadOpts
 
 	// Sorted list of *.index files whose rowrange intersect with
 	// opts.Range.
-	indexFiles []FileInfo
+	indexFiles []pamutil.FileInfo
 
 	// Current rowshard reader.
 	r *ShardReader
@@ -506,6 +396,7 @@ type Reader struct {
 // NewReader creates a new Reader.
 func NewReader(opts ReadOpts, dir string) *Reader {
 	r := &Reader{
+		ctx:  vcontext.Background(),
 		opts: opts,
 	}
 	r.err.Set(validateReadOpts(&r.opts))
@@ -514,7 +405,7 @@ func NewReader(opts ReadOpts, dir string) *Reader {
 	}
 	r.label = fmt.Sprintf("%s:u%s", file.Base(dir), pamutil.CoordRangePathString(r.opts.Range))
 	var err error
-	if r.indexFiles, err = findIndexFilesInRange(dir, r.opts.Range); err != nil {
+	if r.indexFiles, err = pamutil.FindIndexFilesInRange(r.ctx, dir, r.opts.Range); err != nil {
 		r.err.Set(err)
 		return r
 	}
@@ -523,7 +414,7 @@ func NewReader(opts ReadOpts, dir string) *Reader {
 		return r
 	}
 	vlog.VI(1).Infof("Found index files in range %+v: %+v", r.opts.Range, r.indexFiles)
-	r.r = NewShardReader(r.opts.Range, r.opts.DropFields, r.indexFiles[0], &r.err)
+	r.r = NewShardReader(r.ctx, r.opts.Range, r.opts.DropFields, r.indexFiles[0], &r.err)
 	r.indexFiles = r.indexFiles[1:]
 	return r
 }
@@ -567,8 +458,8 @@ func (r *Reader) Scan() bool {
 			}
 			return false
 		}
-		r.r.Close()
-		r.r = NewShardReader(r.opts.Range, r.opts.DropFields, r.indexFiles[0], &r.err)
+		r.r.Close(r.ctx)
+		r.r = NewShardReader(r.ctx, r.opts.Range, r.opts.DropFields, r.indexFiles[0], &r.err)
 		r.indexFiles = r.indexFiles[1:]
 	}
 }
@@ -584,7 +475,7 @@ func (r *Reader) Err() error {
 // Close all the files. Must be called exactly once.
 func (r *Reader) Close() error {
 	if r.r != nil {
-		r.r.Close()
+		r.r.Close(r.ctx)
 	}
 	return r.err.Err()
 }

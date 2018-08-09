@@ -10,7 +10,6 @@ import (
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errorreporter"
 	"github.com/grailbio/base/file"
-	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/recordio/recordiozstd"
 	"github.com/grailbio/base/traverse"
 	"github.com/grailbio/base/vcontext"
@@ -18,7 +17,6 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam/fieldio"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
-	"v.io/x/lib/vlog"
 )
 
 const (
@@ -27,28 +25,6 @@ const (
 	// DefaultWriteParallelism is the default value for WriteOpts.MaxFlushParallelism.
 	DefaultWriteParallelism = 2
 )
-
-// Serialize "msg" into a single-block recordio file "path".  Existing contents
-// of "path" is clobbered.
-func writeShardIndex(path string, msg *biopb.PAMShardIndex) error {
-	ctx := vcontext.Background()
-	data, e := msg.Marshal()
-	if e != nil {
-		return e
-	}
-	out, e := file.Create(ctx, path)
-	if e != nil {
-		return e
-	}
-	err := errorreporter.T{}
-	rio := recordio.NewWriter(out.Writer(ctx), recordio.WriterOpts{
-		Transformers: []string{"zstd"},
-	})
-	rio.Append(data)
-	err.Set(rio.Finish())
-	err.Set(out.Close(ctx))
-	return err.Err()
-}
 
 // WriteOpts defines options for NewWriter.
 type WriteOpts struct {
@@ -108,20 +84,7 @@ func validateWriteOpts(o *WriteOpts) error {
 	if len(o.Transformers) == 0 {
 		o.Transformers = []string{"zstd"}
 	}
-	return ValidateCoordRange(&o.Range)
-}
-
-func newShardIndex(wo WriteOpts, h *sam.Header) biopb.PAMShardIndex {
-	index := biopb.PAMShardIndex{}
-	index.Magic = ShardIndexMagic
-	index.Version = pamutil.DefaultVersion
-	var err error
-	if index.EncodedBamHeader, err = gbam.MarshalHeader(h); err != nil {
-		// TODO(saito) propagate errors up
-		vlog.Panicf("Encode header: %v", err)
-	}
-	index.Range = wo.Range
-	return index
+	return pamutil.ValidateCoordRange(&o.Range)
 }
 
 // Writer is a class for generating a PAM rowshard.
@@ -211,7 +174,7 @@ func (w *Writer) Close() error {
 	if w.err.Err() != nil {
 		return w.err.Err()
 	}
-	return writeShardIndex(pamutil.ShardIndexPath(w.dir, w.opts.Range), &w.index)
+	return pamutil.WriteShardIndex(vcontext.Background(), w.dir, w.opts.Range, &w.index)
 }
 
 // NewWriter creates a new PAM writer. Files are created in "dir". If "dir" does
@@ -241,13 +204,13 @@ func NewWriter(wo WriteOpts, samHeader *sam.Header, dir string) *Writer {
 
 	w.label = fmt.Sprintf("%s:%s", dir, pamutil.CoordRangePathString(w.opts.Range))
 	w.bufPool = fieldio.NewBufPool(w.opts.WriteParallelism * nWrittenFields)
-	w.index = newShardIndex(w.opts, samHeader)
+	w.index = pamutil.NewShardIndex(w.opts.Range, samHeader)
 	for f := range w.fieldWriters {
 		if dropField[f] {
 			continue
 		}
 
-		path := pamutil.FieldDataPath(dir, w.opts.Range, gbam.FieldType(f))
+		path := pamutil.FieldDataPath(dir, w.opts.Range, gbam.FieldType(f).String())
 		label := fmt.Sprintf("%s:%s:%v", file.Base(dir), pamutil.CoordRangePathString(w.opts.Range), gbam.FieldType(f))
 		fw := fieldio.NewWriter(path, label, w.opts.Transformers, w.bufPool, &w.err)
 		w.fieldWriters[f] = fw

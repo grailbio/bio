@@ -20,34 +20,11 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/bio/encoding/pam"
+	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"github.com/klauspost/compress/gzip"
 	"github.com/pkg/errors"
 	"v.io/x/lib/vlog"
 )
-
-const minBGZFChunkSize = 128 << 20
-
-func offAtStartOfFile(off bgzf.Offset) bool {
-	return off.File == 0 && off.Block == 0
-}
-
-// Check if o0 < o1.
-func offLT(o0, o1 bgzf.Offset) bool {
-	if o0.File != o1.File {
-		return o0.File < o1.File
-	}
-	return o0.Block < o1.Block
-}
-
-// Check if o0 >= o1
-func offGE(o0, o1 bgzf.Offset) bool {
-	return !offLT(o0, o1)
-}
-
-// Check if o0 > o1
-func offGT(o0, o1 bgzf.Offset) bool {
-	return offLT(o1, o0)
-}
 
 type bamShardBound struct {
 	rec biopb.Coord
@@ -196,7 +173,7 @@ func ConvertToPAM(opts pam.WriteOpts, pamPath, bamPath, baiPath string, bytesPer
 	if e != nil {
 		return e
 	}
-	if e := pam.ValidateCoordRange(&opts.Range); e != nil {
+	if e := pamutil.ValidateCoordRange(&opts.Range); e != nil {
 		return e
 	}
 	if !opts.Range.EQ(gbam.UniversalRange) {
@@ -204,7 +181,7 @@ func ConvertToPAM(opts pam.WriteOpts, pamPath, bamPath, baiPath string, bytesPer
 	}
 	vlog.Infof("%v: Creating %d shards: %+v", pamPath, len(shards), shards)
 	// Delete existing files to avoid mixing up files from multiple generations.
-	if e := pam.Remove(pamPath); e != nil {
+	if e := pamutil.Remove(pamPath); e != nil {
 		return e
 	}
 

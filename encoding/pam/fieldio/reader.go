@@ -1,7 +1,10 @@
 // Package fieldio provides a reader and a writer for individual column (field).
 package fieldio
 
+//go:generate ../../../../base/gtl/generate.py --prefix=unsafe -DELEM=int32 --package=fieldio --output=unsafeint32.go ../../../../base/gtl/unsafe.go.tpl
+
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -15,7 +18,6 @@ import (
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/recordio"
 	gunsafe "github.com/grailbio/base/unsafe"
-	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
@@ -40,13 +42,12 @@ type Reader struct {
 // in log messages. coordField should be true if the file stores the genomic
 // coordinate. Setting setting coordField=true enables the codepath that
 // computes biopb.Coord.Seq values.
-func NewReader(path, label string, coordField bool, errp *errorreporter.T) (*Reader, error) {
+func NewReader(ctx context.Context, path, label string, coordField bool, errp *errorreporter.T) (*Reader, error) {
 	fr := &Reader{
 		coordField: coordField,
 		label:      label,
 		err:        errp,
 	}
-	ctx := vcontext.Background()
 	in, err := file.Open(ctx, path)
 	if err != nil {
 		return fr, errors.E(err, fmt.Sprintf("%s: Failed to open field file for %s", label, path))
@@ -57,7 +58,7 @@ func NewReader(path, label string, coordField bool, errp *errorreporter.T) (*Rea
 	fr.addrGenerator = gbam.NewCoordGenerator()
 	trailer := fr.rio.Trailer()
 	if len(trailer) == 0 {
-		return fr, errors.E(fr.rio.Err(), fmt.Sprintf("%v: file does not contain an index: %v", path))
+		return fr, errors.E(fr.rio.Err(), fmt.Sprintf("%v: file does not contain an index", path))
 	}
 	if err := fr.index.Unmarshal(trailer); err != nil {
 		return fr, errors.E(err, fmt.Sprintf("%s: Failed to unmarshal field index for %s", label, path))
@@ -222,6 +223,24 @@ func (fr *Reader) SkipUint16Field() {
 	}
 }
 
+// ReadFloat64Field reads the next float64 value.
+func (fr *Reader) ReadFloat64Field() (float64, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0.0, false
+	}
+	rb := &fr.fb
+	rb.remaining--
+	return rb.defaultBuf.Float64(), true
+}
+
+// SkipFloat64Field skips the next float64 field.  It panics on EOF or any
+// error.
+func (fr *Reader) SkipFloat64Field() {
+	if _, ok := fr.ReadFloat64Field(); !ok {
+		panic(fr)
+	}
+}
+
 // Read a block from recordio and uncompress it.
 func (fr *Reader) readBlock(fileOff int64) error {
 	fb := &fr.fb
@@ -264,7 +283,6 @@ func (fr *Reader) readNextBlock() bool {
 	fb.reset(addr,
 		fb.buf[fb.header.Offset:fb.header.BlobOffset],
 		fb.buf[fb.header.BlobOffset:limitOffset])
-
 	if fr.coordField {
 		start := fr.fb.index.StartAddr
 		fr.addrGenerator.LastRec = biopb.Coord{start.RefId, start.Pos, start.Seq - 1}
@@ -363,12 +381,44 @@ func (fr *Reader) ReadBytesMetadata() (int, bool) {
 
 // ReadBytesField reads the next variable-length byteslice field. The function
 // call must be preceded by a call to ReadBytesMetadata.
-func (fr *Reader) ReadBytesField(nBases int, arena *UnsafeArena) []byte {
+func (fr *Reader) ReadBytesField(n int, arena *UnsafeArena) []byte {
 	rb := &fr.fb
 	rb.remaining--
-	qual := arena.Alloc(nBases)
-	copy(qual, rb.blobBuf.RawBytes(nBases))
-	return qual
+	buf := arena.Alloc(n)
+	copy(buf, rb.blobBuf.RawBytes(n))
+	return buf
+}
+
+// ReadVarint32sMetadata reads the size of the next variable-length varint array
+// field.
+func (fr *Reader) ReadVarint32sMetadata() (int, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
+	return int(fr.fb.defaultBuf.Uvarint32()), true
+}
+
+// ReadVarint32sField reads the next variable-length varint array field. The
+// function call must be preceded by a call to ReadVarint32sMetadata.
+func (fr *Reader) ReadVarint32sField(n int, arena *UnsafeArena) []int32 {
+	rb := &fr.fb
+	rb.remaining--
+	buf := unsafeBytesToint32s(arena.Alloc(n * 4))
+	for i := 0; i < n; i++ {
+		buf[i] = int32(fr.fb.defaultBuf.Varint32())
+	}
+	return buf
+}
+
+// SkipVarint32sField skips the next variable-length varint field.
+// It panics on EOF or any error.
+func (fr *Reader) SkipVarint32sField() {
+	rb := &fr.fb
+	rb.remaining--
+	n := int(rb.defaultBuf.Uvarint32())
+	for i := 0; i < n; i++ {
+		fr.fb.defaultBuf.Varint32()
+	}
 }
 
 type AuxTagHeader struct {
@@ -531,8 +581,7 @@ func (fr *Reader) Index() *biopb.PAMFieldIndex { return &fr.index }
 func (fr *Reader) Label() string { return fr.label }
 
 // Close closes the reader.  Errors are reported through fr.err.
-func (fr *Reader) Close() {
-	ctx := vcontext.Background()
+func (fr *Reader) Close(ctx context.Context) {
 	if fr.rio != nil { // fr.rio =nil on error
 		fr.err.Set(fr.rio.Finish())
 	}
@@ -550,7 +599,7 @@ func (fr *Reader) Close() {
 // REQUIRES: maybeReadNextBlock has never been called.
 func (fr *Reader) Seek(requestedRange biopb.CoordRange) (biopb.Coord, bool) {
 	fr.blocks = nil
-	for _, b := range fr.Index().Blocks {
+	for _, b := range fr.index.Blocks {
 		if pamutil.BlockIntersectsRange(b.StartAddr, b.EndAddr, requestedRange) {
 			fr.blocks = append(fr.blocks, b)
 		}
@@ -561,5 +610,92 @@ func (fr *Reader) Seek(requestedRange biopb.CoordRange) (biopb.Coord, bool) {
 		// empty for any other field too.
 		return biopb.Coord{}, false
 	}
-	return fr.blocks[0].StartAddr, true
+	if !fr.readNextBlock() {
+		panic(fr)
+	}
+	return fr.fb.index.StartAddr, true
+}
+
+// ColumnSeeker is an interface used by SeekReaders to seek PAM field
+// files. Thread compatible.
+type ColumnSeeker interface {
+	// Seek arranges the reader to read the given range. If the reader has a
+	// record in the range, it should move the read pointer to the block
+	// containing r.StartAddr and return the start address of the block.  If the
+	// reader has no record in the requested range, or on any error, it should
+	// return false.
+	Seek(r biopb.CoordRange) (biopb.Coord, bool)
+
+	// Skip skips one record. It will be called repeatedly after Seek().
+	Skip()
+}
+
+// SeekReaders arranges the readers (coordReader and columns[]) to read the
+// requestedRange.  After a successful return, the read pointer of every reader
+// will be at requestedRange.StartAddr.
+func SeekReaders(requestedRange biopb.CoordRange, coordReader *Reader, columns []ColumnSeeker) error {
+	blockStarts := make([]biopb.Coord, len(columns))
+
+	// For each column, seek to the block that contains requestedRange.StartAddr.
+	// coordRange.Start is set to the the minimum of addresses of these blocks.
+	coordRange := requestedRange
+	for ci, col := range columns {
+		blockStart, ok := col.Seek(requestedRange)
+		if !ok {
+			// There's no record to be read in the range.  We'll report EOF when
+			// reading later. Usually, if fr.blocks is empty for one field, it's
+			// empty for any other field too.
+			return nil
+		}
+		coordRange.Start = coordRange.Start.Min(blockStart)
+		blockStarts[ci] = blockStart
+	}
+
+	// We need to advance the read pointer of each field to the first record at or
+	// after requestedRange.Start. We do the following:
+	//
+	// 1. Assume that (say) FieldSeq has three recordio blocks {b0, b1, b2}, that
+	// intersect with requestedRange.
+	//
+	// 2. Read the recordio blocks for FieldCoord so that they cover (b0,b1,b2).
+	// Then sequentially scan these blocks and find b0.StartAddr.
+	//
+	// 3. Sequentially scan both FieldCoord and FieldSeq simultaneously, until the
+	// the read pointer for FieldCoord is at requestedRange.Start.
+	//
+	// The below code does this for all the fields in parallel.
+	// Read FieldCoord so that it covers all the recordioblocks read by other
+	// fields.
+
+	fr := coordReader
+	if _, ok := fr.Seek(coordRange); !ok {
+		// This shouldn't happen, unless is the file is corrupt
+		return fmt.Errorf("Cannot find blocks for coords in range %+v", coordRange)
+	}
+
+	// readingField is for eliding calls to addr.GE() below in the fast path.
+	readingField := make([]bool, len(columns))
+
+	// Seek the field pointers to requestedRange.Start
+	for {
+		addr, ok := coordReader.PeekCoordField()
+		if !ok {
+			// No data to read
+			log.Debug.Printf("%v: Reached end of data", fr.Label())
+			return nil
+		}
+		if addr.GE(requestedRange.Start) {
+			return nil
+		}
+		coordReader.ReadCoordField()
+		for ci, col := range columns {
+			if !readingField[ci] {
+				if addr.LT(blockStarts[ci]) {
+					continue
+				}
+				readingField[ci] = true
+			}
+			col.Skip()
+		}
+	}
 }

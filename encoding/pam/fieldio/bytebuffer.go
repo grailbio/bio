@@ -48,6 +48,9 @@ func (b *byteBuffer) Uint8() uint8 {
 // Varint64 reads a signed varint.
 func (b *byteBuffer) Varint64() int64 {
 	value, n := binary.Varint(b.buf[b.n:])
+	if n <= 0 {
+		log.Panic("byteBuffer.Varint64: underflow")
+	}
 	b.n += n
 	return value
 }
@@ -64,6 +67,9 @@ func (b *byteBuffer) Varint32() int {
 // Uvarint32 reads a unsigned 32bit varint.
 func (b *byteBuffer) Uvarint32() uint32 {
 	value, n := binary.Uvarint(b.buf[b.n:])
+	if n <= 0 {
+		log.Panic("byteBuffer.Uvarint32: underflow")
+	}
 	b.n += n
 	if value > math.MaxUint32 {
 		panic(value)
@@ -74,6 +80,9 @@ func (b *byteBuffer) Uvarint32() uint32 {
 // Uvarint64 reads a unsigned varint.
 func (b *byteBuffer) Uvarint64() uint64 {
 	value, n := binary.Uvarint(b.buf[b.n:])
+	if n <= 0 {
+		log.Panic("byteBuffer.Uvarint64: underflow")
+	}
 	b.n += n
 	return value
 }

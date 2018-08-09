@@ -1,71 +1,16 @@
-// Copyright 2018 GRAIL, Inc. All rights reserved.
-// Use of this source code is governed by the Apache 2.0
-// license that can be found in the LICENSE file.
-
-// Package pam implements PAM reader and writer. PAM is a more compact and
-// faster alternative to BAM.
-//
-// Most people, however, will want to use the bamprovider
-// (https://godoc.org/github.com/grailbio/bio/encoding/bamprovider) read PAM
-// instead.  The bamprovider works for both BAM and PAM files transparently.
-//
-// REAMDE.md (https://github.com/grailbio/bio/blob/master/encoding/pam/README.md) contains
-// More detailed information about the PAM file format.
-package pam
+package pamutil
 
 import (
+	"context"
 	"fmt"
-	"io"
 	"regexp"
 	"sort"
 	"strconv"
 
 	"github.com/grailbio/base/file"
-	"github.com/grailbio/base/vcontext"
+	"github.com/grailbio/base/log"
 	"github.com/grailbio/bio/biopb"
-	gbam "github.com/grailbio/bio/encoding/bam"
-	"v.io/x/lib/vlog"
 )
-
-func validateRecAddr(r biopb.Coord) error {
-	if r.RefId < -1 || r.Pos < 0 || r.Seq < 0 {
-		return fmt.Errorf("Invalid record addr: %+v", r)
-	}
-	return nil
-}
-
-// ValidateCoordRange validates "r" and normalize its fields, if necessary. In
-// particular, if the range fields are all zeros, the range is replaced by
-// UniversalRange.
-func ValidateCoordRange(r *biopb.CoordRange) error {
-	// A Range where all values are zero is special-cased to mean "all rows"
-	if r.Start.RefId == 0 && r.Start.Pos == 0 && r.Start.Seq == 0 &&
-		r.Limit.RefId == 0 && r.Limit.Pos == 0 && r.Limit.Seq == 0 {
-		*r = gbam.UniversalRange
-		return nil
-	}
-	if err := validateRecAddr(r.Start); err != nil {
-		return err
-	}
-	if err := validateRecAddr(r.Limit); err != nil {
-		return err
-	}
-	if r.Limit.LE(r.Start) {
-		return fmt.Errorf("LimitRef (%+v) <= StartRef (%+v)", r.Limit, r.Start)
-	}
-	return nil
-}
-
-// ReadSeekCloser is a combination of io.ReadSeeker and io.Closer.
-//
-// TODO(saito) This should be moved to somewhere more generic.
-type ReadSeekCloser interface {
-	io.ReadSeeker
-	io.Closer
-}
-
-// ShardIndexMagic is the value of ShardIndex.Magic.
-const ShardIndexMagic = uint64(0x725c7226be794c60)
 
 // FileType defines the type of the file, either data or index.
 type FileType int
@@ -80,31 +25,37 @@ const (
 )
 
 // FileInfo is the result of parsing a pathname.
+//
+// A PAM pathname looks like "dir/0:0,46:1653469.mapq" or "dir/0:0,46:1653469.index".
 type FileInfo struct {
 	// Path is the value passed to ParsePath.
 	Path string
+
+	// FileType is the type of the file. For "dir/0:0,46:1653469.mapq", the type
+	// is FileTypeFieldData. For "dir/0:0,46:1653469.mapq", the type is
+	// FileTypeFieldIndex.
 	Type FileType
 
-	// Field is the field stored in the file. Meaningful iff Type ==
+	// Field stores the field part of the filename. Field=="mapq" if the pathname
+	// is "dir/0:0,46:1653469.mapq". It is meaningful iff Type ==
 	// FileTypeFieldData.
-	Field gbam.FieldType
-	// Dir is the directory under which the file is stored.
+	Field string
+
+	// Dir is the directory under which the file is stored. Dir="dir" if the
+	// pathname is "dir/0:0,46:1653469.mapq".
 	Dir string
-	// Range is the record range that the file stores.
+	// Range is the record range that the file stores. Range={Start:{0,0},
+	// Limit:{46,1653469}} if the pathname is "dir/0:0,46:1653469.mapq".
 	Range biopb.CoordRange
 }
 
 var basenameRe = regexp.MustCompile(`^(-|\d+):(-|\d+)(:\d+)?,(-|\d+):(-|\d+)(:\d+)?\.(.+)$`)
 
-func parseExtension(str string) (FileType, gbam.FieldType, bool) {
+func parseExtension(str string) (FileType, string, bool) {
 	if str == "index" {
-		return FileTypeShardIndex, gbam.FieldInvalid, true
+		return FileTypeShardIndex, "", true
 	}
-	fieldType, err := gbam.ParseFieldType(str)
-	if err != nil {
-		return FileTypeUnknown, gbam.FieldInvalid, false
-	}
-	return FileTypeFieldData, fieldType, true
+	return FileTypeFieldData, str, true
 }
 
 func parseRecAddr(refidstr, posstr, seqstr string) (biopb.Coord, bool) {
@@ -154,26 +105,16 @@ func ParsePath(path string) (FileInfo, error) {
 	return fi, nil
 }
 
-// Remove deletes the files in the given PAM directory.  It returns an error if
-// some of the existing files fails to delete.
-func Remove(dir string) error {
-	ctx := vcontext.Background()
-	err := file.RemoveAll(ctx, dir)
-	file.Remove(ctx, dir) // nolint: errcheck
-	return err
-}
-
 // ListIndexes lists shard index files found for the given PAM files.  The
 // returned list will be sorted by positions.
-func ListIndexes(dir string) ([]FileInfo, error) {
-	ctx := vcontext.Background()
+func ListIndexes(ctx context.Context, dir string) ([]FileInfo, error) {
 	var infos []FileInfo
 
 	lister := file.List(ctx, dir, true)
 	for lister.Scan() {
 		fi, err := ParsePath(lister.Path())
 		if err != nil {
-			vlog.Infof("Ignore file %v", err)
+			log.Debug.Printf("Ignore file %v", err)
 		}
 		if fi.Type == FileTypeShardIndex {
 			infos = append(infos, fi)
@@ -191,10 +132,4 @@ func ListIndexes(dir string) ([]FileInfo, error) {
 			return infos[i].Range.Start.LT(infos[j].Range.Start)
 		})
 	return infos, nil
-}
-
-func doassert(b bool) {
-	if !b {
-		panic(b)
-	}
 }

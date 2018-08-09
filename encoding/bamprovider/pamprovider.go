@@ -5,9 +5,11 @@ import (
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam"
+	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"github.com/pkg/errors"
 )
 
@@ -22,8 +24,8 @@ type PAMProvider struct {
 	err  errorreporter.T
 
 	mu      sync.Mutex
-	header  *sam.Header    // extracted from <dir>/<range>.index.
-	indexes []pam.FileInfo // files found in the pam directory.
+	header  *sam.Header        // extracted from <dir>/<range>.index.
+	indexes []pamutil.FileInfo // files found in the pam directory.
 }
 
 // pamIterator implements the Iterator interface.
@@ -39,8 +41,10 @@ func (p *PAMProvider) GetHeader() (*sam.Header, error) {
 	if p.header != nil {
 		return p.header, nil
 	}
+
+	ctx := vcontext.Background()
 	if len(p.indexes) == 0 {
-		indexes, err := pam.ListIndexes(p.Path)
+		indexes, err := pamutil.ListIndexes(ctx, p.Path)
 		if err != nil {
 			p.err.Set(err)
 			return nil, err
@@ -50,7 +54,7 @@ func (p *PAMProvider) GetHeader() (*sam.Header, error) {
 		}
 		p.indexes = indexes
 	}
-	index, err := pam.ReadShardIndex(p.Path, p.indexes[0].Range)
+	index, err := pamutil.ReadShardIndex(ctx, p.Path, p.indexes[0].Range)
 	if err != nil {
 		p.err.Set(err)
 		return nil, err
@@ -77,7 +81,7 @@ func (p *PAMProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, err
 	if err != nil {
 		return nil, err
 	}
-	popts := pam.GenerateReadShardsOpts{
+	popts := pamutil.GenerateReadShardsOpts{
 		Range:                              gbam.UniversalRange,
 		SplitMappedCoords:                  opts.SplitMappedCoords,
 		SplitUnmappedCoords:                opts.SplitUnmappedCoords,
@@ -88,7 +92,8 @@ func (p *PAMProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, err
 	if !opts.IncludeUnmapped {
 		popts.Range = gbam.MappedRange
 	}
-	pamShards, err := pam.GenerateReadShards(popts, p.Path)
+	ctx := vcontext.Background()
+	pamShards, err := pamutil.GenerateReadShards(ctx, popts, p.Path, gbam.FieldNames)
 	if err != nil {
 		return nil, err
 	}
