@@ -134,6 +134,7 @@ func (l *PairIterator) Scan() bool {
 		// End of shard. Report records that didn't find a mate locally.
 		if err := l.iter.Close(); err != nil {
 			l.rec = Pair{Err: err}
+			l.iter = nil
 			return true
 		}
 		l.iter = nil
