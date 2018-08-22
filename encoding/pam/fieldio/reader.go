@@ -83,10 +83,8 @@ func (rb *fieldReadBuf) reset(index biopb.PAMBlockIndexEntry, buf []byte, blob [
 	rb.index = index
 	rb.remaining = int(index.NumRecords)
 
-	rb.defaultBuf.n = 0
-	rb.defaultBuf.buf = buf
-	rb.blobBuf.n = 0
-	rb.blobBuf.buf = blob
+	rb.defaultBuf = buf
+	rb.blobBuf = blob
 	rb.prevInt64Value0 = 0
 	rb.prevInt64Value1 = 0
 	rb.prevString = rb.prevString[:0]
@@ -532,12 +530,12 @@ func (fr *Reader) PeekCoordField() (biopb.Coord, bool) {
 		return biopb.Coord{}, false
 	}
 	rb := &fr.fb
-	s0 := rb.defaultBuf.n
-	s1 := rb.blobBuf.n
+	s0 := rb.defaultBuf
+	s1 := rb.blobBuf
 	refID := rb.prevInt64Value0 + rb.defaultBuf.Varint64()
 	pos := rb.prevInt64Value1 + rb.blobBuf.Varint64()
-	rb.defaultBuf.n = s0
-	rb.blobBuf.n = s1
+	rb.defaultBuf = s0
+	rb.blobBuf = s1
 
 	save := fr.addrGenerator
 	coord := fr.addrGenerator.Generate(int32(refID), int32(pos))

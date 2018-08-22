@@ -74,7 +74,7 @@ type fieldWriteBuf struct {
 
 // totalLen computes the total # of bytes stored in the buffer.
 func (wb *fieldWriteBuf) totalLen() int {
-	return wb.defaultBuf.n + wb.blobBuf.n
+	return len(wb.defaultBuf) + len(wb.blobBuf)
 }
 
 // Reset the state so that it can be reused for serializing another set of
@@ -82,8 +82,8 @@ func (wb *fieldWriteBuf) totalLen() int {
 func (wb *fieldWriteBuf) reset(seq int, label string) {
 	wb.seq = seq
 	wb.label = label
-	wb.defaultBuf.n = 0
-	wb.blobBuf.n = 0
+	wb.defaultBuf = wb.defaultBuf[:0]
+	wb.blobBuf = wb.blobBuf[:0]
 	wb.prevString = wb.prevString[:0]
 	wb.prevInt64Value0 = 0
 	wb.prevInt64Value1 = 0
@@ -111,11 +111,11 @@ func (fw *Writer) PutCoordField(addr biopb.Coord, refID int, pos int) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
 	delta := int64(refID) - wb.prevInt64Value0
-	wb.defaultBuf.PutVarint(delta)
+	wb.defaultBuf.PutVarint64(delta)
 	wb.prevInt64Value0 = int64(refID)
 
 	delta = int64(pos) - wb.prevInt64Value1
-	wb.blobBuf.PutVarint(delta)
+	wb.blobBuf.PutVarint64(delta)
 	wb.prevInt64Value1 = int64(pos)
 }
 
@@ -125,7 +125,7 @@ func (fw *Writer) PutVarintDeltaField(addr biopb.Coord, value int64) {
 	wb.updateAddrBounds(addr)
 	b := &wb.defaultBuf
 	delta := value - wb.prevInt64Value0
-	b.PutVarint(delta)
+	b.PutVarint64(delta)
 	wb.prevInt64Value0 = value
 }
 
@@ -134,7 +134,7 @@ func (fw *Writer) PutVarintField(addr biopb.Coord, value int64) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
 	b := &wb.defaultBuf
-	b.PutVarint(value)
+	b.PutVarint64(value)
 }
 
 // PutUint16Field adds a uint16 field.
@@ -148,7 +148,7 @@ func (fw *Writer) PutUint16Field(addr biopb.Coord, v uint16) {
 func (fw *Writer) PutUint8Field(addr biopb.Coord, v byte) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
-	wb.defaultBuf.PutByte(v)
+	wb.defaultBuf.PutUint8(v)
 }
 
 // PutFloat64Field adds a float64 field.
@@ -159,7 +159,7 @@ func (fw *Writer) PutFloat64Field(addr biopb.Coord, v float64) {
 }
 
 func (wb *fieldWriteBuf) putLengthPrefixedBytes(data []byte) {
-	wb.defaultBuf.PutUvarint(uint64(len(data)))
+	wb.defaultBuf.PutUvarint64(uint64(len(data)))
 	wb.blobBuf.PutBytes(data)
 }
 
@@ -190,8 +190,8 @@ func (fw *Writer) PutStringDeltaField(addr biopb.Coord, data string) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
 	prefix, delta := computeDiff(grailunsafe.BytesToString(wb.prevString), data)
-	wb.defaultBuf.PutUvarint(uint64(prefix))
-	wb.defaultBuf.PutUvarint(uint64(len(delta)))
+	wb.defaultBuf.PutUvarint64(uint64(prefix))
+	wb.defaultBuf.PutUvarint64(uint64(len(delta)))
 	wb.blobBuf.PutString(delta)
 
 	resizeBuf(&wb.prevString, len(data))
@@ -205,13 +205,13 @@ func (fw *Writer) PutBytesField(addr biopb.Coord, data []byte) {
 	wb.putLengthPrefixedBytes(data)
 }
 
-// PutVarints32Field adds a variable-length int32 slice.
+// PutVarint32sField adds a variable-length int32 slice.
 func (fw *Writer) PutVarint32sField(addr biopb.Coord, data []int32) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
-	wb.defaultBuf.PutUvarint(uint64(len(data)))
+	wb.defaultBuf.PutUvarint64(uint64(len(data)))
 	for _, v := range data {
-		wb.defaultBuf.PutVarint(int64(v))
+		wb.defaultBuf.PutVarint64(int64(v))
 	}
 }
 
@@ -219,7 +219,7 @@ func (fw *Writer) PutVarint32sField(addr biopb.Coord, data []int32) {
 func (fw *Writer) PutAuxField(addr biopb.Coord, aa []sam.Aux) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
-	wb.defaultBuf.PutUvarint(uint64(len(aa)))
+	wb.defaultBuf.PutUvarint64(uint64(len(aa)))
 	for _, a := range aa {
 		wb.blobBuf.PutBytes(a[:3])
 	}
@@ -229,7 +229,7 @@ func (fw *Writer) PutAuxField(addr biopb.Coord, aa []sam.Aux) {
 			if len(a) != 4 {
 				log.Panic(a)
 			}
-			wb.blobBuf.PutByte(a[3])
+			wb.blobBuf.PutUint8(a[3])
 		case 's', 'S': // int16, uint16
 			if len(a) != 5 {
 				log.Panic(a)
@@ -252,17 +252,17 @@ func (fw *Writer) PutAuxField(addr biopb.Coord, aa []sam.Aux) {
 func (fw *Writer) PutCigarField(addr biopb.Coord, cigar sam.Cigar) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
-	wb.defaultBuf.PutUvarint(uint64(len(cigar)))
+	wb.defaultBuf.PutUvarint64(uint64(len(cigar)))
 	for _, op := range cigar {
-		wb.defaultBuf.PutUvarint(uint64(op))
+		wb.defaultBuf.PutUvarint64(uint64(op))
 	}
 }
 
-// PutCigarField adds the seq field.
+// PutSeqField adds the seq field.
 func (fw *Writer) PutSeqField(addr biopb.Coord, seq sam.Seq) {
 	wb := fw.buf
 	wb.updateAddrBounds(addr)
-	wb.defaultBuf.PutUvarint(uint64(seq.Length))
+	wb.defaultBuf.PutUvarint64(uint64(seq.Length))
 	wb.blobBuf.PutBytes(gbam.UnsafeDoubletsToBytes(seq.Seq))
 }
 
@@ -276,8 +276,8 @@ func (fw *Writer) FlushBuf() {
 
 func (fw *Writer) marshalBlock(scratch []byte, v interface{}) ([]byte, error) {
 	wb := v.(*fieldWriteBuf)
-	defaultData := wb.defaultBuf.Bytes()
-	blobData := wb.blobBuf.Bytes()
+	defaultData := wb.defaultBuf
+	blobData := wb.blobBuf
 	defaultOffset := 0
 	blobOffset := len(defaultData)
 
@@ -294,13 +294,13 @@ func (fw *Writer) marshalBlock(scratch []byte, v interface{}) ([]byte, error) {
 	if err != nil {
 		panic(err)
 	}
-	bb := byteBuffer{n: 0, buf: tmpBuf0[:]}
-	bb.PutVarint(int64(n))
-	serialized := recordioiov.Slice(scratch, bb.Len()+n+len(defaultData)+len(blobData))
-	copy(serialized, bb.Bytes())
-	copy(serialized[bb.Len():], tmpBuf1[:n])
-	copy(serialized[bb.Len()+n:], defaultData)
-	copy(serialized[bb.Len()+n+len(defaultData):], blobData)
+	bb := byteBuffer(tmpBuf0[:0])
+	bb.PutVarint64(int64(n))
+	serialized := recordioiov.Slice(scratch, len(bb)+n+len(defaultData)+len(blobData))
+	copy(serialized, bb)
+	copy(serialized[len(bb):], tmpBuf1[:n])
+	copy(serialized[len(bb)+n:], defaultData)
+	copy(serialized[len(bb)+n+len(defaultData):], blobData)
 	return serialized, nil
 }
 

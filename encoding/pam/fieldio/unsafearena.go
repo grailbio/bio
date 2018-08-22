@@ -4,10 +4,6 @@
 
 package fieldio
 
-import (
-	"github.com/grailbio/base/log"
-)
-
 // UnsafeArena is an arena allocator. It supports allocating []bytes quickly.
 type UnsafeArena struct {
 	buf []byte
@@ -32,7 +28,7 @@ func (ub *UnsafeArena) Align() {
 // Requires: ub must have at least size bytes of free space.
 func (ub *UnsafeArena) Alloc(size int) []byte {
 	if ub.n+size > len(ub.buf) {
-		log.Panicf("Arena overflow, n=%d, size=%d, ub=%d", ub.n, size, len(ub.buf))
+		panic("arena overflow")
 	}
 	a := ub.buf[ub.n : ub.n+size]
 	ub.n += size
