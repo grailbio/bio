@@ -8,6 +8,7 @@ import (
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/recordio"
@@ -373,7 +374,7 @@ func (fw *Writer) Close() {
 			fw.err.Set(err)
 		}
 		if err := fw.out.Close(vcontext.Background()); err != nil {
-			fw.err.Set(err)
+			fw.err.Set(errors.E(err, fmt.Sprintf("fieldio close %s", fw.out.Name())))
 		}
 	}
 }
@@ -395,7 +396,7 @@ func NewWriter(path, label string, transformers []string, bufFreePool *WriteBufP
 	ctx := vcontext.Background()
 	out, err := file.Create(ctx, path)
 	if err != nil {
-		fw.err.Set(err)
+		fw.err.Set(errors.E(err, fmt.Sprintf("fieldio newwriter %s", path)))
 		return fw
 	}
 	fw.out = out
