@@ -67,9 +67,9 @@ type NewBEDOpts struct {
 	SAMHeader *sam.Header
 	// Invert causes the complement of the interval-union to be returned.  The
 	// complement extends down to position -1 at the beginning of each
-	// chromosome, and currently 2^31 - 2 inclusive at the end.  If SAMHeader is
-	// provided, any chromosome mentioned in the SAMHeader but entirely absent
-	// from the BED will be fully included.  Otherwise, only the chromosomes
+	// reference, and currently 2^31 - 2 inclusive at the end.  If SAMHeader is
+	// provided, any reference mentioned in the SAMHeader but entirely absent
+	// from the BED will be fully included.  Otherwise, only the references
 	// mentioned in the BED file are included.  (A single empty interval
 	// qualifies as a "mention" for the latter purpose.)
 	Invert bool
@@ -81,21 +81,22 @@ type NewBEDOpts struct {
 // PosType is BEDUnion's coordinate type.
 type PosType int32
 
-const posTypeMax = math.MaxInt32
+// PosTypeMax is the maximum value that can be represented by a PosType.
+const PosTypeMax = math.MaxInt32
 
-// searchPosType returns the index of x in a[], or the position where x would
+// SearchPosType returns the index of x in a[], or the position where x would
 // be inserted if x isn't in a (this could be len(a)).  It's exactly the same
 // as sort.SearchInt(), except for PosType.
-func searchPosType(a []PosType, x PosType) int {
+func SearchPosType(a []PosType, x PosType) int {
 	return sort.Search(len(a), func(i int) bool { return a[i] >= x })
 }
 
-// fwdsearchPosType checks a[idx], then a[idx + 1], then a[idx + 3], then
+// FwdsearchPosType checks a[idx], then a[idx + 1], then a[idx + 3], then
 // a[idx + 7], etc., and then uses binary search to finish the job.  It's
-// usually a better choice than searchPosType when iterating.
+// usually a better choice than SearchPosType when iterating.
 // (However, an inlined simple linear search may be better in practice.  Can
 // benchmark later if it matters.)
-func fwdsearchPosType(a []PosType, x PosType, idx int) int {
+func FwdsearchPosType(a []PosType, x PosType, idx int) int {
 	nextIncr := 1
 	startIdx := idx
 	endIdx := len(a)
@@ -131,122 +132,124 @@ func fwdsearchPosType(a []PosType, x PosType, idx int) int {
 // and similar search algorithms (which the compiler is more likely to optimize
 // well).
 type BEDUnion struct {
-	// nameMap is a chromosome-keyed map with disjoint-interval-set values.
+	// nameMap is a reference-name-keyed map with disjoint-interval-set values.
 	// Always initialized.
 	nameMap map[string]([]PosType)
 	// idMap is an optional slice of disjoint-interval-sets, indexed by biogo
 	// sam.Header reference ID.  It is only initialized if NewBEDUnion{FromPath}
 	// was called with SAMHeader initialized.
 	idMap [][]PosType
-	// lastChrIntervals points to the disjoint-interval-set for the most recently
-	// queried chromosome.  This is a minor performance optimization.
-	lastChrIntervals []PosType
-	// lastChrName is the name of the last queried-by-name chromosome.  If it's
-	// nonempty, it must be in sync with lastChrIntervals.
-	lastChrName string
-	// lastChrID is the name of the last queried-by-ID chromosome.  If it's
-	// nonnegative, it must be in sync with lastChrIntervals.
-	lastChrID int
+	// RefNames maps reference IDs to names, when idMap is initialized.
+	RefNames []string
+	// lastRefIntervals points to the disjoint-interval-set for the most recently
+	// queried reference.  This is a minor performance optimization.
+	lastRefIntervals []PosType
+	// lastRefName is the name of the last queried-by-name reference.  If it's
+	// nonempty, it must be in sync with lastRefIntervals.
+	lastRefName string
+	// lastRefID is the name of the last queried-by-ID reference.  If it's
+	// nonnegative, it must be in sync with lastRefIntervals.
+	lastRefID int
 	// lastPosPlus1 is 1 plus the last spot-queried position.
 	lastPosPlus1 PosType
-	// lastIdx is searchPosType(lastChrIntervals, lastPosPlus1).  Cached to
+	// lastIdx is SearchPosType(lastRefIntervals, lastPosPlus1).  Cached to
 	// accelerate sequential queries.
 	lastIdx int
-	// isSequential is true if all queries since the last chromosome change have
+	// isSequential is true if all queries since the last reference change have
 	// been in order of nondecreasing position.
 	isSequential bool
 }
 
 // ContainsByID checks whether the (0-based) interval [pos, pos+1) is contained
-// within the BEDUnion, where chromosome is specified by sam.Header ID.
-func (u *BEDUnion) ContainsByID(chrID int, pos PosType) bool {
+// within the BEDUnion, where reference is specified by sam.Header ID.
+func (u *BEDUnion) ContainsByID(refID int, pos PosType) bool {
 	posPlus1 := pos + 1
-	if chrID != u.lastChrID {
-		u.lastChrID = chrID
-		// bugfix (27 Jul 2018): need to set lastChrName to either empty, or the
-		// name of this chromosome.  Otherwise lastChrIntervals is out of sync if
+	if refID != u.lastRefID {
+		u.lastRefID = refID
+		// bugfix (27 Jul 2018): need to set lastRefName to either empty, or the
+		// name of this reference.  Otherwise lastRefIntervals is out of sync if
 		// the next query is by name.
-		u.lastChrName = ""
+		u.lastRefName = ""
 
 		// just let this error out the usual way if the BEDUnion was not
 		// initialized with ID info.
-		u.lastChrIntervals = u.idMap[chrID]
-		// Force use of searchPosType() on the first query for a contig.
-		if u.lastChrIntervals == nil {
+		u.lastRefIntervals = u.idMap[refID]
+		// Force use of SearchPosType() on the first query for a contig.
+		if u.lastRefIntervals == nil {
 			return false
 		}
-		u.lastIdx = searchPosType(u.lastChrIntervals, posPlus1)
+		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
 		u.lastPosPlus1 = posPlus1
 		u.isSequential = true
 		return u.lastIdx&1 == 1
 	}
-	if u.lastChrIntervals == nil {
+	if u.lastRefIntervals == nil {
 		return false
 	}
 	if u.isSequential {
 		if posPlus1 >= u.lastPosPlus1 {
-			u.lastIdx = fwdsearchPosType(u.lastChrIntervals, posPlus1, u.lastIdx)
+			u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
 			u.lastPosPlus1 = posPlus1
 			return u.lastIdx&1 == 1
 		}
 		u.isSequential = false
 	}
-	return searchPosType(u.lastChrIntervals, posPlus1)&1 == 1
+	return SearchPosType(u.lastRefIntervals, posPlus1)&1 == 1
 }
 
 // ContainsByName checks whether the (0-based) interval [pos, pos+1) is
-// contained within the BEDUnion, where chromosome is specified by name.
-func (u *BEDUnion) ContainsByName(chrName string, pos PosType) bool {
+// contained within the BEDUnion, where reference is specified by name.
+func (u *BEDUnion) ContainsByName(refName string, pos PosType) bool {
 	posPlus1 := pos + 1
-	if chrName != u.lastChrName {
-		u.lastChrName = chrName
-		u.lastChrID = -1
-		u.lastChrIntervals = u.nameMap[chrName]
-		// Force use of searchPosType() on the first query for a contig.
-		if u.lastChrIntervals == nil {
+	if refName != u.lastRefName {
+		u.lastRefName = refName
+		u.lastRefID = -1
+		u.lastRefIntervals = u.nameMap[refName]
+		// Force use of SearchPosType() on the first query for a contig.
+		if u.lastRefIntervals == nil {
 			return false
 		}
-		u.lastIdx = searchPosType(u.lastChrIntervals, posPlus1)
+		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
 		u.lastPosPlus1 = posPlus1
 		u.isSequential = true
 		return u.lastIdx&1 == 1
 	}
-	if u.lastChrIntervals == nil {
+	if u.lastRefIntervals == nil {
 		return false
 	}
 	if u.isSequential {
 		if posPlus1 >= u.lastPosPlus1 {
-			u.lastIdx = fwdsearchPosType(u.lastChrIntervals, posPlus1, u.lastIdx)
+			u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
 			u.lastPosPlus1 = posPlus1
 			return u.lastIdx&1 == 1
 		}
 		u.isSequential = false
 	}
-	return searchPosType(u.lastChrIntervals, posPlus1)&1 == 1
+	return SearchPosType(u.lastRefIntervals, posPlus1)&1 == 1
 }
 
-// Intersects checks whether the given contiguous possibly-multi-chromosome
-// region intersects the interval set.  Chromosomes must be specified by ID.
+// Intersects checks whether the given contiguous possibly-multi-reference
+// region intersects the interval set.  References must be specified by ID.
 // It panics if limitRefID:limitPos isn't after startRefID:startPos.
 func (u *BEDUnion) Intersects(startRefID int, startPos PosType, limitRefID int, limitPos PosType) bool {
-	// May want a variant of this which takes a single chromosome name.
+	// May want a variant of this which takes a single reference name.
 	if startRefID > limitRefID {
-		panic("internal error: BEDUnion.Intersects requires startRefID <= limitRefID")
+		panic("BEDUnion.Intersects: startRefID <= limitRefID required")
 	}
-	if startChrIntervals := u.idMap[startRefID]; startChrIntervals != nil {
-		idxStart := searchPosType(startChrIntervals, startPos+1)
+	if startRefIntervals := u.idMap[startRefID]; startRefIntervals != nil {
+		idxStart := SearchPosType(startRefIntervals, startPos+1)
 		if startRefID < limitRefID {
-			if idxStart < len(startChrIntervals) {
+			if idxStart < len(startRefIntervals) {
 				return true
 			}
 		} else {
 			if limitPos <= startPos {
-				panic("internal error: BEDUnion.Intersects requires limitPos > startPos when startRefID == limitRefID")
+				panic("BEDUnion.Intersects: limitPos > startPos required when startRefID == limitRefID")
 			}
 			if idxStart&1 == 1 {
 				return true
 			}
-			return (idxStart != len(startChrIntervals)) && (limitPos > startChrIntervals[idxStart])
+			return (idxStart != len(startRefIntervals)) && (limitPos > startRefIntervals[idxStart])
 		}
 	}
 	if startRefID == limitRefID {
@@ -257,16 +260,23 @@ func (u *BEDUnion) Intersects(startRefID int, startPos PosType, limitRefID int, 
 			return true
 		}
 	}
-	if limitChrIntervals := u.idMap[limitRefID]; limitChrIntervals != nil {
-		return limitChrIntervals[0] < limitPos
+	if limitRefIntervals := u.idMap[limitRefID]; limitRefIntervals != nil {
+		return limitRefIntervals[0] < limitPos
 	}
 	return false
 }
 
+// RefByID gets the raw length-2n []PosType for the given reference.  (If
+// the internal representation changes in the future, this will allocate and
+// fill a new slice of that form.)
+func (u *BEDUnion) RefByID(refID int) []PosType {
+	return u.idMap[refID]
+}
+
 func initBEDUnion() (bedUnion BEDUnion) {
 	bedUnion.nameMap = make(map[string]([]PosType))
-	bedUnion.lastChrName = ""
-	bedUnion.lastChrID = -1
+	bedUnion.lastRefName = ""
+	bedUnion.lastRefID = -1
 	return
 }
 
@@ -274,19 +284,21 @@ func (u *BEDUnion) nameToIDData(header *sam.Header, invert bool) {
 	samRefs := header.Refs()
 	nRef := len(samRefs)
 	u.idMap = make([][]PosType, nRef)
+	u.RefNames = make([]string, nRef)
 	for refID, ref := range samRefs {
 		// Validate ID property.  (Replace this with a comment if this is
 		// guaranteed; I wasn't able to quickly find code in biogo/hts/sam which
 		// made this clear one way or the other.)
 		if refID != ref.ID() {
-			panic("internal error: sam.header ref.ID != array position")
+			panic("BEDUnion.nameToIDData: sam.header ref.ID != array position")
 		}
 		refName := ref.Name()
-		chrIntervals := u.nameMap[refName]
-		if chrIntervals != nil {
-			u.idMap[refID] = chrIntervals
+		refIntervals := u.nameMap[refName]
+		u.RefNames[refID] = refName
+		if refIntervals != nil {
+			u.idMap[refID] = refIntervals
 		} else if invert {
-			u.idMap[refID] = []PosType{-1, posTypeMax}
+			u.idMap[refID] = []PosType{-1, PosTypeMax}
 		}
 	}
 }
@@ -304,10 +316,10 @@ func scanBEDUnion(scanner *bufio.Scanner, opts NewBEDOpts) (bedUnion BEDUnion, e
 	var tokens [3][]byte
 
 	lineIdx := 0
-	prevChr := ""
+	prevRef := ""
 	totBases := 0
 	var prevStart, prevEnd PosType
-	var chrIntervals []PosType
+	var refIntervals []PosType
 	for scanner.Scan() {
 		lineIdx++
 		// Originally had a scanner.Text() call, since I'll take immutability
@@ -329,7 +341,7 @@ func scanBEDUnion(scanner *bufio.Scanner, opts NewBEDOpts) (bedUnion BEDUnion, e
 			return
 		}
 
-		curChr := tokens[0]
+		curRef := tokens[0]
 		var parsedStart int
 		if parsedStart, err = strconv.Atoi(gunsafe.BytesToString(tokens[1])); err != nil {
 			return
@@ -345,38 +357,38 @@ func scanBEDUnion(scanner *bufio.Scanner, opts NewBEDOpts) (bedUnion BEDUnion, e
 		if parsedEnd, err = strconv.Atoi(gunsafe.BytesToString(tokens[2])); err != nil {
 			return
 		}
-		if (parsedEnd < parsedStart) || (parsedEnd >= posTypeMax) {
+		if (parsedEnd < parsedStart) || (parsedEnd >= PosTypeMax) {
 			err = fmt.Errorf("interval.scanBEDUnion: invalid coordinate pair on line %d", lineIdx)
 			return
 		}
 		end := PosType(parsedEnd)
-		if prevChr != gunsafe.BytesToString(curChr) {
-			if prevChr != "" {
+		if prevRef != gunsafe.BytesToString(curRef) {
+			if prevRef != "" {
 				// Save last interval, add to map.
 				if prevEnd != -1 {
-					chrIntervals = append(chrIntervals, prevStart, prevEnd)
+					refIntervals = append(refIntervals, prevStart, prevEnd)
 				}
 				if opts.Invert {
-					chrIntervals = append(chrIntervals, posTypeMax)
+					refIntervals = append(refIntervals, PosTypeMax)
 				}
-				bedUnion.nameMap[prevChr] = chrIntervals
+				bedUnion.nameMap[prevRef] = refIntervals
 			}
-			// bugfix (12 Jul 2018): Must create a copy of curChr contents, since it
+			// bugfix (12 Jul 2018): Must create a copy of curRef contents, since it
 			// refers to bytes on curLine that will be overwritten soon.
-			// Make a full heap copy instead of reusing a prevChrBytes []byte buffer,
+			// Make a full heap copy instead of reusing a prevRefBytes []byte buffer,
 			// since this needs to persist as a map key.
-			prevChr = string(curChr)
-			if _, found := bedUnion.nameMap[prevChr]; found {
-				err = fmt.Errorf("interval.scanBEDUnion: unsorted input (split chromosome %v)", curChr)
+			prevRef = string(curRef)
+			if _, found := bedUnion.nameMap[prevRef]; found {
+				err = fmt.Errorf("interval.scanBEDUnion: unsorted input (split reference %v)", curRef)
 				return
 			}
-			chrIntervals = []PosType{}
+			refIntervals = []PosType{}
 			if opts.Invert {
-				chrIntervals = append(chrIntervals, -1)
+				refIntervals = append(refIntervals, -1)
 			}
 			if end == start {
-				// Distinguish between 'mentioned' chromosomes without any overlapping
-				// bases and unmentioned chromosomes.
+				// Distinguish between 'mentioned' references without any overlapping
+				// bases and unmentioned references.
 				prevStart = -1
 				prevEnd = -1
 			} else {
@@ -392,7 +404,7 @@ func scanBEDUnion(scanner *bufio.Scanner, opts NewBEDOpts) (bedUnion BEDUnion, e
 		if start > prevEnd {
 			// New interval doesn't overlap previous one, so we can save the previous
 			// one.
-			chrIntervals = append(chrIntervals, prevStart, prevEnd)
+			refIntervals = append(refIntervals, prevStart, prevEnd)
 			prevStart = start
 			prevEnd = end
 			totBases += int(end - start)
@@ -412,12 +424,12 @@ func scanBEDUnion(scanner *bufio.Scanner, opts NewBEDOpts) (bedUnion BEDUnion, e
 		return
 	}
 	log.Printf("BED loaded, %d base(s) covered.\n", totBases)
-	if prevChr != "" {
-		chrIntervals = append(chrIntervals, prevStart, prevEnd)
+	if prevRef != "" {
+		refIntervals = append(refIntervals, prevStart, prevEnd)
 		if opts.Invert {
-			chrIntervals = append(chrIntervals, posTypeMax)
+			refIntervals = append(refIntervals, PosTypeMax)
 		}
-		bedUnion.nameMap[prevChr] = chrIntervals
+		bedUnion.nameMap[prevRef] = refIntervals
 	}
 	return
 }
@@ -466,7 +478,7 @@ func NewBEDUnionFromPath(path string, opts NewBEDOpts) (bedUnion BEDUnion, err e
 
 // Entry represents a single interval, with 0-based coordinates.
 type Entry struct {
-	ChrName string
+	RefName string
 	Start0  PosType
 	End     PosType
 }
@@ -476,7 +488,7 @@ type Entry struct {
 //   [contig ID]:[1-based pos]
 //   [contig ID]
 // returning a contig ID and 0-based interval boundaries.  The interval
-// [0, posTypeMax - 1] is returned if there is no positional restriction.
+// [0, PosTypeMax - 1] is returned if there is no positional restriction.
 func ParseRegionString(region string) (result Entry, err error) {
 	if len(region) == 0 {
 		err = fmt.Errorf("interval.ParseRegionString: empty region string")
@@ -484,16 +496,16 @@ func ParseRegionString(region string) (result Entry, err error) {
 	}
 	colonPos := strings.IndexByte(region, ':')
 	if colonPos == -1 {
-		result.ChrName = region
+		result.RefName = region
 		result.Start0 = 0
-		result.End = posTypeMax - 1
+		result.End = PosTypeMax - 1
 		return
 	}
 	if colonPos == 0 {
 		err = fmt.Errorf("interval.ParseRegionString: empty contig ID")
 		return
 	}
-	result.ChrName = region[0:colonPos]
+	result.RefName = region[0:colonPos]
 	rangeStr := region[colonPos+1:]
 	dashPos := strings.IndexByte(rangeStr, '-')
 	if dashPos == -1 {
@@ -525,10 +537,10 @@ func ParseRegionString(region string) (result Entry, err error) {
 	if end0, err = strconv.Atoi(endStr); err != nil {
 		return
 	}
-	// We may as well prohibit end0 == posTypeMax so that the interval-array
+	// We may as well prohibit end0 == PosTypeMax so that the interval-array
 	// is guaranteed to contain no repeats.  This means ParseInt(., 10, 32)
 	// doesn't quite do the right thing, so Atoi is used above.
-	if end0 <= start1 || end0 >= posTypeMax {
+	if end0 <= start1 || end0 >= PosTypeMax {
 		err = fmt.Errorf("interval.ParseRegionString: invalid range string %v", rangeStr)
 		return
 	}
@@ -541,39 +553,39 @@ func ParseRegionString(region string) (result Entry, err error) {
 // This ignores opts.OneBasedInput, since start0 is defined to be zero-based.
 func NewBEDUnionFromEntries(entries []Entry, opts NewBEDOpts) (bedUnion BEDUnion, err error) {
 	bedUnion = initBEDUnion()
-	prevChr := ""
+	prevRef := ""
 	var prevStart, prevEnd PosType
-	var chrIntervals []PosType
+	var refIntervals []PosType
 	for _, entry := range entries {
-		curChr := entry.ChrName
+		curRef := entry.RefName
 		if entry.Start0 < 0 {
 			err = fmt.Errorf("interval.NewBEDUnionFromEntries: negative start coordinate")
 			return
 		}
 
-		if (entry.End < entry.Start0) || (entry.End >= posTypeMax) {
+		if (entry.End < entry.Start0) || (entry.End >= PosTypeMax) {
 			err = fmt.Errorf("interval.NewBEDUnionFromEntry: invalid coordinate pair [%d, %d)", entry.Start0, entry.End)
 			return
 		}
-		if prevChr != curChr {
-			if prevChr != "" {
+		if prevRef != curRef {
+			if prevRef != "" {
 				// Save last interval, add to map.
 				if prevEnd != -1 {
-					chrIntervals = append(chrIntervals, prevStart, prevEnd)
+					refIntervals = append(refIntervals, prevStart, prevEnd)
 				}
 				if opts.Invert {
-					chrIntervals = append(chrIntervals, posTypeMax)
+					refIntervals = append(refIntervals, PosTypeMax)
 				}
-				bedUnion.nameMap[prevChr] = chrIntervals
+				bedUnion.nameMap[prevRef] = refIntervals
 			}
-			prevChr = curChr
-			if _, found := bedUnion.nameMap[prevChr]; found {
-				err = fmt.Errorf("interval.NewBEDUnionFromEntry: unsorted input (split chromosome %v)", curChr)
+			prevRef = curRef
+			if _, found := bedUnion.nameMap[prevRef]; found {
+				err = fmt.Errorf("interval.NewBEDUnionFromEntry: unsorted input (split reference %v)", curRef)
 				return
 			}
-			chrIntervals = []PosType{}
+			refIntervals = []PosType{}
 			if opts.Invert {
-				chrIntervals = append(chrIntervals, -1)
+				refIntervals = append(refIntervals, -1)
 			}
 			if entry.End == entry.Start0 {
 				prevStart = -1
@@ -591,7 +603,7 @@ func NewBEDUnionFromEntries(entries []Entry, opts NewBEDOpts) (bedUnion BEDUnion
 			// New interval doesn't overlap previous one, so we can save the previous
 			// one.
 			if prevEnd != -1 {
-				chrIntervals = append(chrIntervals, prevStart, prevEnd)
+				refIntervals = append(refIntervals, prevStart, prevEnd)
 			}
 			prevStart = entry.Start0
 			prevEnd = entry.End
@@ -606,14 +618,14 @@ func NewBEDUnionFromEntries(entries []Entry, opts NewBEDOpts) (bedUnion BEDUnion
 			}
 		}
 	}
-	if prevChr != "" {
+	if prevRef != "" {
 		if prevEnd != -1 {
-			chrIntervals = append(chrIntervals, prevStart, prevEnd)
+			refIntervals = append(refIntervals, prevStart, prevEnd)
 		}
 		if opts.Invert {
-			chrIntervals = append(chrIntervals, posTypeMax)
+			refIntervals = append(refIntervals, PosTypeMax)
 		}
-		bedUnion.nameMap[prevChr] = chrIntervals
+		bedUnion.nameMap[prevRef] = refIntervals
 	}
 	if opts.SAMHeader != nil {
 		bedUnion.nameToIDData(opts.SAMHeader, opts.Invert)
@@ -626,8 +638,9 @@ func NewBEDUnionFromEntries(entries []Entry, opts NewBEDOpts) (bedUnion BEDUnion
 func (u *BEDUnion) Clone() (bedUnion BEDUnion) {
 	bedUnion.nameMap = u.nameMap
 	bedUnion.idMap = u.idMap
-	bedUnion.lastChrIntervals = nil
-	bedUnion.lastChrName = ""
-	bedUnion.lastChrID = -1
+	bedUnion.RefNames = u.RefNames
+	bedUnion.lastRefIntervals = nil
+	bedUnion.lastRefName = ""
+	bedUnion.lastRefID = -1
 	return
 }

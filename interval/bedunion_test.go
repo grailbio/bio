@@ -31,8 +31,8 @@ func TestLoadSortedBEDIntervals(t *testing.T) {
 						2494304, 2494335,
 						2494587, 2494712},
 				},
-				lastChrName: "",
-				lastChrID:   -1,
+				lastRefName: "",
+				lastRefID:   -1,
 			},
 		},
 		{"testdata/test2.bed",
@@ -53,8 +53,8 @@ func TestLoadSortedBEDIntervals(t *testing.T) {
 						2494586, 2494712,
 						math.MaxInt32},
 				},
-				lastChrName: "",
-				lastChrID:   -1,
+				lastRefName: "",
+				lastRefID:   -1,
 			},
 		},
 	}
@@ -104,7 +104,7 @@ func TestParseRegionString(t *testing.T) {
 	for _, tt := range tests {
 		result, err := ParseRegionString(tt.region)
 		expect.NoError(t, err)
-		expect.EQ(t, tt.chrName, result.ChrName)
+		expect.EQ(t, tt.chrName, result.RefName)
 		expect.EQ(t, tt.start0, result.Start0)
 		expect.EQ(t, tt.end, result.End)
 	}
