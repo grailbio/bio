@@ -644,3 +644,108 @@ func (u *BEDUnion) Clone() (bedUnion BEDUnion) {
 	bedUnion.lastRefID = -1
 	return
 }
+
+// Subset returns a new BEDUnion which describes the intersection between the
+// original interval set and the given (possibly multi-reference) interval.
+// The original BEDUnion must support ID-based lookup.  Parameters are handled
+// in the same way as Intersects().
+func (u *BEDUnion) Subset(startRefID int, startPos PosType, limitRefID int, limitPos PosType) (bedUnion BEDUnion) {
+	bedUnion.nameMap = make(map[string]([]PosType))
+	nRef := len(u.idMap)
+	bedUnion.idMap = make([][]PosType, nRef)
+	bedUnion.RefNames = u.RefNames
+	bedUnion.lastRefIntervals = nil
+	bedUnion.lastRefName = ""
+	bedUnion.lastRefID = -1
+
+	// This code has a lot in common with Intersects().
+	if startRefID > limitRefID {
+		panic("BEDUnion.Subset: startRefID <= limitRefID required")
+	}
+	if startRefIntervals := u.idMap[startRefID]; startRefIntervals != nil {
+		idxStart := SearchPosType(startRefIntervals, startPos+1)
+		// Two cases:
+		// 1. startPos is strictly contained in an interval.  Then, we currently
+		//    need to make a copy of part of startRefIntervals and change the first
+		//    element.
+		// 2. Otherwise, we can point the new idMap/nameMap entries at a subslice
+		//    of startRefIntervals (unless startRefID == limitRefID and limitPos
+		//    is in the middle of an interval).
+		newAllocNeeded := ((idxStart & 1) == 1) && (startRefIntervals[idxStart-1] != startPos)
+		var refIntervalsSubset []PosType
+		if startRefID < limitRefID {
+			if idxStart < len(startRefIntervals) {
+				if newAllocNeeded {
+					nElem := len(startRefIntervals) - idxStart + 1
+					refIntervalsSubset = make([]PosType, nElem)
+					refIntervalsSubset[0] = startPos
+					copy(refIntervalsSubset[1:], startRefIntervals[idxStart:])
+				} else {
+					// idxStart must be rounded down to next even integer in edge case.
+					refIntervalsSubset = startRefIntervals[idxStart&(^1):]
+				}
+			}
+		} else {
+			if limitPos <= startPos {
+				panic("BEDUnion.Subset: limitPos > startPos required when startRefID == limitRefID")
+			}
+			idxEnd := SearchPosType(startRefIntervals, limitPos+1)
+			if (idxEnd&1 == 1) && (startRefIntervals[idxEnd-1] != limitPos) {
+				newAllocNeeded = true
+			}
+			if newAllocNeeded {
+				idxStartCopy := idxStart | 1
+				idxEndCopy := (idxEnd - 1) | 1
+				nElem := idxEndCopy - idxStartCopy + 2
+				refIntervalsSubset = make([]PosType, nElem)
+				if idxStart&1 == 1 {
+					refIntervalsSubset[0] = startPos
+				} else {
+					refIntervalsSubset[0] = startRefIntervals[idxStart]
+				}
+				copy(refIntervalsSubset[1:nElem-1], startRefIntervals[idxStartCopy:idxEndCopy])
+				if idxEnd&1 == 1 {
+					refIntervalsSubset[nElem-1] = limitPos
+				} else {
+					refIntervalsSubset[nElem-1] = startRefIntervals[idxEndCopy]
+				}
+			} else {
+				idxStartFinal := idxStart & (^1)
+				idxEndFinal := idxEnd & (^1)
+				if idxStartFinal == idxEndFinal {
+					return
+				}
+				refIntervalsSubset = startRefIntervals[idxStartFinal:idxEndFinal]
+			}
+		}
+		if refIntervalsSubset != nil {
+			bedUnion.idMap[startRefID] = refIntervalsSubset
+			bedUnion.nameMap[u.RefNames[startRefID]] = refIntervalsSubset
+		}
+	}
+	if startRefID == limitRefID {
+		return
+	}
+	for refID := startRefID + 1; refID < limitRefID; refID++ {
+		refIntervals := u.idMap[refID]
+		bedUnion.idMap[refID] = refIntervals
+		bedUnion.nameMap[u.RefNames[refID]] = refIntervals
+	}
+	if limitRefIntervals := u.idMap[limitRefID]; limitRefIntervals != nil {
+		idxEnd := SearchPosType(limitRefIntervals, limitPos+1)
+		if idxEnd == 0 {
+			return
+		}
+		var refIntervalsSubset []PosType
+		if ((idxEnd & 1) == 1) && (limitRefIntervals[idxEnd-1] != limitPos) {
+			refIntervalsSubset = make([]PosType, idxEnd+1)
+			copy(refIntervalsSubset[:idxEnd], limitRefIntervals[:idxEnd])
+			refIntervalsSubset[idxEnd] = limitPos
+		} else {
+			refIntervalsSubset = limitRefIntervals[:idxEnd&(^1)]
+		}
+		bedUnion.idMap[limitRefID] = refIntervalsSubset
+		bedUnion.nameMap[u.RefNames[limitRefID]] = refIntervalsSubset
+	}
+	return
+}

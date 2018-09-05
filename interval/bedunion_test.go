@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/biogo/hts/sam"
 	"github.com/grailbio/testutil/expect"
 	_ "grail.com/cloud/grailfile"
 )
@@ -77,7 +78,7 @@ func TestLoadSortedBEDIntervals(t *testing.T) {
 func TestParseRegionString(t *testing.T) {
 	tests := []struct {
 		region  string
-		chrName string
+		refName string
 		start0  PosType
 		end     PosType
 	}{
@@ -104,8 +105,298 @@ func TestParseRegionString(t *testing.T) {
 	for _, tt := range tests {
 		result, err := ParseRegionString(tt.region)
 		expect.NoError(t, err)
-		expect.EQ(t, tt.chrName, result.RefName)
+		expect.EQ(t, tt.refName, result.RefName)
 		expect.EQ(t, tt.start0, result.Start0)
 		expect.EQ(t, tt.end, result.End)
+	}
+}
+
+type SubsetTestInstance struct {
+	startRefID int
+	startPos   PosType
+	limitRefID int
+	limitPos   PosType
+	want       BEDUnion
+}
+
+func TestSubset(t *testing.T) {
+	tests := []struct {
+		pathname string
+		insts    []SubsetTestInstance
+	}{
+		{
+			pathname: "testdata/test1.bed",
+			insts: []SubsetTestInstance{
+				{
+					limitPos: 2488104,
+					want: BEDUnion{
+						nameMap:   make(map[string]([]PosType)),
+						idMap:     make([][]PosType, 2),
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					limitPos: 2488105,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2488104, 2488105},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2488104, 2488105},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					limitPos: 2488172,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2488104, 2488172},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2488104, 2488172},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					limitPos: 2489165,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2488104, 2488172},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2488104, 2488172},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					limitPos: 2489166,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2488104, 2488172,
+								2489165, 2489166,
+							},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2488104, 2488172,
+								2489165, 2489166,
+							},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					startPos: 2488104,
+					limitPos: 2489166,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2488104, 2488172,
+								2489165, 2489166,
+							},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2488104, 2488172,
+								2489165, 2489166,
+							},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					startPos: 2488105,
+					limitPos: 2489166,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2488105, 2488172,
+								2489165, 2489166,
+							},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2488105, 2488172,
+								2489165, 2489166,
+							},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					limitPos: 3000000,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2488104, 2488172,
+								2489165, 2489273,
+								2489782, 2489907,
+								2490320, 2490438,
+								2491262, 2491417,
+								2492063, 2492157,
+								2493112, 2493254,
+								2494304, 2494335,
+								2494587, 2494712,
+							},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2488104, 2488172,
+								2489165, 2489273,
+								2489782, 2489907,
+								2490320, 2490438,
+								2491262, 2491417,
+								2492063, 2492157,
+								2493112, 2493254,
+								2494304, 2494335,
+								2494587, 2494712,
+							},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					startPos: 2494303,
+					limitPos: 3000000,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2494304, 2494335,
+								2494587, 2494712,
+							},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2494304, 2494335,
+								2494587, 2494712,
+							},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					startPos: 2494304,
+					limitPos: 3000000,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2494304, 2494335,
+								2494587, 2494712,
+							},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2494304, 2494335,
+								2494587, 2494712,
+							},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+				{
+					startPos: 2494305,
+					limitPos: 3000000,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2494305, 2494335,
+								2494587, 2494712,
+							},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2494305, 2494335,
+								2494587, 2494712,
+							},
+							nil,
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+			},
+		},
+		{
+			pathname: "testdata/test2.bed",
+			insts: []SubsetTestInstance{
+				{
+					startPos:   2489166,
+					limitRefID: 1,
+					limitPos:   2490439,
+					want: BEDUnion{
+						nameMap: map[string]([]PosType){
+							"chr1": []PosType{
+								2489166, 2489273,
+								2489782, 2489907,
+							},
+							"chr2": []PosType{
+								2490320, 2490439,
+							},
+						},
+						idMap: [][]PosType{
+							[]PosType{
+								2489166, 2489273,
+								2489782, 2489907,
+							},
+							[]PosType{
+								2490320, 2490439,
+							},
+						},
+						RefNames:  []string{"chr1", "chr2"},
+						lastRefID: -1,
+					},
+				},
+			},
+		},
+	}
+
+	// Mock a *sam.Header and calling NewBEDUnionFromPath()
+	ref1, _ := sam.NewReference("chr1", "", "", 249250621, nil, nil)
+	ref2, _ := sam.NewReference("chr2", "", "", 243199373, nil, nil)
+	samHeader, _ := sam.NewHeader(nil, []*sam.Reference{ref1, ref2})
+	opts := NewBEDOpts{
+		SAMHeader: samHeader,
+	}
+	for _, tt := range tests {
+		bedUnion, err := NewBEDUnionFromPath(
+			tt.pathname,
+			opts,
+		)
+		expect.NoError(t, err)
+		for _, ii := range tt.insts {
+			result := bedUnion.Subset(ii.startRefID, ii.startPos, ii.limitRefID, ii.limitPos)
+			if !reflect.DeepEqual(result, ii.want) {
+				t.Errorf("Wanted: %v  Got: %v", ii.want, result)
+			}
+		}
 	}
 }
