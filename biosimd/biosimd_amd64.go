@@ -7,6 +7,7 @@
 package biosimd
 
 import (
+	"fmt"
 	"reflect"
 	"unsafe"
 
@@ -276,11 +277,13 @@ func UnpackAndReplaceSeq(dst, src []byte, tablePtr *[16]byte) {
 // len(src) * 2 < endPos.
 func UnpackAndReplaceSeqSubset(dst, src []byte, tablePtr *[16]byte, startPos, endPos int) {
 	if (startPos < 0) || (len(src)*2 < endPos) {
-		panic("UnpackAndReplaceSeqSubset() requires 0 <= startPos <= endPos <= 2 * len(src).")
+		errstr := fmt.Sprintf("UnpackAndReplaceSeqSubset() requires 0 <= startPos <= endPos <= 2 * len(src).\n  len(dst) = %d\n  src = %v\n  startPos = %d\n  endPos = %d\n", len(dst), src, startPos, endPos)
+		panic(errstr)
 	}
 	dstLen := len(dst)
 	if dstLen != endPos-startPos {
-		panic("UnpackAndReplaceSeqSubset() requires len(dst) == endPos - startPos.")
+		errstr := fmt.Sprintf("UnpackAndReplaceSeqSubset() requires len(dst) == endPos - startPos.\n  len(dst) = %d\n  startPos = %d\n  endPos = %d\n", dstLen, startPos, endPos)
+		panic(errstr)
 	}
 	if dstLen == 0 {
 		return
