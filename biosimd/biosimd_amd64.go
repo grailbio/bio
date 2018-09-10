@@ -277,7 +277,7 @@ func UnpackAndReplaceSeq(dst, src []byte, tablePtr *[16]byte) {
 // len(src) * 2 < endPos.
 func UnpackAndReplaceSeqSubset(dst, src []byte, tablePtr *[16]byte, startPos, endPos int) {
 	if (startPos < 0) || (len(src)*2 < endPos) {
-		errstr := fmt.Sprintf("UnpackAndReplaceSeqSubset() requires 0 <= startPos <= endPos <= 2 * len(src).\n  len(dst) = %d\n  src = %v\n  startPos = %d\n  endPos = %d\n", len(dst), src, startPos, endPos)
+		errstr := fmt.Sprintf("UnpackAndReplaceSeqSubset() requires 0 <= startPos <= endPos <= 2 * len(src).\n  len(src) = %d\n  src = %v\n  startPos = %d\n  endPos = %d\n", len(src), src, startPos, endPos)
 		panic(errstr)
 	}
 	dstLen := len(dst)
