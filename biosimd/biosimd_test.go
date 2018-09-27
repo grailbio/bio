@@ -384,7 +384,6 @@ func TestUnpackAndReplaceSeq(t *testing.T) {
 	srcArr := simd.MakeUnsafe(maxSrcSize)
 	dst1Arr := simd.MakeUnsafe(maxDstSize)
 	dst2Arr := simd.MakeUnsafe(maxDstSize)
-	table := [...]byte{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'}
 	for iter := 0; iter < nIter; iter++ {
 		srcSliceStart := rand.Intn(maxSrcSize)
 		dstSliceStart := srcSliceStart * 2
@@ -396,15 +395,15 @@ func TestUnpackAndReplaceSeq(t *testing.T) {
 		}
 		dst1Slice := dst1Arr[dstSliceStart:dstSliceEnd]
 		dst2Slice := dst2Arr[dstSliceStart:dstSliceEnd]
-		unpackAndReplaceSeqSlow(dst1Slice, srcSlice, &table)
-		biosimd.UnpackAndReplaceSeqUnsafe(dst2Slice, srcSlice, &table)
+		unpackAndReplaceSeqSlow(dst1Slice, srcSlice, &biosimd.SeqASCIITable)
+		biosimd.UnpackAndReplaceSeqUnsafe(dst2Slice, srcSlice, &biosimd.SeqASCIITable)
 		if !bytes.Equal(dst1Slice, dst2Slice) {
 			t.Fatal("Mismatched UnpackAndReplaceSeqUnsafe result.")
 		}
 		simd.Memset8Unsafe(dst2Arr, 0)
 		sentinel := byte(rand.Intn(256))
 		dst2Arr[dstSliceEnd] = sentinel
-		biosimd.UnpackAndReplaceSeq(dst2Slice, srcSlice, &table)
+		biosimd.UnpackAndReplaceSeq(dst2Slice, srcSlice, &biosimd.SeqASCIITable)
 		if !bytes.Equal(dst1Slice, dst2Slice) {
 			t.Fatal("Mismatched UnpackAndReplaceSeq result.")
 		}
@@ -433,7 +432,6 @@ func TestUnpackAndReplaceSeqSubset(t *testing.T) {
 	srcArr := simd.MakeUnsafe(maxSrcSize)
 	dst1Arr := simd.MakeUnsafe(maxDstSize)
 	dst2Arr := simd.MakeUnsafe(maxDstSize)
-	table := [...]byte{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'}
 	for iter := 0; iter < nIter; iter++ {
 		srcSliceStart := rand.Intn(maxSrcSize - 1)
 		// Force nonempty.
@@ -449,8 +447,8 @@ func TestUnpackAndReplaceSeqSubset(t *testing.T) {
 		dst2Slice := dst2Arr[:endPos-startPos]
 		sentinel := byte(rand.Intn(256))
 		dst2Arr[endPos-startPos] = sentinel
-		unpackAndReplaceSeqSubsetSlow(dst1Slice, srcSlice, &table, startPos, endPos)
-		biosimd.UnpackAndReplaceSeqSubset(dst2Slice, srcSlice, &table, startPos, endPos)
+		unpackAndReplaceSeqSubsetSlow(dst1Slice, srcSlice, &biosimd.SeqASCIITable, startPos, endPos)
+		biosimd.UnpackAndReplaceSeqSubset(dst2Slice, srcSlice, &biosimd.SeqASCIITable, startPos, endPos)
 		if !bytes.Equal(dst1Slice, dst2Slice) {
 			t.Fatal("Mismatched UnpackAndReplaceSeqSubset result.")
 		}

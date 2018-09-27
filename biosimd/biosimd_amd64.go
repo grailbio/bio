@@ -237,6 +237,12 @@ func UnpackAndReplaceSeqUnsafe(dst, src []byte, tablePtr *[16]byte) {
 	unpackAndReplaceSeqSSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), unsafe.Pointer(tablePtr), srcHeader.Len)
 }
 
+var (
+	// SeqASCIITable maps 4-bit seq[] values to their ASCII representations.
+	// It's a common argument for UnpackAndReplaceSeq().
+	SeqASCIITable = [16]byte{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'}
+)
+
 // UnpackAndReplaceSeq sets the bytes in dst[] as follows:
 //   if pos is even, dst[pos] := table[src[pos / 2] >> 4]
 //   if pos is odd, dst[pos] := table[src[pos / 2] & 15]
