@@ -3,6 +3,7 @@ package bamprovider
 import (
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/biogo/hts/bam"
@@ -39,7 +40,8 @@ type BAMProvider struct {
 	freeIters []*bamIterator
 
 	indexOnce sync.Once
-	index     *bam.Index
+	bindex    *bam.Index
+	gindex    *gbam.GIndex
 
 	headerOnce sync.Once
 	header     *sam.Header
@@ -49,7 +51,6 @@ type bamIterator struct {
 	provider *BAMProvider
 	in       file.File
 	reader   *bam.Reader
-	index    *bam.Index
 	// Offset of the first record in the file.
 	firstRecord bgzf.Offset
 	// Half-open coordinate range to read.
@@ -71,7 +72,7 @@ func (b *BAMProvider) indexPath() string {
 
 // readIndex reads the *.bai file and caches its contents in b.index.  Repeated
 // calls to this function returns b.index.
-func (b *BAMProvider) readIndex() (*bam.Index, error) {
+func (b *BAMProvider) readIndex() error {
 	b.indexOnce.Do(func() {
 		ctx := vcontext.Background()
 		in, err := file.Open(ctx, b.indexPath())
@@ -79,8 +80,14 @@ func (b *BAMProvider) readIndex() (*bam.Index, error) {
 			b.err.Set(err)
 			return
 		}
-		var i *bam.Index
-		if i, err = bam.ReadIndex(in.Reader(ctx)); err != nil {
+		var bindex *bam.Index
+		var gindex *gbam.GIndex
+		if strings.HasSuffix(b.indexPath(), ".gbai") {
+			gindex, err = gbam.ReadGIndex(in.Reader(ctx))
+		} else {
+			bindex, err = bam.ReadIndex(in.Reader(ctx))
+		}
+		if err != nil {
 			b.err.Set(err)
 			return
 		}
@@ -88,12 +95,10 @@ func (b *BAMProvider) readIndex() (*bam.Index, error) {
 			b.err.Set(err)
 			return
 		}
-		b.index = i
+		b.bindex = bindex
+		b.gindex = gindex
 	})
-	if err := b.err.Err(); err != nil {
-		return nil, err
-	}
-	return b.index, nil
+	return b.err.Err()
 }
 
 // GetHeader implements the Provider interface.
@@ -185,7 +190,7 @@ func (b *BAMProvider) allocateIterator() *bamIterator {
 		provider: b,
 		active:   true,
 	}
-	if iter.index, iter.err = b.readIndex(); iter.err != nil {
+	if iter.err = b.readIndex(); iter.err != nil {
 		return &iter
 	}
 	ctx := vcontext.Background()
@@ -267,8 +272,13 @@ func (i *bamIterator) reset(startRef *sam.Reference, startPos int, endRef *sam.R
 	var err error
 	ref := startRef
 	for {
+		var found bool
 		if ref == nil {
-			offset, err = i.findUnmappedOffset()
+			if i.provider.gindex != nil {
+				offset = i.provider.gindex.UnmappedOffset()
+			} else {
+				offset, err = i.legacyFindUnmappedOffset()
+			}
 			break
 		}
 		start := 0
@@ -279,8 +289,13 @@ func (i *bamIterator) reset(startRef *sam.Reference, startPos int, endRef *sam.R
 		if ref.ID() == endRef.ID() {
 			end = endPos
 		}
-		var found bool
-		found, offset, err = i.findRecordOffset(ref, start, end)
+		if i.provider.gindex != nil {
+			offset = i.provider.gindex.RecordOffset(int32(ref.ID()), int32(start), 0)
+			found = true
+		} else {
+			found, offset, err = i.legacyFindRecordOffset(ref, start, end)
+		}
+
 		if err != nil || found {
 			break
 		}
@@ -318,14 +333,14 @@ func (i *bamIterator) Close() error {
 // Find the the file offset at which the first unmapped sequence is
 // stored. This function is conservative; it may return an offset that's smaller
 // than absolutely necessary.
-func (i *bamIterator) findUnmappedOffset() (bgzf.Offset, error) {
+func (i *bamIterator) legacyFindUnmappedOffset() (bgzf.Offset, error) {
 	// Iterate through the endpoint of each reference to find the
 	// largest offset.
 	header := i.reader.Header()
 	var lastOffset bgzf.Offset
 	foundRefs := false
 	for _, r := range header.Refs() {
-		chunks, err := i.index.Chunks(r, 0, r.Len())
+		chunks, err := i.provider.bindex.Chunks(r, 0, r.Len())
 		if err == index.ErrInvalid {
 			// There are no reads on this reference, but don't worry about it.
 			continue
@@ -349,8 +364,8 @@ func (i *bamIterator) findUnmappedOffset() (bgzf.Offset, error) {
 // Find the the file offset at which the first record at coordinate <ref,pos> is
 // stored. This function is conservative; it may return an offset that's smaller
 // than absolutely necessary.
-func (i *bamIterator) findRecordOffset(ref *sam.Reference, startPos, endPos int) (bool, bgzf.Offset, error) {
-	chunks, err := i.index.Chunks(ref, startPos, endPos)
+func (i *bamIterator) legacyFindRecordOffset(ref *sam.Reference, startPos, endPos int) (bool, bgzf.Offset, error) {
+	chunks, err := i.provider.bindex.Chunks(ref, startPos, endPos)
 	if err == index.ErrInvalid || len(chunks) == 0 {
 		// No reads for this interval: return an empty iterator.
 		// This needs to be handled as a special case due to the current behavior of biogo.

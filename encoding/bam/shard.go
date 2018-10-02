@@ -7,6 +7,7 @@ package bam
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	biogobam "github.com/biogo/hts/bam"
 	"github.com/biogo/hts/bgzf"
@@ -282,38 +283,65 @@ func GetPositionBasedShards(header *sam.Header, shardSize int, padding int, incl
 				ShardIdx: shardIdx,
 			})
 	}
-	ValidateShardList(shards, padding)
+	ValidateShardList(header, shards, padding)
 	return shards, nil
 }
 
 // GetByteBasedShards returns a list of shards much like
 // GetPositionBasedShards, but the shards are based on a target
 // bytesPerShard, and a minimum number of bases pershard (minBases).
-func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, padding int, includeUnmapped bool) ([]Shard, error) {
-	type boundary struct {
-		pos     int32
-		filePos int64
-	}
+// baiPath can point to a traditional style .bai index, or a new style
+// .gbai index.
+func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, padding int, includeUnmapped bool) (shards []Shard, err error) {
 	// TODO(saito) pass the context explicitly.
 	ctx := vcontext.Background()
-	bamIn, err := file.Open(ctx, bamPath)
+	var bamIn file.File
+	bamIn, err = file.Open(ctx, bamPath)
 	if err != nil {
 		return nil, err
 	}
-	defer bamIn.Close(ctx)
-	bamr, err := biogobam.NewReader(bamIn.Reader(ctx), 1)
+	defer func() {
+		if cerr := bamIn.Close(ctx); cerr != nil && err != nil {
+			err = cerr
+		}
+	}()
+
+	var bamr *biogobam.Reader
+	bamr, err = biogobam.NewReader(bamIn.Reader(ctx), 1)
 	if err != nil {
 		return nil, err
 	}
 	header := bamr.Header()
 
+	if strings.HasSuffix(baiPath, ".gbai") {
+		return gbaiByteBasedShards(header, baiPath, bytesPerShard, minBases, padding, includeUnmapped)
+	}
+	return baiByteBasedShards(bamr, baiPath, bytesPerShard, minBases, padding, includeUnmapped)
+}
+
+// baiByteBasedShards creates shards based on a traditional .bai style index.
+func baiByteBasedShards(bamr *biogobam.Reader, baiPath string, bytesPerShard int64,
+	minBases, padding int, includeUnmapped bool) (shards []Shard, err error) {
+	type boundary struct {
+		pos     int32
+		filePos int64
+	}
+
 	// Get chunks from the .bai file.
-	indexIn, err := file.Open(ctx, baiPath)
+	ctx := vcontext.Background()
+	var indexIn file.File
+	indexIn, err = file.Open(ctx, baiPath)
 	if err != nil {
 		return nil, err
 	}
-	defer indexIn.Close(ctx)
-	index, err := ReadIndex(indexIn.Reader(ctx))
+	defer func() {
+		if cerr := indexIn.Close(ctx); cerr != nil && err != nil {
+			err = cerr
+		}
+	}()
+
+	var index *Index
+	index, err = ReadIndex(indexIn.Reader(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -323,9 +351,9 @@ func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, 
 	}
 
 	// Compute shards
-	shards := []Shard{}
+	shards = []Shard{}
 	for refId := 0; refId < len(chunksByRef); refId++ {
-		ref := header.Refs()[refId]
+		ref := bamr.Header().Refs()[refId]
 		refLen := ref.Len()
 		offsets := chunksByRef[refId]
 
@@ -335,14 +363,13 @@ func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, 
 		for i, offset := range offsets {
 			if i == 0 || (offset.File-prevFilePos) > bytesPerShard {
 				var rec biopb.Coord
-				var err error
-				rec, err = GetCoordAtOffset(bamr, offset)
-				if err != nil {
-					vlog.Panic(err)
+				var coordErr error
+				rec, coordErr = GetCoordAtOffset(bamr, offset)
+				if coordErr != nil {
+					vlog.Panic(coordErr)
 				}
 				if int(rec.RefId) != refId {
 					vlog.VI(1).Infof("No more reads in refid %d %s, filepos %d", refId, ref.Name(), offset.File)
-					prevFilePos = 0
 					break
 				}
 
@@ -363,7 +390,7 @@ func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, 
 			if (boundaries[i].filePos - boundaries[i-1].filePos) > 2*bytesPerShard {
 				genomeSubdivisions := ((boundaries[i].pos - boundaries[i-1].pos) / int32(minBases)) - 1
 				bytesSubdivisions := ((boundaries[i].filePos - boundaries[i-1].filePos) / bytesPerShard) - 1
-				subdivisions := int32(0)
+				var subdivisions int32
 				if int64(genomeSubdivisions) < bytesSubdivisions {
 					subdivisions = genomeSubdivisions
 				} else {
@@ -414,12 +441,97 @@ func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, 
 			ShardIdx: len(shards),
 		})
 	}
-	ValidateShardList(shards, padding)
+	ValidateShardList(bamr.Header(), shards, padding)
+	return shards, nil
+}
+
+// gbaiByteBasedShards creates shards based on a newer .gbai style index.
+func gbaiByteBasedShards(header *sam.Header, gbaiPath string, bytesPerShard int64,
+	minBases, padding int, includeUnmapped bool) (shards []Shard, err error) {
+	ctx := vcontext.Background()
+	var indexIn file.File
+	indexIn, err = file.Open(ctx, gbaiPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if cerr := indexIn.Close(ctx); cerr != nil && err != nil {
+			err = cerr
+		}
+	}()
+
+	var index *GIndex
+	index, err = ReadGIndex(indexIn.Reader(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	shards = []Shard{}
+	prevRefID := int32(0)
+	prevRefPos := int32(0)
+	prevFilePos := uint64(0)
+	for i, entry := range *index {
+		if i == 0 {
+			prevRefID = entry.RefID
+			prevRefPos = 0
+			prevFilePos = entry.VOffset >> 16
+		}
+
+		if entry.RefID != prevRefID {
+			// Close out the previous reference.
+			shards = append(shards, Shard{
+				StartRef: header.Refs()[prevRefID],
+				EndRef:   header.Refs()[prevRefID],
+				Start:    int(prevRefPos),
+				End:      header.Refs()[prevRefID].Len(),
+				Padding:  padding,
+				ShardIdx: len(shards),
+			})
+			prevRefID = entry.RefID
+			prevRefPos = 0
+			prevFilePos = entry.VOffset >> 16
+		} else if (entry.Pos-prevRefPos) >= int32(minBases) &&
+			// Close out the previous shard.
+			((entry.VOffset>>16)-prevFilePos) >= uint64(bytesPerShard) {
+			shards = append(shards, Shard{
+				StartRef: header.Refs()[prevRefID],
+				EndRef:   header.Refs()[prevRefID],
+				Start:    int(prevRefPos),
+				End:      int(entry.Pos),
+				Padding:  padding,
+				ShardIdx: len(shards),
+			})
+			prevRefPos = entry.Pos
+			prevFilePos = entry.VOffset >> 16
+		}
+
+		if i == len(*index)-1 && prevRefID != -1 {
+			// Close out the last shard.
+			shards = append(shards, Shard{
+				StartRef: header.Refs()[prevRefID],
+				EndRef:   header.Refs()[prevRefID],
+				Start:    int(prevRefPos),
+				End:      header.Refs()[prevRefID].Len(),
+				Padding:  padding,
+				ShardIdx: len(shards),
+			})
+			prevRefID = entry.RefID
+			prevRefPos = 0
+			prevFilePos = entry.VOffset >> 16
+		}
+	}
+	if includeUnmapped {
+		shards = append(shards, Shard{
+			End:      math.MaxInt32,
+			ShardIdx: len(shards),
+		})
+	}
+	ValidateShardList(header, shards, padding)
 	return shards, nil
 }
 
 // ValidateShardList validates that shardList has sensible values. Exposed only for testing.
-func ValidateShardList(shardList []Shard, padding int) {
+func ValidateShardList(header *sam.Header, shardList []Shard, padding int) {
 	var prevRef *sam.Reference
 	for i, shard := range shardList {
 		if shard.Start >= shard.End {

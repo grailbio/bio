@@ -322,3 +322,58 @@ func ExampleParseFileType() {
 	// 2
 	// 0
 }
+
+func getReadNames(t *testing.T, provider bamprovider.Provider) []string {
+	opts := bamprovider.GenerateShardsOpts{
+		Strategy:        bamprovider.ByteBased,
+		IncludeUnmapped: true,
+		BytesPerShard:   128 * 1024,
+	}
+
+	shards, err := provider.GenerateShards(opts)
+	assert.NoError(t, err)
+	names := make([]string, 0)
+	for _, shard := range shards {
+		iter := provider.NewIterator(shard)
+		n := 0
+		for iter.Scan() {
+			r := iter.Record()
+			names = append(names, r.Name)
+			n++
+		}
+		assert.NoError(t, iter.Close())
+	}
+	return names
+}
+
+func TestGIndex(t *testing.T) {
+	// Test that sharded reading using both .bai and .gbai return the
+	// same set of read names.
+	tmpDir, cleanup := testutil.TempDir(t, "", "")
+	defer cleanup()
+	bamPath := testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam")
+	baiPath := bamPath + ".bai"
+
+	// Generate .gbai index file.
+	r, err := os.Open(bamPath)
+	assert.NoError(t, err)
+	gbaiPath := filepath.Join(tmpDir, "foo.gbai")
+	w, err := os.Create(gbaiPath)
+	assert.NoError(t, err)
+	err = gbam.WriteGIndex(w, r, 1024, 4)
+	assert.NoError(t, err)
+	assert.NoError(t, w.Close())
+	assert.NoError(t, r.Close())
+
+	// Get all the read names using .bai and .gbai, then compare the
+	// read names.
+	provider := bamprovider.NewProvider(bamPath, bamprovider.ProviderOpts{Index: baiPath})
+	expected := getReadNames(t, provider)
+	provider = bamprovider.NewProvider(bamPath, bamprovider.ProviderOpts{Index: gbaiPath})
+	actual := getReadNames(t, provider)
+
+	assert.EQ(t, len(expected), len(actual))
+	for i := range expected {
+		assert.EQ(t, expected[i], actual[i])
+	}
+}
