@@ -671,7 +671,7 @@ func BenchmarkReadPAM(b *testing.B) {
 		}
 		close(boundCh)
 		totalRecs := int64(0)
-		traverse.Each(runtime.NumCPU()).Do(func(_ int) error { // nolint: errcheck
+		traverse.CPU(func() error { // nolint: errcheck
 			for bound := range boundCh {
 				start := time.Now()
 				vlog.Infof("Start read %+v", bound)
@@ -708,7 +708,7 @@ func BenchmarkReadBAM(b *testing.B) {
 		parallelism := runtime.NumCPU()
 		totalRecs := int64(0)
 
-		traverse.Each(parallelism).Do(func(_ int) error { // nolint: errcheck
+		traverse.Each(parallelism, func(_ int) error { // nolint: errcheck
 			for {
 				shard, ok := <-shardCh
 				if !ok {

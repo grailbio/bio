@@ -187,7 +187,7 @@ func ConvertToPAM(opts pam.WriteOpts, pamPath, bamPath, baiPath string, bytesPer
 
 	var totalRecs int64
 	bam := bamprovider.BAMProvider{Path: bamPath, Index: baiPath}
-	err := traverse.Each(len(shards)).Do(func(i int) error {
+	err := traverse.Each(len(shards), func(i int) error {
 		shard := shards[i]
 		nextShard := bamShardBound{
 			rec: biopb.Coord{biopb.InfinityRefID, biopb.InfinityPos, 0},

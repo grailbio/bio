@@ -163,7 +163,7 @@ func (w *Writer) Write(r *sam.Record) {
 // Close must be called exactly once. After close, no operation other than Err()
 // may be called.
 func (w *Writer) Close() error {
-	traverse.Each(len(w.fieldWriters)).Do(func(i int) error { // nolint: errcheck
+	traverse.Each(len(w.fieldWriters), func(i int) error { // nolint: errcheck
 		fw := w.fieldWriters[i]
 		if fw != nil {
 			fw.Close()
