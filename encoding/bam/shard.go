@@ -381,6 +381,17 @@ func baiByteBasedShards(bamr *biogobam.Reader, baiPath string, bytesPerShard int
 				prevFilePos = offset.File
 			}
 		}
+		// If there's a next ref following this ref, then add the next
+		// ref's start location as the end of this ref.  That way, we
+		// will know how many bytes are in the final chunk of this ref,
+		// so that we might break up that final chunk.
+		if refId < len(chunksByRef)-1 {
+			nextOffsets := chunksByRef[refId+1]
+			if len(nextOffsets) > 0 {
+				vlog.VI(3).Infof("Adding final boundary %v", boundary{int32(refLen), nextOffsets[0].File})
+				boundaries = append(boundaries, boundary{int32(refLen), nextOffsets[0].File})
+			}
+		}
 
 		// Some shards might be too big since the index does not cover
 		// the bam file at regular intervals, so further break up
@@ -414,10 +425,10 @@ func baiByteBasedShards(bamr *biogobam.Reader, baiPath string, bytesPerShard int
 		// Some shards might be smaller than minBases, so break up those shards.
 		boundaries3 := []boundary{boundary{0, -1}}
 		for i := 1; i < len(boundaries2); i++ {
-			if boundaries2[i].pos-boundaries2[i-1].pos >= int32(minBases) || i == len(boundaries2)-1 {
+			if boundaries2[i].pos-boundaries3[len(boundaries3)-1].pos >= int32(minBases) || i == len(boundaries2)-1 {
 				boundaries3 = append(boundaries3, boundaries2[i])
 			} else {
-				vlog.VI(3).Infof("dropping boundary %v", boundaries2[i])
+				vlog.VI(3).Infof("dropping boundary %v (min bases %d)", boundaries2[i], int32(minBases))
 			}
 		}
 
