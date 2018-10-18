@@ -31,11 +31,14 @@ var MappedRange = biopb.CoordRange{
 }
 
 // Shard represents a genomic interval. The <StartRef,Start,StartSeq> and
-// <EndRef,End,EndSeq> coordinates form a half-open, 0-based interval. The
-// StartSeq, EndSeq fields are used to distinguish a list of reads at the same
-// coordinate.  For a given coordinate (ref, pos), the Nth read the PAM/BAM file
-// is assigned the seq value of N-1 (assuming N is 1-based). For example,
-// Passing range [(startref=10,start=100,startseq=15),
+// <EndRef,End,EndSeq> coordinates form a half-open, 0-based interval. An
+// iterator for such a range will return reads whose start positions fall within
+// that range.
+//
+// The StartSeq, EndSeq fields are used to distinguish a list of reads that
+// start at the same coordinate.  The Nth read that start at the coordinate is
+// assigned the seq value of N-1 (assuming N is 1-based). For example, Passing
+// range [(startref=10,start=100,startseq=15),
 // (limitref=10,limit=100,limitseq=20)] will read 16th to 20th read sequences at
 // coordinate (10,100)
 //

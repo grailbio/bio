@@ -22,6 +22,8 @@ import (
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/assert"
+	"github.com/grailbio/testutil/expect"
+	"github.com/grailbio/testutil/h"
 	"v.io/x/lib/vlog"
 )
 
@@ -30,6 +32,14 @@ func TestMain(m *testing.M) {
 	status := m.Run()
 	shutdown()
 	os.Exit(status)
+}
+
+func readIterator(i bamprovider.Iterator) []string {
+	var names []string
+	for i.Scan() {
+		names = append(names, i.Record().Name)
+	}
+	return names
 }
 
 func doRead(t *testing.T, path string) []string {
@@ -44,9 +54,7 @@ func doRead(t *testing.T, path string) []string {
 		names = []string{}
 		for _, shard := range shards {
 			i := p.NewIterator(shard)
-			for i.Scan() {
-				names = append(names, i.Record().Name)
-			}
+			names = append(names, readIterator(i)...)
 			assert.NoError(t, i.Err())
 			assert.NoError(t, i.Close())
 		}
@@ -62,7 +70,6 @@ func TestPAMSmall(t *testing.T) {
 	pamPath := filepath.Join(tmpDir, "test-unmapped.pam")
 	assert.NoError(t, converter.ConvertToPAM(pam.WriteOpts{}, pamPath, bamPath, "", math.MaxInt64))
 	assert.EQ(t, []string{"read1", "read2", "read3", "read10", "read10"}, doRead(t, pamPath))
-
 }
 
 func TestPAMLarge(t *testing.T) {
@@ -102,24 +109,51 @@ func TestError(t *testing.T) {
 }
 
 func TestBAM(t *testing.T) {
-	assert.EQ(t,
-
-		[]string{"read1", "read2", "read3"}, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")))
-
+	assert.That(t, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam")),
+		h.ElementsAre("read1", "read2", "read3"))
 }
 
 func TestBAMUnmapped(t *testing.T) {
-	assert.EQ(t,
+	assert.That(t, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")),
+		h.ElementsAre("read1", "read2", "read3", "read10", "read10"))
+}
 
-		[]string{"read1", "read2", "read3", "read10", "read10"}, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped.bam")))
+func TestRefByName(t *testing.T) {
+	p := bamprovider.NewProvider(testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test.bam"))
+	h, err := p.GetHeader()
+	assert.NoError(t, err)
+	assert.EQ(t, bamprovider.RefByName(h, "chr1").Name(), "chr1")
+	assert.Nil(t, bamprovider.RefByName(h, "chr999"))
+	assert.NoError(t, p.Close())
+}
 
+func TestNewRefIterator(t *testing.T) {
+	p := bamprovider.NewProvider(testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/170614_WGS_LOD_Pre_Library_B3_27961B_05.merged.10000.bam"))
+
+	// Read the first few reads in the file.
+	iter := bamprovider.NewRefIterator(p, "chr1", 709300, 709306)
+	expect.That(t, readIterator(iter), h.ElementsAre(
+		"E00587:46:HK2FFALXX:1:1101:2798:35660:CCATTT+TAACGA"))
+	assert.NoError(t, iter.Close())
+
+	iter = bamprovider.NewRefIterator(p, "chr1", 709300, 709356)
+	expect.That(t, readIterator(iter), h.ElementsAre(
+		"E00587:46:HK2FFALXX:1:1101:2798:35660:CCATTT+TAACGA",
+	))
+	assert.NoError(t, iter.Close())
+
+	iter = bamprovider.NewRefIterator(p, "chr1", 709300, 709357)
+	expect.That(t, readIterator(iter), h.ElementsAre(
+		"E00587:46:HK2FFALXX:1:1101:2798:35660:CCATTT+TAACGA",
+		"E00587:46:HK2FFALXX:1:1101:2798:35660:CCATTT+TAACGA"))
+	assert.NoError(t, iter.Close())
+
+	assert.NoError(t, p.Close())
 }
 
 func TestBAMUnmappedOnly(t *testing.T) {
-	assert.EQ(t,
-
-		[]string{"read10", "read10"}, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped-only.bam")))
-
+	assert.That(t, doRead(t, testutil.GetFilePath("//go/src/grail.com/bio/encoding/bam/testdata/test-unmapped-only.bam")),
+		h.ElementsAre("read10", "read10"))
 }
 
 // Test reading random ranges.
