@@ -6,5 +6,6 @@ Grail's bioinformatics infrastructure libraries
 - [encoding/converter](https://godoc.org/github.com/grailbio/bio/encoding/converter): Conversion between file formats
 - [cmd/bio-pamtool](https://github.com/grailbio/bio/tree/master/cmd/bio-pamtool): "samtool" like tool for PAM and BAM.
 - [cmd/bio-bam-sort](https://github.com/grailbio/bio/tree/master/cmd/bio-bam-sort): Tool for sorting and merging aligner outputs into PAM or BAM.
+- [cmd/bio-bam-gindex](https://github.com/grailbio/bio/tree/master/cmd/bio-bam-gindex): Alternate index for faster seeking into BAM files.
 - [biopb](https://godoc.org/github.com/grailbio/bio/biopb): Compiled protocol message files. TODO(saito): export the proto files too
 - [biosimd](https://godoc.org/github.com/grailbio/bio/biosimd): Fast reverse-complement, pack/unpack from BAM seq[] format, etc.
