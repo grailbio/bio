@@ -49,6 +49,13 @@
         DATA ·AllN<>+0x08(SB)/8, $0x4e4e4e4e4e4e4e4e
         GLOBL ·AllN<>(SB), 24, $16
 
+        DATA ·ASCIITo2bitTable<>+0x00(SB)/8, $0x0203030301030003
+        DATA ·ASCIITo2bitTable<>+0x08(SB)/8, $0x0303030303030303
+        GLOBL ·ASCIITo2bitTable<>(SB), 24, $16
+        DATA ·Gather2bit<>+0x00(SB)/8, $0x0e0a06020c080400
+        DATA ·Gather2bit<>+0x08(SB)/8, $0xffffffffffffffff
+        GLOBL ·Gather2bit<>(SB), 24, $16
+
 TEXT ·unpackSeqSSE2Asm(SB),4,$0-24
         // Based on packedNibbleLookupSSSE3Asm() in base/simd/simd_amd64.s.
         // DI = pointer to current src[] element.
@@ -634,4 +641,93 @@ asciiToSeq8SSSE3Loop:
         PSHUFB  X6, X4
         PXOR    X1, X4
         MOVOU   X4, (R9)
+        RET
+
+TEXT ·asciiTo2bitSSE41Asm(SB),4,$0-24
+        // DI = pointer to current src[] element.
+        // BX = pointer to current dst[] element.
+        MOVQ    dst+0(FP), BX
+        MOVQ    src+8(FP), DI
+        MOVQ	nDstFullByte+16(FP), DX
+
+        MOVOU   ·ASCIITo2bitTable<>(SB), X0
+        MOVOU   ·Gather2bit<>(SB), X2
+        MOVO    X0, X1
+        PSLLQ   $4, X1
+
+        // Set AX to 32 bytes before end of src[], and change DX to 8 bytes
+        // before end of dst[].
+        SUBQ    $8, DX
+        LEAQ    0(DI)(DX*4), AX
+        ADDQ    BX, DX
+
+asciiTo2bitSSE41Loop:
+        MOVOU   (DI), X3
+        MOVOU   16(DI), X4
+        // The bottom 4 bits considered by PSHUFB (conditional on bit 7 being
+        // unset) are sufficient to distinguish A/C/G/T in a case-independent
+        // manner, and we don't really care how other characters are mapped.
+        //
+        // Note that bits 1 and 2 of each byte are also sufficient.  So the
+        // following sequence would also work:
+        //   v &= 0x0606...
+        //   v = v >> 1  (now A <-> 00, C <-> 01, G <-> 11, T <-> 10)
+        //   v ^= (v >> 1)  (swap G and T)
+        MOVO    X0, X5
+        PSHUFB  X3, X5
+        MOVO    X1, X6
+        PSHUFB  X4, X6
+        // Gather results, part 1:
+        // Initially, bits 0-1, 8-9, 16-17, and 24-25 of each uint32 within X5
+        // contain the payloads, and all other bits are zero.  The operations
+        //   v |= v >> 12
+        //   v |= v >> 6
+        // set the bottom 8 bits of each uint32 to contain all payloads in the
+        // correct order.
+        // X6 is similar, except that it starts left-shifted by 4 bits and the
+        // first operation on it is v |= v << 12.  This way, only the high 16
+        // bits of each uint32 in X6 matter after the first operation; since
+        // only the low 16 bits of each uint32 in X5 matter, we can merge the
+        // vectors together before the second operation.
+        MOVO    X5, X3
+        MOVO    X6, X4
+        PSRLQ   $12, X5
+        PSLLQ   $12, X6
+        POR     X3, X5
+        POR     X4, X6
+        PBLENDW $0xaa, X6, X5
+
+        MOVO    X5, X3
+        PSRLQ   $6, X5
+        POR     X3, X5
+        // Gather results, part 2: First four output bytes correspond to
+        // positions 0, 4, 8, and 12 in the vector.  Next four correspond to
+        // positions 2, 6, 10, and 14.
+        PSHUFB  X2, X5
+        PEXTRQ  $0, X5, (BX)
+        ADDQ    $32, DI
+        ADDQ    $8, BX
+        CMPQ    AX, DI
+        JG      asciiTo2bitSSE41Loop
+
+        // Final usually-unaligned read and write.
+        MOVOU   (AX), X3
+        MOVOU   16(AX), X4
+        PSHUFB  X3, X0
+        PSHUFB  X4, X1
+
+        MOVO    X0, X3
+        MOVO    X1, X4
+        PSRLQ   $12, X0
+        PSLLQ   $12, X1
+        POR     X3, X0
+        POR     X4, X1
+        PBLENDW $0xaa, X1, X0
+
+        MOVO    X0, X3
+        PSRLQ   $6, X0
+        POR     X3, X0
+
+        PSHUFB  X2, X0
+        PEXTRQ  $0, X0, (DX)
         RET

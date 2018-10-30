@@ -74,6 +74,9 @@ func isNonACGTPresentSSE41Asm(ascii8 unsafe.Pointer, nonTTablePtr *[16]byte, nBy
 //go:noescape
 func asciiToSeq8SSSE3Asm(dst, src unsafe.Pointer, nByte int)
 
+//go:noescape
+func asciiTo2bitSSE41Asm(dst, src unsafe.Pointer, nByte int)
+
 // *** end assembly function signatures
 
 func init() {
@@ -496,4 +499,69 @@ func ASCIIToSeq8(dst, src []byte) {
 	srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
 	dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
 	asciiToSeq8SSSE3Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nByte)
+}
+
+var asciiTo2bitTable = [...]byte{
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+
+// ASCIITo2bit sets the bytes in dst[] as follows:
+//   if pos is congruent to 0 mod 4, little-endian bits 0-1 of dst[pos / 4] :=
+//     0 if src[pos] == 'A'/'a'
+//     1 if src[pos] == 'C'/'c'
+//     2 if src[pos] == 'G'/'g'
+//     3 if src[pos] == 'T'/'t'
+//   similarly, if pos is congruent to 1 mod 4, src[pos] controls bits 2-3 of
+//   dst[pos / 4], etc.
+//   trailing high bits of the last byte are set to zero.
+// It panics if len(dst) != (len(src) + 3) / 4.
+//
+// WARNING: This does not verify that all input characters are in {'A', 'C',
+// 'G', 'T', 'a', 'c', 'g', 't'}.  Results are arbitrary if any input
+// characters are invalid, though the function is still memory-safe in that
+// event.
+func ASCIITo2bit(dst, src []byte) {
+	// Implementation is similar to PackSeq().
+	srcLen := len(src)
+	if len(dst) != (srcLen+3)>>2 {
+		panic("ASCIITo2bit() requires len(dst) == (len(src) + 3) / 4.")
+	}
+	nDstFullByte := srcLen >> 2
+	dstRem := srcLen & 3
+	if nDstFullByte < 8 {
+		for dstPos := 0; dstPos < nDstFullByte; dstPos++ {
+			dst[dstPos] = asciiTo2bitTable[src[4*dstPos]] |
+				(asciiTo2bitTable[src[4*dstPos+1]] << 2) |
+				(asciiTo2bitTable[src[4*dstPos+2]] << 4) |
+				(asciiTo2bitTable[src[4*dstPos+3]] << 6)
+		}
+	} else {
+		srcHeader := (*reflect.SliceHeader)(unsafe.Pointer(&src))
+		dstHeader := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+		asciiTo2bitSSE41Asm(unsafe.Pointer(dstHeader.Data), unsafe.Pointer(srcHeader.Data), nDstFullByte)
+	}
+	if dstRem != 0 {
+		lastByte := asciiTo2bitTable[src[nDstFullByte*4]]
+		if dstRem != 1 {
+			lastByte |= asciiTo2bitTable[src[nDstFullByte*4+1]] << 2
+			if dstRem != 2 {
+				lastByte |= asciiTo2bitTable[src[nDstFullByte*4+2]] << 4
+			}
+		}
+		dst[nDstFullByte] = lastByte
+	}
 }

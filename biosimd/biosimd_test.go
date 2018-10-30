@@ -54,6 +54,13 @@ Benchmark_IsNonACGTSeqLong1-8                  2         570726956 ns/op
 Benchmark_IsNonACGTSeqLong4-8                  1        1011456304 ns/op
 Benchmark_IsNonACGTSeqLongMax-8                1        1498684970 ns/op
 
+Benchmark_ASCIITo2bitShort1-8                 10         141109698 ns/op
+Benchmark_ASCIITo2bitShort4-8                 30          44586065 ns/op
+Benchmark_ASCIITo2bitShortMax-8               50          34226516 ns/op
+Benchmark_ASCIITo2bitLong1-8                   1        1412872064 ns/op
+Benchmark_ASCIITo2bitLong4-8                   1        1857122215 ns/op
+Benchmark_ASCIITo2bitLongMax-8                 1        2684606937 ns/op
+
 For comparison, unpackSeqSlow:
 Benchmark_UnpackSeqShort1-8                    3         473023326 ns/op
 Benchmark_UnpackSeqShort4-8                   10         129047060 ns/op
@@ -93,6 +100,14 @@ Benchmark_IsNonACGTSeqShortMax-8              20          68635003 ns/op
 Benchmark_IsNonACGTSeqLong1-8                  1        3158281885 ns/op
 Benchmark_IsNonACGTSeqLong4-8                  1        2215643228 ns/op
 Benchmark_IsNonACGTSeqLongMax-8                1        2045172556 ns/op
+
+asciiTo2bitSlow:
+Benchmark_ASCIITo2bitShort1-8                  3         445481375 ns/op
+Benchmark_ASCIITo2bitShort4-8                 10         115023132 ns/op
+Benchmark_ASCIITo2bitShortMax-8               10         114890810 ns/op
+Benchmark_ASCIITo2bitLong1-8                   1        7284632010 ns/op
+Benchmark_ASCIITo2bitLong4-8                   1        3001575126 ns/op
+Benchmark_ASCIITo2bitLongMax-8                 1        4445145537 ns/op
 */
 
 func unpackSeqSubtask(dst, src []byte, nIter int) int {
@@ -925,6 +940,159 @@ func TestIsNonACGTPresent(t *testing.T) {
 		resultACGT2 = biosimd.IsNonACGTNPresent(srcSlice)
 		if resultACGT != resultACGT2 {
 			t.Fatal("Mismatched IsNonACGTNPresent result.")
+		}
+	}
+}
+
+func asciiTo2bitSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.ASCIITo2bit(dst, src)
+	}
+	return int(dst[0])
+}
+
+func asciiTo2bitSubtaskFuture(dst, src []byte, nIter int) chan int {
+	future := make(chan int)
+	go func() { future <- asciiTo2bitSubtask(dst, src, nIter) }()
+	return future
+}
+
+func multiASCIITo2bit(dsts, srcs [][]byte, cpus int, nJob int) {
+	sumFutures := make([]chan int, cpus)
+	shardSizeBase := nJob / cpus
+	shardRemainder := nJob - shardSizeBase*cpus
+	shardSizeP1 := shardSizeBase + 1
+	var taskIdx int
+	for ; taskIdx < shardRemainder; taskIdx++ {
+		sumFutures[taskIdx] = asciiTo2bitSubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeP1)
+	}
+	for ; taskIdx < cpus; taskIdx++ {
+		sumFutures[taskIdx] = asciiTo2bitSubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeBase)
+	}
+	var sum int
+	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
+		sum += <-sumFutures[taskIdx]
+	}
+}
+
+func benchmarkASCIITo2bit(cpus int, nSrcByte int, nJob int, b *testing.B) {
+	if cpus > runtime.NumCPU() {
+		b.Skipf("only have %v cpus", runtime.NumCPU())
+	}
+
+	srcSlices := make([][]byte, cpus)
+	dstSlices := make([][]byte, cpus)
+	nDstByte := (nSrcByte + 3) >> 2
+	for ii := range srcSlices {
+		// Add 63 to prevent false sharing.
+		newArr := simd.MakeUnsafe(nSrcByte + 63)
+		for jj := 0; jj < nSrcByte; jj++ {
+			newArr[jj] = byte(jj*3) & 15
+		}
+		srcSlices[ii] = newArr[:nSrcByte]
+		newArr = simd.MakeUnsafe(nDstByte + 63)
+		dstSlices[ii] = newArr[:nDstByte]
+	}
+	for i := 0; i < b.N; i++ {
+		multiASCIITo2bit(dstSlices, srcSlices, cpus, nJob)
+	}
+}
+
+func Benchmark_ASCIITo2bitShort1(b *testing.B) {
+	benchmarkASCIITo2bit(1, 75, 9999999, b)
+}
+
+func Benchmark_ASCIITo2bitShort4(b *testing.B) {
+	benchmarkASCIITo2bit(4, 75, 9999999, b)
+}
+
+func Benchmark_ASCIITo2bitShortMax(b *testing.B) {
+	benchmarkASCIITo2bit(runtime.NumCPU(), 75, 9999999, b)
+}
+
+func Benchmark_ASCIITo2bitLong1(b *testing.B) {
+	benchmarkASCIITo2bit(1, 249250621, 50, b)
+}
+
+func Benchmark_ASCIITo2bitLong4(b *testing.B) {
+	benchmarkASCIITo2bit(4, 249250621, 50, b)
+}
+
+func Benchmark_ASCIITo2bitLongMax(b *testing.B) {
+	benchmarkASCIITo2bit(runtime.NumCPU(), 249250621, 50, b)
+}
+
+var asciiTo2bitTable = [...]byte{
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+
+func asciiTo2bitSlow(dst, src []byte) {
+	srcLen := len(src)
+	nDstFullByte := srcLen >> 2
+	dstRem := srcLen & 3
+	for dstPos := 0; dstPos < nDstFullByte; dstPos++ {
+		dst[dstPos] = asciiTo2bitTable[src[4*dstPos]] |
+			(asciiTo2bitTable[src[4*dstPos+1]] << 2) |
+			(asciiTo2bitTable[src[4*dstPos+2]] << 4) |
+			(asciiTo2bitTable[src[4*dstPos+3]] << 6)
+	}
+	if dstRem != 0 {
+		lastByte := asciiTo2bitTable[src[nDstFullByte*4]]
+		if dstRem != 1 {
+			lastByte |= asciiTo2bitTable[src[nDstFullByte*4+1]] << 2
+			if dstRem != 2 {
+				lastByte |= asciiTo2bitTable[src[nDstFullByte*4+2]] << 4
+			}
+		}
+		dst[nDstFullByte] = lastByte
+	}
+}
+
+var twoBitToASCIITable = [...]byte{'A', 'C', 'G', 'T', 'a', 'c', 'g', 't'}
+
+func TestASCIITo2bit(t *testing.T) {
+	maxSrcSize := 500
+	maxDstSize := (maxSrcSize + 3) >> 2
+	nIter := 200
+	srcArr := simd.MakeUnsafe(maxSrcSize)
+	dst1Arr := simd.MakeUnsafe(maxDstSize)
+	// +1 so we can always append sentinel
+	dst2Arr := simd.MakeUnsafe(maxDstSize + 1)
+	for iter := 0; iter < nIter; iter++ {
+		dstSliceStart := rand.Intn(maxDstSize)
+		srcSliceStart := dstSliceStart * 4
+		srcSliceEnd := srcSliceStart + rand.Intn(maxSrcSize-srcSliceStart)
+		dstSliceEnd := (srcSliceEnd + 3) >> 2
+		srcSlice := srcArr[srcSliceStart:srcSliceEnd]
+		for ii := range srcSlice {
+			srcSlice[ii] = twoBitToASCIITable[rand.Intn(8)]
+		}
+		dst1Slice := dst1Arr[dstSliceStart:dstSliceEnd]
+		dst2Slice := dst2Arr[dstSliceStart:dstSliceEnd]
+		asciiTo2bitSlow(dst1Slice, srcSlice)
+		simd.Memset8Unsafe(dst2Slice, 0)
+		sentinel := byte(rand.Intn(256))
+		dst2Arr[dstSliceEnd] = sentinel
+		biosimd.ASCIITo2bit(dst2Slice, srcSlice)
+		if !bytes.Equal(dst1Slice, dst2Slice) {
+			t.Fatal("Mismatched ASCIITo2bit result.")
+		}
+		if dst2Arr[dstSliceEnd] != sentinel {
+			t.Fatal("ASCIITo2bit clobbered an extra byte.")
 		}
 	}
 }
