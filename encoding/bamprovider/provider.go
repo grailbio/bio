@@ -2,6 +2,7 @@ package bamprovider
 
 import (
 	"strings"
+	"time"
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/vcontext"
@@ -80,6 +81,11 @@ type GenerateShardsOpts struct {
 
 // Provider allows reading BAM or PAM file in parallel. Thread safe.
 type Provider interface {
+	// FileInfo returns metadata of the underlying file(s).
+	//
+	// TODO(saito) consider merging GetHeader into FileInfo.
+	FileInfo() (FileInfo, error)
+
 	// GetHeader returns the header for the provided BAM data.  The callee
 	// must not modify the returned header object.
 	//
@@ -118,6 +124,16 @@ type Provider interface {
 	//
 	// REQUIRES: All the iterators created by NewIterator have been closed.
 	Close() error
+}
+
+// FileInfo stores metadata of BAM or PAM.
+type FileInfo struct {
+	// ModTime is the last-modified time of the file. For PAM, it represents the
+	// modtime of the *.index file of the first shard in the directory.
+	ModTime time.Time
+	// Size is the size of the file, in bytes.  For PAM, it represents the size of
+	// the *.index file of the first shard in the directory.
+	Size int64
 }
 
 // Iterator iterates over sam.Records in a particular genomic range, in

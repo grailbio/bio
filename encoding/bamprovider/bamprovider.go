@@ -43,8 +43,9 @@ type BAMProvider struct {
 	bindex    *bam.Index
 	gindex    *gbam.GIndex
 
-	headerOnce sync.Once
-	header     *sam.Header
+	infoOnce sync.Once
+	header   *sam.Header
+	info     FileInfo
 }
 
 type bamIterator struct {
@@ -101,15 +102,40 @@ func (b *BAMProvider) readIndex() error {
 	return b.err.Err()
 }
 
+// FileInfo implements the Provider interface.
+func (b *BAMProvider) FileInfo() (FileInfo, error) {
+	b.initInfo()
+	if err := b.err.Err(); err != nil {
+		return FileInfo{}, err
+	}
+	return b.info, nil
+}
+
 // GetHeader implements the Provider interface.
 func (b *BAMProvider) GetHeader() (*sam.Header, error) {
-	b.headerOnce.Do(func() {
+	b.initInfo()
+	if err := b.err.Err(); err != nil {
+		return nil, err
+	}
+	return b.header, nil
+}
+
+// InitInfo sets b.info and b.header fields.
+func (b *BAMProvider) initInfo() {
+	b.infoOnce.Do(func() {
 		ctx := vcontext.Background()
 		reader, err := file.Open(ctx, b.Path)
 		if err != nil {
 			b.err.Set(err)
 			return
 		}
+		info, err := reader.Stat(ctx)
+		if err != nil {
+			b.err.Set(err)
+			reader.Close(ctx) // nolint: errcheck
+			return
+		}
+		b.info = FileInfo{ModTime: info.ModTime(), Size: info.Size()}
 		bamReader, err := bam.NewReader(reader.Reader(ctx), 1)
 		if err != nil {
 			b.err.Set(err)
@@ -127,10 +153,6 @@ func (b *BAMProvider) GetHeader() (*sam.Header, error) {
 			return
 		}
 	})
-	if err := b.err.Err(); err != nil {
-		return nil, err
-	}
-	return b.header, nil
 }
 
 // Close implements the Provider interface.

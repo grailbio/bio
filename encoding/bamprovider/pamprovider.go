@@ -5,6 +5,7 @@ import (
 
 	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
@@ -25,6 +26,7 @@ type PAMProvider struct {
 
 	mu      sync.Mutex
 	header  *sam.Header        // extracted from <dir>/<range>.index.
+	info    FileInfo           // extracted from <dir>/<range>.index.
 	indexes []pamutil.FileInfo // files found in the pam directory.
 }
 
@@ -34,12 +36,11 @@ type pamIterator struct {
 	reader   *pam.Reader
 }
 
-// GetHeader implements the Provider interface.
-func (p *PAMProvider) GetHeader() (*sam.Header, error) {
+func (p *PAMProvider) initInfo() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.header != nil {
-		return p.header, nil
+	if p.header != nil || p.err.Err() != nil {
+		return
 	}
 
 	ctx := vcontext.Background()
@@ -47,24 +48,51 @@ func (p *PAMProvider) GetHeader() (*sam.Header, error) {
 		indexes, err := pamutil.ListIndexes(ctx, p.Path)
 		if err != nil {
 			p.err.Set(err)
-			return nil, err
+			return
 		}
 		if len(indexes) == 0 {
 			panic(p)
 		}
 		p.indexes = indexes
 	}
+
+	indexPath := pamutil.ShardIndexPath(p.Path, p.indexes[0].Range)
+	in, err := file.Open(ctx, indexPath)
+	if err != nil {
+		p.err.Set(err)
+		return
+	}
+	defer in.Close(ctx) // nolint: errcheck
+	info, err := in.Stat(ctx)
+	if err != nil {
+		p.err.Set(err)
+		return
+	}
+	p.info = FileInfo{ModTime: info.ModTime(), Size: info.Size()}
 	index, err := pamutil.ReadShardIndex(ctx, p.Path, p.indexes[0].Range)
 	if err != nil {
 		p.err.Set(err)
-		return nil, err
+		return
 	}
 	p.header, err = gbam.UnmarshalHeader(index.EncodedBamHeader)
 	if err != nil {
 		p.err.Set(err)
-		return nil, err
+		return
 	}
-	return p.header, nil
+}
+
+// FileInfo implements the Provider interface.
+func (p *PAMProvider) FileInfo() (FileInfo, error) {
+	p.initInfo()
+	// p.info is constant after initInfo, so it's ok to read it unlocked.
+	return p.info, p.err.Err()
+}
+
+// GetHeader implements the Provider interface.
+func (p *PAMProvider) GetHeader() (*sam.Header, error) {
+	p.initInfo()
+	// p.header is constant after initInfo, so it's ok to read it unlocked.
+	return p.header, p.err.Err()
 }
 
 // Close implements the Provider interface.

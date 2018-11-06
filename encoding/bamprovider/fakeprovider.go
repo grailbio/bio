@@ -28,6 +28,11 @@ func NewFakeProvider(header *sam.Header, recs []*sam.Record) Provider {
 	return &fakeProvider{header, recs}
 }
 
+// FileInfo implements the Provider interface.
+func (b *fakeProvider) FileInfo() (FileInfo, error) {
+	return FileInfo{}, nil
+}
+
 // GetHeader implements the Provider interface. It returns the header passed to
 // the constructor.
 func (b *fakeProvider) GetHeader() (*sam.Header, error) {
