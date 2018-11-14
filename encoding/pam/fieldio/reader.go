@@ -158,14 +158,6 @@ func (fr *Reader) ReadVarintDeltaField() (int64, bool) {
 	return value, true
 }
 
-// SkipVarintDeltaField skips a varint-delta-encoded string.
-// It panics on EOF or any error.
-func (fr *Reader) SkipVarintDeltaField() {
-	if _, ok := fr.ReadVarintDeltaField(); !ok {
-		panic(fr)
-	}
-}
-
 // ReadVarintField reads a field containing a varint.
 // It returns false on EOF or any error.
 func (fr *Reader) ReadVarintField() (int64, bool) {
@@ -387,38 +379,6 @@ func (fr *Reader) ReadBytesField(n int, arena *UnsafeArena) []byte {
 	return buf
 }
 
-// ReadVarint32sMetadata reads the size of the next variable-length varint array
-// field.
-func (fr *Reader) ReadVarint32sMetadata() (int, bool) {
-	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
-		return 0, false
-	}
-	return int(fr.fb.defaultBuf.Uvarint32()), true
-}
-
-// ReadVarint32sField reads the next variable-length varint array field. The
-// function call must be preceded by a call to ReadVarint32sMetadata.
-func (fr *Reader) ReadVarint32sField(n int, arena *UnsafeArena) []int32 {
-	rb := &fr.fb
-	rb.remaining--
-	buf := unsafeBytesToint32s(arena.Alloc(n * 4))
-	for i := 0; i < n; i++ {
-		buf[i] = int32(fr.fb.defaultBuf.Varint32())
-	}
-	return buf
-}
-
-// SkipVarint32sField skips the next variable-length varint field.
-// It panics on EOF or any error.
-func (fr *Reader) SkipVarint32sField() {
-	rb := &fr.fb
-	rb.remaining--
-	n := int(rb.defaultBuf.Uvarint32())
-	for i := 0; i < n; i++ {
-		fr.fb.defaultBuf.Varint32()
-	}
-}
-
 type AuxTagHeader struct {
 	// Two-letter tag name + datatype ('Z', 'H', 'i', etc)
 	Name [3]byte
@@ -543,15 +503,6 @@ func (fr *Reader) PeekCoordField() (biopb.Coord, bool) {
 	return coord, true
 }
 
-// BlockStartAddr returns the coordinate of the first record in the current
-// block.
-func (fr *Reader) BlockStartAddr() (biopb.Coord, bool) {
-	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
-		return biopb.Coord{}, false
-	}
-	return fr.fb.index.StartAddr, true
-}
-
 func readBlockHeader(buf *[]byte) (biopb.PAMBlockHeader, error) {
 	headerSize, n := binary.Varint(*buf)
 	if n <= 0 {
@@ -571,9 +522,6 @@ func readBlockHeader(buf *[]byte) (biopb.PAMBlockHeader, error) {
 	}
 	return bh, nil
 }
-
-// Index returns the index of this field.
-func (fr *Reader) Index() *biopb.PAMFieldIndex { return &fr.index }
 
 // Label returns the diagnostic label of the reader object.
 func (fr *Reader) Label() string { return fr.label }

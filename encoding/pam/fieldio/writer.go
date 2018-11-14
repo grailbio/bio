@@ -206,16 +206,6 @@ func (fw *Writer) PutBytesField(addr biopb.Coord, data []byte) {
 	wb.putLengthPrefixedBytes(data)
 }
 
-// PutVarint32sField adds a variable-length int32 slice.
-func (fw *Writer) PutVarint32sField(addr biopb.Coord, data []int32) {
-	wb := fw.buf
-	wb.updateAddrBounds(addr)
-	wb.defaultBuf.PutUvarint64(uint64(len(data)))
-	for _, v := range data {
-		wb.defaultBuf.PutVarint64(int64(v))
-	}
-}
-
 // PutAuxField adds the aux field.
 func (fw *Writer) PutAuxField(addr biopb.Coord, aa []sam.Aux) {
 	wb := fw.buf

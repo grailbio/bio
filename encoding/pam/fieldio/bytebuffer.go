@@ -50,15 +50,6 @@ func (b *byteBuffer) Varint64() int64 {
 	return value
 }
 
-// Varint32 reads a signed 32bit varint.
-func (b *byteBuffer) Varint32() int {
-	value := b.Varint64()
-	if value < math.MinInt32 || value > math.MaxInt32 {
-		panic(value)
-	}
-	return int(value)
-}
-
 // Uvarint32 reads a unsigned 32bit varint.
 func (b *byteBuffer) Uvarint32() uint32 {
 	value, n := binary.Uvarint(*b)

@@ -30,9 +30,7 @@ const (
 
 	// FieldInvalid is a sentinel
 	FieldInvalid
-	MinField   = FieldCoord
-	NumFields  = int(FieldInvalid)
-	MaxNumCols = NumFields
+	NumFields = int(FieldInvalid)
 )
 
 // FieldNames lists all the bam Field names.
