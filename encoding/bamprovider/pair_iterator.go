@@ -114,7 +114,11 @@ func (l *PairIterator) Scan() bool {
 			if ok {
 				// We've already seen the mate of this record.
 				delete(l.localNameToRecord, record.Name)
-				l.rec = Pair{R1: record, R2: mate}
+				if record.Flags&sam.Read1 != 0 {
+					l.rec = Pair{R1: record, R2: mate}
+				} else {
+					l.rec = Pair{R1: mate, R2: record}
+				}
 				return true
 			}
 			if mateInShard(record, &l.shard) {
@@ -126,7 +130,11 @@ func (l *PairIterator) Scan() bool {
 			// with other goroutines.
 			mate = l.shared.distantMates.lookupAndDelete(record)
 			if mate != nil {
-				l.rec = Pair{R1: record, R2: mate}
+				if record.Flags&sam.Read1 != 0 {
+					l.rec = Pair{R1: record, R2: mate}
+				} else {
+					l.rec = Pair{R1: mate, R2: record}
+				}
 				return true
 			}
 			continue
