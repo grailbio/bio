@@ -303,12 +303,7 @@ func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, 
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if cerr := bamIn.Close(ctx); cerr != nil && err != nil {
-			err = cerr
-		}
-	}()
-
+	defer file.CloseAndReport(ctx, bamIn, &err)
 	var bamr *biogobam.Reader
 	bamr, err = biogobam.NewReader(bamIn.Reader(ctx), 1)
 	if err != nil {
@@ -337,12 +332,7 @@ func baiByteBasedShards(bamr *biogobam.Reader, baiPath string, bytesPerShard int
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if cerr := indexIn.Close(ctx); cerr != nil && err != nil {
-			err = cerr
-		}
-	}()
-
+	defer file.CloseAndReport(ctx, indexIn, &err)
 	var index *Index
 	index, err = ReadIndex(indexIn.Reader(ctx))
 	if err != nil {
@@ -468,12 +458,7 @@ func gbaiByteBasedShards(header *sam.Header, gbaiPath string, bytesPerShard int6
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if cerr := indexIn.Close(ctx); cerr != nil && err != nil {
-			err = cerr
-		}
-	}()
-
+	defer file.CloseAndReport(ctx, indexIn, &err)
 	var index *GIndex
 	index, err = ReadGIndex(indexIn.Reader(ctx))
 	if err != nil {

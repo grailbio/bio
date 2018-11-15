@@ -461,11 +461,7 @@ func NewBEDUnionFromPath(path string, opts NewBEDOpts) (bedUnion BEDUnion, err e
 	if infile, err = file.Open(ctx, path); err != nil {
 		return
 	}
-	defer func() {
-		if cerr := infile.Close(ctx); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
+	defer file.CloseAndReport(ctx, infile, &err)
 	reader := io.Reader(infile.Reader(ctx))
 	switch fileio.DetermineType(path) {
 	case fileio.Gzip:

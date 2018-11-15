@@ -15,15 +15,14 @@ import (
 )
 
 // ReadShardIndex reads the index file, "dir/<recRange>.index".
-func ReadShardIndex(ctx context.Context, dir string, recRange biopb.CoordRange) (biopb.PAMShardIndex, error) {
+func ReadShardIndex(ctx context.Context, dir string, recRange biopb.CoordRange) (index biopb.PAMShardIndex, err error) {
 	path := ShardIndexPath(dir, recRange)
-	var index biopb.PAMShardIndex
 
 	in, err := file.Open(ctx, path)
 	if err != nil {
 		return index, errors.E(err, path)
 	}
-	defer in.Close(ctx) // nolint: errcheck
+	defer file.CloseAndReport(ctx, in, &err)
 	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
 	defer rio.Finish() // nolint: errcheck
 	if !rio.Scan() {

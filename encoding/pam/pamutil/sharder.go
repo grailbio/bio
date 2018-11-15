@@ -43,14 +43,13 @@ func fieldFileSize(ctx context.Context, dir string, recRange biopb.CoordRange, f
 }
 
 // readFieldIndex reads the index for, "dir/recRange.field".
-func readFieldIndex(ctx context.Context, dir string, recRange biopb.CoordRange, field string) (biopb.PAMFieldIndex, error) {
+func readFieldIndex(ctx context.Context, dir string, recRange biopb.CoordRange, field string) (index biopb.PAMFieldIndex, err error) {
 	path := FieldDataPath(dir, recRange, field)
-	var index biopb.PAMFieldIndex
 	in, err := file.Open(ctx, path)
 	if err != nil {
 		return index, err
 	}
-	defer in.Close(ctx) // nolint: errcheck
+	defer file.CloseAndReport(ctx, in, &err)
 	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
 	trailer := rio.Trailer()
 	if len(trailer) == 0 {
