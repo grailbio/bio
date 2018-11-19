@@ -2,7 +2,7 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
-//go:generate ../../../base/gtl/generate.py --prefix=Record -DELEM=*Record --package=bam --output=record_pool.go ../../../base/gtl/randomized_freepool.go.tpl
+//go:generate ../../../base/gtl/generate_randomized_freepool.py --output=record_pool --prefix=Record -DELEM=*Record --package=bam
 
 package bam
 
