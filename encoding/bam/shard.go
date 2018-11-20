@@ -117,6 +117,35 @@ func (s *Shard) PaddedEnd() int {
 	return s.PadEnd(s.Padding)
 }
 
+// RecordInShard returns true if r is in s.
+func (s *Shard) RecordInShard(r *sam.Record) bool {
+	return s.CoordInShard(0, CoordFromSAMRecord(r, 0))
+}
+
+// RecordInPaddedShard returns true if r is in s+padding.
+func (s *Shard) RecordInPaddedShard(r *sam.Record) bool {
+	return s.CoordInShard(s.Padding, CoordFromSAMRecord(r, 0))
+}
+
+// CoordInShard returns whether coord is within the shard plus the
+// supplied padding (this uses the padding parameter in place of
+// s.Padding).
+func (s *Shard) CoordInShard(padding int, coord biopb.Coord) bool {
+	startCoord := NewCoord(s.StartRef, s.PadStart(padding), 0)
+	if coord.LT(startCoord) {
+		return false
+	}
+	endCoord := NewCoord(s.EndRef, s.PadEnd(padding), 0)
+	return coord.LT(endCoord)
+}
+
+// String returns a debug string for s.
+func (s *Shard) String() string {
+	return fmt.Sprintf("%d:(%s[%d],%d(%d))-(%s[%d],%d(%d))",
+		s.ShardIdx, s.StartRef.Name(), s.StartRef.ID(), s.Start, s.PaddedStart(),
+		s.EndRef.Name(), s.EndRef.ID(), s.End, s.PaddedEnd())
+}
+
 func min(x, y int) int {
 	if y < x {
 		return y
