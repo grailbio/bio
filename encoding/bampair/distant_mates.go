@@ -99,9 +99,9 @@ func GetDistantMates(provider bamprovider.Provider, shardList []bam.Shard, opts 
 	close(collectionChannel)
 	distantMateGroup.Wait()
 	t1 := time.Now()
-	if errs.ErrorOrNil() != nil {
+	if err := errs.Err(); err != nil {
 		log.Debug.Printf("scanners failed in %v", t1.Sub(t0))
-		return nil, nil, errs
+		return nil, nil, err
 	}
 
 	log.Debug.Printf("scanners all done, found %d distant pairs in %v", distantMates.len(), t1.Sub(t0))
