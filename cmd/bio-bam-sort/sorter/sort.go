@@ -16,14 +16,12 @@ import (
 	"github.com/biogo/hts/bgzf"
 	"github.com/biogo/hts/sam"
 	"github.com/biogo/store/llrb"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/vcontext"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"v.io/x/lib/vlog"
-)
-
-// DefaultSortBatchSize is the default number of records to keep in memory
+) // DefaultSortBatchSize is the default number of records to keep in memory
 // before resorting to external sorting.
 const DefaultSortBatchSize = 1 << 20
 
@@ -189,7 +187,7 @@ type Sorter struct {
 	sortBlockPool *sortShardBlockPool // used to reuse buffers.
 	totalRecords  uint32
 	recs          []*sam.Record
-	err           errorreporter.T
+	err           errors.Once
 	bgSorterCh    chan sortBatch
 
 	wg     sync.WaitGroup
@@ -206,11 +204,11 @@ type mergeLeaf struct {
 	name   string // the path of shard file; for logging only.
 	reader *sortShardReader
 	done   bool // reader.scan() returned false?
-	err    *errorreporter.T
+	err    *errors.Once
 }
 
 func newMergeLeaf(seq int, reader *sortShardReader,
-	pool *sortShardBlockPool, errorReporter *errorreporter.T) *mergeLeaf {
+	pool *sortShardBlockPool, errorReporter *errors.Once) *mergeLeaf {
 	leaf := mergeLeaf{
 		seq:    seq,
 		name:   reader.path,
@@ -263,7 +261,7 @@ func internalMergeShards(
 	shards []*sortShardReader,
 	readCallback func(key sortKey, body []byte) bool,
 	pool *sortShardBlockPool,
-	errReporter *errorreporter.T) {
+	errReporter *errors.Once) {
 	// Sort all the inputs using a binary tree. This should be faster than
 	// binary heap or tournament tree. The hope is that the child at the top
 	// of the tree will stay at the top for many records. If that hope
@@ -320,7 +318,7 @@ func internalMergeShards(
 		if !top.done {
 			leafs.Insert(top)
 			if lenAfter := leafs.Len(); lenBefore != lenAfter {
-				vlog.Fatal("Leaf size decreased from %d -> %d", lenBefore, lenAfter)
+				vlog.Fatalf("Leaf size decreased from %d -> %d", lenBefore, lenAfter)
 			}
 			continue
 		}
@@ -481,7 +479,7 @@ func BAMFromSortShards(paths []string, bamPath string) error {
 	if len(paths) == 0 {
 		return fmt.Errorf("No shards to merge")
 	}
-	errReporter := errorreporter.T{}
+	errReporter := errors.Once{}
 	pool := newSortShardBlockPool()
 	shardReaders := make([]*sortShardReader, len(paths))
 

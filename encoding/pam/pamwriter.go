@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio/recordiozstd"
 	"github.com/grailbio/base/traverse"
@@ -101,7 +101,7 @@ type Writer struct {
 
 	// Value to be assigned to the "seq" field of a new recBlockWriteBuf.
 	nextBlockSeq int
-	err          errorreporter.T
+	err          errors.Once
 }
 
 // Write appends a record. It does not flush the record immediately, and the
@@ -186,7 +186,7 @@ func NewWriter(wo WriteOpts, samHeader *sam.Header, dir string) *Writer {
 		dir:           dir,
 		nextBlockSeq:  0,
 		addrGenerator: gbam.NewCoordGenerator(),
-		err:           errorreporter.T{},
+		err:           errors.Once{},
 	}
 	if w.err.Set(validateWriteOpts(&w.opts)); w.err.Err() != nil {
 		return w

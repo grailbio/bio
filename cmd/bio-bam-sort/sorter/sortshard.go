@@ -2,6 +2,7 @@ package sorter
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
 	"sync"
@@ -9,13 +10,12 @@ import (
 
 	"github.com/biogo/hts/sam"
 	"github.com/golang/snappy"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
-	"github.com/pkg/errors"
 	"v.io/x/lib/vlog"
 )
 
@@ -70,7 +70,7 @@ const sortShardRecordHeaderSize = 20 // 16 byte sortKey + 4 byte record size.
 type sortShardWriter struct {
 	rawOut          io.Writer       // File writer.
 	rio             recordio.Writer // recordio wrapper for out.
-	err             *errorreporter.T
+	err             *errors.Once
 	writeBlockIndex bool
 
 	curBlock sortShardBuf // The block currently written to in add().
@@ -94,7 +94,7 @@ func (w *sortShardWriter) newBuf() sortShardBuf {
 func newSortShardWriter(out io.Writer,
 	snappy, writeBlockIndex bool,
 	header *sam.Header, //may be null.
-	pool *sortShardBlockPool, errReporter *errorreporter.T) *sortShardWriter {
+	pool *sortShardBlockPool, errReporter *errors.Once) *sortShardWriter {
 	w := &sortShardWriter{
 		rawOut:          out,
 		writeBlockIndex: writeBlockIndex,
@@ -107,7 +107,7 @@ func newSortShardWriter(out io.Writer,
 		var err error
 		if w.index.EncodedBamHeader, err = gbam.MarshalHeader(header); err != nil {
 			// TODO(saito) propagate error up.
-			vlog.Fatal("Failed to encode header: %v", err)
+			vlog.Fatalf("Failed to encode header: %v", err)
 		}
 	}
 	w.rio = recordio.NewWriter(out, recordio.WriterOpts{
@@ -301,7 +301,7 @@ type sortShardReader struct {
 	rio     recordio.Scanner
 	index   biopb.SortShardIndex
 	pool    *sortShardBlockPool
-	err     *errorreporter.T
+	err     *errors.Once
 	lastKey sortKey // last key read.
 
 	parser sortShardBlockParser
@@ -317,7 +317,7 @@ func readSortShardIndex(rio recordio.Scanner) (biopb.SortShardIndex, error) {
 	index := biopb.SortShardIndex{}
 	header := rio.Header()
 	if !header.HasTrailer() {
-		return index, errors.Errorf("No index found in sortshard file (header: %+v, version %+v)", header, rio.Version())
+		return index, fmt.Errorf("No index found in sortshard file (header: %+v, version %+v)", header, rio.Version())
 	}
 	if err := index.Unmarshal(rio.Trailer()); err != nil {
 		return index, err
@@ -339,7 +339,7 @@ type shardReaderOpts struct {
 // through errReporter.
 func newSortShardReader(path string,
 	pool *sortShardBlockPool,
-	errReporter *errorreporter.T,
+	errReporter *errors.Once,
 	optList ...shardReaderOpts) *sortShardReader {
 	opts := shardReaderOpts{limitOffset: math.MaxInt64}
 	if len(optList) > 1 {

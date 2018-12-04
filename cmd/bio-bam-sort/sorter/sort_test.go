@@ -21,7 +21,7 @@ import (
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/bgzf"
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/grail"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
@@ -270,7 +270,7 @@ func TestUnmapped(t *testing.T) {
 read10	12	*	0	0	10M	*	0	0	ACGTACGTAC	ABCDEFGHIJ	RG:Z:NA12878
 read11	12	*	0	0	10M	*	0	0	ACGTACGTAC	ABCDEFGHIJ	RG:Z:NA12879
 `)
-	errReporter := errorreporter.T{}
+	errReporter := errors.Once{}
 	pool := newSortShardBlockPool()
 	shardReader := newSortShardReader(shard0, pool, &errReporter)
 

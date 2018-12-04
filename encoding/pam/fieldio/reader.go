@@ -12,7 +12,6 @@ import (
 	"unsafe"
 
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
@@ -32,7 +31,7 @@ type Reader struct {
 	index  biopb.PAMFieldIndex        // Contents of *<fieldname>.index file.
 	blocks []biopb.PAMBlockIndexEntry // Subset of index.Blocks that intersect requestedRange.
 	fb     fieldReadBuf               // Current buffer being parsed.
-	err    *errorreporter.T
+	err    *errors.Once
 
 	coordField    bool                // True if the field is gbam.FieldCoord.
 	addrGenerator gbam.CoordGenerator // Computes biopb.Coord.Seq. Used only when coordField=true.
@@ -42,7 +41,7 @@ type Reader struct {
 // in log messages. coordField should be true if the file stores the genomic
 // coordinate. Setting setting coordField=true enables the codepath that
 // computes biopb.Coord.Seq values.
-func NewReader(ctx context.Context, path, label string, coordField bool, errp *errorreporter.T) (*Reader, error) {
+func NewReader(ctx context.Context, path, label string, coordField bool, errp *errors.Once) (*Reader, error) {
 	fr := &Reader{
 		coordField: coordField,
 		label:      label,

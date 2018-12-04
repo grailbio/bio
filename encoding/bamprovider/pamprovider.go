@@ -1,17 +1,17 @@
 package bamprovider
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
-	"github.com/pkg/errors"
 )
 
 // PAMProvider reads PAM files.  The path can be S3 URLs, in which case the data
@@ -22,7 +22,7 @@ type PAMProvider struct {
 	Path string
 	// Opts is passed to pam.NewReader.
 	Opts pam.ReadOpts
-	err  errorreporter.T
+	err  errors.Once
 
 	mu      sync.Mutex
 	header  *sam.Header        // extracted from <dir>/<range>.index.
@@ -103,7 +103,7 @@ func (p *PAMProvider) Close() error {
 // GenerateShards implements the Provider interface.
 func (p *PAMProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, error) {
 	if opts.Strategy != Automatic && opts.Strategy != ByteBased {
-		return nil, errors.Errorf("GenerateShards: strategy %v not supported", opts.Strategy)
+		return nil, fmt.Errorf("GenerateShards: strategy %v not supported", opts.Strategy)
 	}
 	header, err := p.GetHeader()
 	if err != nil {

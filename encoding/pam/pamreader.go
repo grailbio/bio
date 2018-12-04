@@ -14,7 +14,6 @@ import (
 	"unsafe"
 
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio/recordiozstd"
@@ -62,7 +61,7 @@ type ShardReader struct {
 	path         string           // PAM directory path.
 	shardRange   biopb.CoordRange // row range parsed out of the filename.
 	nRecords     int              // # records read so far
-	err          *errorreporter.T // Points to Reader.err
+	err          *errors.Once     // Points to Reader.err
 }
 
 var (
@@ -313,7 +312,7 @@ func NewShardReader(
 	requestedRange biopb.CoordRange,
 	dropFields []gbam.FieldType,
 	pamIndex pamutil.FileInfo,
-	errp *errorreporter.T) *ShardReader {
+	errp *errors.Once) *ShardReader {
 	r := &ShardReader{
 		label:          fmt.Sprintf("%s:s%s:u%s", file.Base(pamIndex.Dir), pamutil.CoordRangePathString(pamIndex.Range), pamutil.CoordRangePathString(requestedRange)),
 		path:           pamIndex.Dir,
@@ -390,7 +389,7 @@ type Reader struct {
 	rec *sam.Record
 
 	numRead int
-	err     errorreporter.T
+	err     errors.Once
 }
 
 // NewReader creates a new Reader.

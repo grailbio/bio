@@ -10,7 +10,7 @@ import (
 	"github.com/biogo/hts/bgzf"
 	"github.com/biogo/hts/bgzf/index"
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
@@ -33,7 +33,7 @@ type BAMProvider struct {
 	Path string
 	// Index is the pathname of *.bam.bai file. If "", Path + ".bai"
 	Index string
-	err   errorreporter.T
+	err   errors.Once
 
 	mu        sync.Mutex
 	nActive   int

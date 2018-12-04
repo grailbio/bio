@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
@@ -53,7 +52,7 @@ func WriteShardIndex(ctx context.Context, dir string, coordRange biopb.CoordRang
 	if e != nil {
 		return e
 	}
-	err := errorreporter.T{}
+	err := errors.Once{}
 	rio := recordio.NewWriter(out.Writer(ctx), recordio.WriterOpts{
 		Transformers: []string{"zstd"},
 	})

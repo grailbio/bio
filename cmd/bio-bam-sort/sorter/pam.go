@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bio/biopb"
 	grailbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam"
@@ -143,7 +143,7 @@ func generatePAMShard(readers []*sortShardReader,
 	header *sam.Header,
 	start, limit recCoord,
 	pool *sortShardBlockPool,
-	errReporter *errorreporter.T) {
+	errReporter *errors.Once) {
 	opts := pam.WriteOpts{
 		Range: biopb.CoordRange{recCoordToRecAddr(start), recCoordToRecAddr(limit)},
 	}
@@ -188,7 +188,7 @@ func PAMFromSortShards(paths []string, pamPath string, recordsPerShard int64, pa
 	if err := pamutil.Remove(pamPath); err != nil {
 		return err
 	}
-	errReporter := errorreporter.T{}
+	errReporter := errors.Once{}
 	pool := newSortShardBlockPool()
 	baseReaders := make([]*sortShardReader, len(paths))
 

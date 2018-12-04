@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/syncqueue"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
@@ -88,7 +88,7 @@ func viewShards(provider bamprovider.Provider, filter *filterExpr, shards []gbam
 	shardCh := gbam.NewShardChannel(shards)
 	wgW := sync.WaitGroup{}
 	wgR := sync.WaitGroup{}
-	e := errorreporter.T{}
+	e := errors.Once{}
 	oq := syncqueue.NewOrderedQueue(len(shards))
 
 	// The reader thread

@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
@@ -41,7 +40,7 @@ type Writer struct {
 	buf         *fieldWriteBuf
 	bufFreePool *WriteBufPool // Points to pam.Writer.bufPool.
 
-	err *errorreporter.T // Any error encountered so far.
+	err *errors.Once // Any error encountered so far.
 
 	// The following fields are used by async buf flusher.
 	mu   *sync.Mutex
@@ -371,7 +370,7 @@ func (fw *Writer) Close() {
 
 // NewWriter creates a new field writer that writes to the given path. Label is
 // used for logging. Transformers is set as the recordio transformers.
-func NewWriter(path, label string, transformers []string, bufFreePool *WriteBufPool, errReporter *errorreporter.T) *Writer {
+func NewWriter(path, label string, transformers []string, bufFreePool *WriteBufPool, errReporter *errors.Once) *Writer {
 	mu := &sync.Mutex{}
 	fw := &Writer{
 		label:            label,

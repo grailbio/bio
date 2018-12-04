@@ -9,7 +9,7 @@ import (
 
 	"github.com/biogo/hts/sam"
 	"github.com/blainsmith/seahash"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/unsafe"
 	gbam "github.com/grailbio/bio/encoding/bam"
@@ -156,7 +156,7 @@ func (c *refChecksum) merge(other refChecksum) {
 type fileChecksum struct {
 	Refs     []refChecksum // One for each ref. Index is refid.
 	Unmapped refChecksum   // For unmapped reads.
-	err      errorreporter.T
+	err      errors.Once
 }
 
 func (csum *fileChecksum) resizeRefs(minSize int) {

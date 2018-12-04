@@ -3,6 +3,7 @@ package converter
 // Utility for converting BAM to PAM.
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 	"sort"
@@ -12,7 +13,7 @@ import (
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/bgzf"
 	"github.com/biogo/hts/sam"
-	"github.com/grailbio/base/errorreporter"
+	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/traverse"
 	"github.com/grailbio/base/vcontext"
@@ -22,7 +23,6 @@ import (
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
 	"github.com/klauspost/compress/gzip"
-	"github.com/pkg/errors"
 	"v.io/x/lib/vlog"
 )
 
@@ -62,7 +62,7 @@ func generateShardBoundaries(bamPath, baiPath string, bytesPerShard int64) ([]ba
 		allChunks = append(allChunks, chunks...)
 	}
 	if len(allChunks) <= 0 {
-		return nil, errors.Errorf("%v: no chunk found in the index", bamPath)
+		return nil, fmt.Errorf("%v: no chunk found in the index", bamPath)
 	}
 	sort.SliceStable(allChunks, func(i, j int) bool {
 		c0 := allChunks[i]
@@ -136,7 +136,7 @@ func convertShard(opts pam.WriteOpts, pamPath string, in bamprovider.Provider, s
 	})
 	opts.Range = biopb.CoordRange{Start: startShard.rec, Limit: limitShard.rec}
 	w := pam.NewWriter(opts, header, pamPath)
-	err := errorreporter.T{}
+	err := errors.Once{}
 	var nRecs int64
 	for iter.Scan() {
 		rec := iter.Record()
@@ -164,10 +164,10 @@ func ConvertToPAM(opts pam.WriteOpts, pamPath, bamPath, baiPath string, bytesPer
 		baiPath = bamPath + ".bai"
 	}
 	if pamPath == "" {
-		return errors.Errorf("Empty pam path")
+		return fmt.Errorf("Empty pam path")
 	}
 	if bytesPerShard <= 0 {
-		return errors.Errorf("Negative bytesPerShard: %v", bytesPerShard)
+		return fmt.Errorf("Negative bytesPerShard: %v", bytesPerShard)
 	}
 	shards, e := generateShardBoundaries(bamPath, baiPath, bytesPerShard)
 	if e != nil {
@@ -177,7 +177,7 @@ func ConvertToPAM(opts pam.WriteOpts, pamPath, bamPath, baiPath string, bytesPer
 		return e
 	}
 	if !opts.Range.EQ(gbam.UniversalRange) {
-		return errors.Errorf("WriteOpts.Range to ConvertFromBAM must be a universal range, but found %+v", opts)
+		return fmt.Errorf("WriteOpts.Range to ConvertFromBAM must be a universal range, but found %+v", opts)
 	}
 	vlog.Infof("%v: Creating %d shards: %+v", pamPath, len(shards), shards)
 	// Delete existing files to avoid mixing up files from multiple generations.
@@ -234,7 +234,7 @@ func ConvertToBAM(bamPath string, provider bamprovider.Provider) error {
 
 	wg := sync.WaitGroup{}
 	reqCh := make(chan convertRequest, parallelism)
-	var err errorreporter.T
+	var err errors.Once
 	vlog.Infof("Creating %d threads", parallelism)
 	for wi := 0; wi < parallelism; wi++ {
 		wg.Add(1)
