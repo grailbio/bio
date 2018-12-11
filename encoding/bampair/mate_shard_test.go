@@ -3,7 +3,7 @@ package bampair
 import (
 	"testing"
 
-	"github.com/biogo/hts/sam"
+	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
 	"grail.com/bio/encoding/bam"

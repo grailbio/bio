@@ -8,14 +8,14 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/biogo/hts/sam"
 	"github.com/golang/snappy"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
-	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/sam"
 	"v.io/x/lib/vlog"
 )
 
@@ -105,7 +105,7 @@ func newSortShardWriter(out io.Writer,
 	w.curBlock = w.newBuf()
 	if header != nil {
 		var err error
-		if w.index.EncodedBamHeader, err = gbam.MarshalHeader(header); err != nil {
+		if w.index.EncodedBamHeader, err = bam.MarshalHeader(header); err != nil {
 			// TODO(saito) propagate error up.
 			vlog.Fatalf("Failed to encode header: %v", err)
 		}

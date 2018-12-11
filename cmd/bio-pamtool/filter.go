@@ -16,7 +16,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/biogo/hts/sam"
+	"github.com/grailbio/hts/sam"
 )
 
 const filterHelp = `Filter expression defines a boolean condition on a single record.

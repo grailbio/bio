@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
@@ -20,6 +19,7 @@ import (
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
+	"github.com/grailbio/hts/sam"
 )
 
 // Reader reads a sequence of values for one field type.

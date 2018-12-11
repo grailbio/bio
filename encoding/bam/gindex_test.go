@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/biogo/hts/bam"
-	"github.com/biogo/hts/bgzf"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/bgzf"
 	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

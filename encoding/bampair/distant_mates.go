@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/sync/multierror"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
+	"github.com/grailbio/hts/sam"
 	"grail.com/bio/encoding/bam"
 )
 

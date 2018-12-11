@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/biogo/hts/sam"
+	"github.com/grailbio/hts/sam"
 )
 
 const sizeofSliceHeader = int(unsafe.Sizeof(reflect.SliceHeader{}))
@@ -123,12 +123,12 @@ func countAuxFields(aux []byte) (int, error) {
 }
 
 // Unmarshal a serialized BAM record.
-func Unmarshal(b []byte, header *sam.Header) (*Record, error) {
+func Unmarshal(b []byte, header *sam.Header) (*sam.Record, error) {
 	if len(b) < bamFixedBytes {
 		return nil, errRecordTooShort
 	}
 	// Need to use int(int32(uint32)) to ensure 2's complement extension of -1.
-	rec := GetFromFreePool()
+	rec := sam.GetFromFreePool()
 	refID := int(int32(binary.LittleEndian.Uint32(b)))
 	rec.Pos = int(int32(binary.LittleEndian.Uint32(b[4:])))
 	nLen := int(b[8])
@@ -161,7 +161,7 @@ func Unmarshal(b []byte, header *sam.Header) (*Record, error) {
 	// required to store the result of parsing the bam alignment record.
 	// This reduces the load on GC and consequently allows for better
 	// scalability with the number of cores used by clients of this package.
-	ResizeScratch(&rec.Scratch, shadowSize)
+	sam.ResizeScratch(&rec.Scratch, shadowSize)
 	shadowBuf := rec.Scratch
 	copy(shadowBuf, b[bamFixedBytes:])
 

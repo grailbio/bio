@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/biogo/hts/bam"
-	"github.com/biogo/hts/sam"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/assert"
 	"github.com/grailbio/testutil/expect"

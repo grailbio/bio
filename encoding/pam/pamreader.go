@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/recordio/recordiozstd"
@@ -22,6 +21,7 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam/fieldio"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
+	"github.com/grailbio/hts/sam"
 	"v.io/x/lib/vlog"
 )
 
@@ -109,8 +109,7 @@ func GetDummySeq(length int) sam.Seq {
 // fields.
 func (r *ShardReader) readRecord() *sam.Record {
 	refs := r.header.Refs()
-	rb := gbam.GetFromFreePool()
-	rec := gbam.CastUp(rb)
+	rec := sam.GetFromFreePool()
 
 	coord, ok := r.fieldReaders[gbam.FieldCoord].ReadCoordField()
 	if !ok {
@@ -207,8 +206,8 @@ func (r *ShardReader) readRecord() *sam.Record {
 			arenaBytes += len(tag.Name) + tag.Len
 		}
 	}
-	gbam.ResizeScratch(&rb.Scratch, arenaBytes)
-	arena := fieldio.NewUnsafeArena(rb.Scratch)
+	sam.ResizeScratch(&rec.Scratch, arenaBytes)
+	arena := fieldio.NewUnsafeArena(rec.Scratch)
 	if r.needField[gbam.FieldCigar] {
 		rec.Cigar = r.fieldReaders[gbam.FieldCigar].ReadCigarField(nCigarOps, &arena)
 	}

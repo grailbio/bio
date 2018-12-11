@@ -10,10 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/biogo/hts/sam"
 	"github.com/golang/snappy"
 	"github.com/grailbio/base/log"
 	grailbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/sam"
 )
 
 // diskMateShard is an on-disk shard of the distant mates.  It is
@@ -71,7 +72,7 @@ func (s *diskMateShard) add(mate *sam.Record, fileIdx uint64) error {
 		return fmt.Errorf("error writing fileIdx to mate shard: %v", err)
 	}
 	s.buf.Reset()
-	if err := grailbam.Marshal(mate, &s.buf); err != nil {
+	if err := bam.Marshal(mate, &s.buf); err != nil {
 		return fmt.Errorf("error marshalling to mate shard: %v", err)
 	}
 	if _, err := s.writer.Write(s.buf.Bytes()); err != nil {
@@ -150,7 +151,7 @@ func (s *diskMateShard) openReader() error {
 		}
 
 		records++
-		iRecord := &indexedRecord{grailbam.CastUp(record), fileIdx}
+		iRecord := &indexedRecord{record, fileIdx}
 
 		e, found := s.m[iRecord.r.Name]
 		if found {

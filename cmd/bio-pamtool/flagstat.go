@@ -5,9 +5,9 @@ import (
 	"log"
 	"runtime"
 
-	"github.com/biogo/hts/sam"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
+	"github.com/grailbio/hts/sam"
 )
 
 type aggrFlagstat struct {

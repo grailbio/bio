@@ -7,8 +7,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/biogo/hts/bgzf"
-	"github.com/biogo/hts/sam"
+	"github.com/grailbio/hts/bgzf"
+	"github.com/grailbio/hts/sam"
 	"github.com/klauspost/compress/gzip"
 )
 

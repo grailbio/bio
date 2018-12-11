@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"testing"
 
-	biogobam "github.com/biogo/hts/bam"
-	"github.com/biogo/hts/sam"
+	biogobam "github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/expect"
 	"github.com/stretchr/testify/require"

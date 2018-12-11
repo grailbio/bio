@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/vcontext"
@@ -12,6 +11,7 @@ import (
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
+	"github.com/grailbio/hts/sam"
 )
 
 // PAMProvider reads PAM files.  The path can be S3 URLs, in which case the data

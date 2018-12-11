@@ -10,13 +10,13 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/biogo/hts/bam"
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/grail"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/cmd/bio-bam-sort/sorter"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/sam"
 )
 
 var (

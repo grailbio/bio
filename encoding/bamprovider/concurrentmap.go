@@ -3,9 +3,9 @@ package bamprovider
 import (
 	"sync"
 
-	"github.com/biogo/hts/sam"
 	"github.com/blainsmith/seahash"
 	"github.com/grailbio/base/unsafe"
+	"github.com/grailbio/hts/sam"
 )
 
 const numConcurrentMapShards = 1024

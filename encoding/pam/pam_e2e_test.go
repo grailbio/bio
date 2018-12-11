@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/biogo/hts/bam"
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/grail"
 	"github.com/grailbio/base/traverse"
 	"github.com/grailbio/base/vcontext"
@@ -29,6 +27,8 @@ import (
 	"github.com/grailbio/bio/encoding/converter"
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/assert"
 	"github.com/grailbio/testutil/expect"

@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/fileio"
 	"github.com/grailbio/base/log"
 	gunsafe "github.com/grailbio/base/unsafe"
 	"github.com/grailbio/base/vcontext"
+	"github.com/grailbio/hts/sam"
 	"github.com/klauspost/compress/gzip"
 )
 

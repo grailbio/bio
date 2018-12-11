@@ -5,9 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/biogo/hts/sam"
-	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
+	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/assert"
 	"github.com/grailbio/testutil/expect"
@@ -15,7 +14,7 @@ import (
 )
 
 func newRecord(name string, ref *sam.Reference, pos int, mateRef *sam.Reference, matePos int, flags sam.Flags) *sam.Record {
-	r := gbam.CastUp(gbam.GetFromFreePool())
+	r := sam.GetFromFreePool()
 	r.Name = name
 	r.Ref = ref
 	r.Pos = pos

@@ -3,9 +3,9 @@ package bamprovider
 import (
 	"math"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/sam"
 )
 
 // fakeProvider is only for unittests. It yields the given records.
@@ -133,7 +133,7 @@ func (i *fakeIterator) Scan() bool {
 func (i *fakeIterator) Record() *sam.Record {
 	// Return a copy so that the code under test cannot alter the
 	// original test input data.
-	copy := gbam.CastUp(gbam.GetFromFreePool())
+	copy := sam.GetFromFreePool()
 	*copy = *i.rec
 	return copy
 }

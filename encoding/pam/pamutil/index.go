@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/bio/biopb"
-	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/sam"
 )
 
 // ReadShardIndex reads the index file, "dir/<recRange>.index".
@@ -87,7 +87,7 @@ func NewShardIndex(shardRange biopb.CoordRange, h *sam.Header) biopb.PAMShardInd
 	index.Magic = ShardIndexMagic
 	index.Version = DefaultVersion
 	var err error
-	if index.EncodedBamHeader, err = gbam.MarshalHeader(h); err != nil {
+	if index.EncodedBamHeader, err = bam.MarshalHeader(h); err != nil {
 		// TODO(saito) propagate errors up
 		log.Panicf("Encode header: %v", err)
 	}

@@ -13,13 +13,14 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/biogo/hts/bgzf"
-	"github.com/biogo/hts/sam"
 	"github.com/biogo/store/llrb"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/vcontext"
 	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/bgzf"
+	"github.com/grailbio/hts/sam"
 	"v.io/x/lib/vlog"
 ) // DefaultSortBatchSize is the default number of records to keep in memory
 // before resorting to external sorting.
@@ -405,7 +406,7 @@ func (s *Sorter) sortRecords(records []*sam.Record, sortTieBreaker uint64) strin
 	writer := newSortShardWriter(temp, !s.options.NoCompressTmpFiles, false, nil, s.sortBlockPool, &s.err)
 	for _, rec := range records {
 		smallBuf.Reset()
-		if err := gbam.Marshal(rec, &smallBuf); err != nil {
+		if err := bam.Marshal(rec, &smallBuf); err != nil {
 			s.err.Set(err)
 			continue
 		}

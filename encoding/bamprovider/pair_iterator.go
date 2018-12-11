@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/biogo/hts/sam"
 	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/sam"
 )
 
 type pairIteratorSharedState struct {
@@ -107,7 +107,7 @@ func (l *PairIterator) Scan() bool {
 		if l.iter.Scan() {
 			record := l.iter.Record()
 			if !isPrimary(record) {
-				gbam.PutInFreePool(gbam.CastDown(record))
+				sam.PutInFreePool(record)
 				continue
 			}
 			mate, ok := l.localNameToRecord[record.Name]

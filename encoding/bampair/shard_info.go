@@ -3,9 +3,9 @@ package bampair
 import (
 	"fmt"
 
-	"github.com/biogo/hts/sam"
 	"github.com/biogo/store/llrb"
 	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/sam"
 	"grail.com/bio/encoding/bam"
 )
 

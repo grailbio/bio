@@ -10,9 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/biogo/hts/bam"
-	"github.com/biogo/hts/bgzf"
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/traverse"
@@ -22,6 +19,9 @@ import (
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/bgzf"
+	"github.com/grailbio/hts/sam"
 	"github.com/klauspost/compress/gzip"
 	"v.io/x/lib/vlog"
 )
@@ -145,7 +145,7 @@ func convertShard(opts pam.WriteOpts, pamPath string, in bamprovider.Provider, s
 			break
 		}
 		nRecs++
-		gbam.PutInFreePool(gbam.CastDown(rec))
+		sam.PutInFreePool(rec)
 	}
 	err.Set(iter.Close())
 	err.Set(w.Close())
@@ -247,7 +247,7 @@ func ConvertToBAM(bamPath string, provider bamprovider.Provider) error {
 				}
 				for _, r := range req.records {
 					c.AddRecord(r)
-					gbam.PutInFreePool(gbam.CastDown(r))
+					sam.PutInFreePool(r)
 				}
 				err.Set(c.CloseShard())
 			}

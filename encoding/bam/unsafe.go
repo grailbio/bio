@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/biogo/hts/sam"
+	"github.com/grailbio/hts/sam"
 )
 
 // CigarOpSize is the size of one sam.CigarOp, in bytes.

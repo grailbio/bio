@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/syncqueue"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
+	"github.com/grailbio/hts/sam"
 )
 
 type viewRegion struct {
@@ -131,7 +131,7 @@ func viewShards(provider bamprovider.Provider, filter *filterExpr, shards []gbam
 					e.Set(err)
 					continue
 				}
-				gbam.PutInFreePool(gbam.CastDown(rec))
+				sam.PutInFreePool(rec)
 				fmt.Print(string(s), "\n")
 			}
 		}

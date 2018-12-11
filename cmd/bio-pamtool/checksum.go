@@ -7,13 +7,13 @@ import (
 	"hash"
 	"runtime"
 
-	"github.com/biogo/hts/sam"
 	"github.com/blainsmith/seahash"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/unsafe"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
+	"github.com/grailbio/hts/sam"
 )
 
 type checksumOpts struct {

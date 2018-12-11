@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/grail"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
+	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
 	grailbam "grail.com/bio/encoding/bam"
@@ -85,7 +85,7 @@ var (
 )
 
 func newRecord(name string, ref *sam.Reference, pos int, flags sam.Flags, matePos int, mateRef *sam.Reference, cigar sam.Cigar) *sam.Record {
-	r := gbam.CastUp(gbam.GetFromFreePool())
+	r := sam.GetFromFreePool()
 	r.Name = name
 	r.Ref = ref
 	r.Pos = pos

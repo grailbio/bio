@@ -5,8 +5,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/syncqueue"
+	htsbam "github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/sam"
 	"grail.com/bio/encoding/bgzf"
 	"v.io/x/lib/vlog"
 )
@@ -111,7 +112,7 @@ func (c *ShardedBAMCompressor) addHeader(h *sam.Header) error {
 
 // AddRecord adds a sam record to the current in-progress shard.
 func (c *ShardedBAMCompressor) AddRecord(r *sam.Record) error {
-	if err := Marshal(r, &c.buf); err != nil {
+	if err := htsbam.Marshal(r, &c.buf); err != nil {
 		return err
 	}
 	_, err := c.buf.WriteTo(c.bgzf)

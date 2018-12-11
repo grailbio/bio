@@ -3,8 +3,8 @@ package bamprovider
 import (
 	"fmt"
 
-	"github.com/biogo/hts/sam"
 	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/sam"
 )
 
 // RefByName finds a sam.Reference with the given name. It returns nil if a

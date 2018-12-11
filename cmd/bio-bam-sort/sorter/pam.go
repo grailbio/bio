@@ -6,12 +6,12 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/bio/biopb"
 	grailbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
+	"github.com/grailbio/hts/sam"
 	"v.io/x/lib/vlog"
 )
 
@@ -161,11 +161,11 @@ func generatePAMShard(readers []*sortShardReader,
 				errReporter.Set(err)
 				return false
 			}
-			pamWriter.Write(grailbam.CastUp(rec))
+			pamWriter.Write(rec)
 			if pamWriter.Err() != nil {
 				vlog.Fatalf("ERR: %+v, opts %+v key %+v, limit %+v", pamWriter.Err(), opts, key, limit)
 			}
-			grailbam.PutInFreePool(rec)
+			sam.PutInFreePool(rec)
 		}
 		return true
 	}

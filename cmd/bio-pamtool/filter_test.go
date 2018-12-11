@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/biogo/hts/sam"
+	"github.com/grailbio/hts/sam"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -9,6 +9,7 @@ import (
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/bio/encoding/converter"
 	"github.com/grailbio/bio/encoding/pam"
+	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/assert"
 	"v.io/x/lib/gosh"
@@ -86,8 +87,8 @@ func verifyFiles(t *testing.T, path0, path1 string) {
 		r1 := iter1.Record()
 		assert.EQ(t, r1.String(), r0.String(), "path0=%s, path1=%s, n=%d", path0, path1, n)
 		n++
-		gbam.PutInFreePool(gbam.CastDown(r0))
-		gbam.PutInFreePool(gbam.CastDown(r1))
+		sam.PutInFreePool(r0)
+		sam.PutInFreePool(r1)
 	}
 	assert.NoError(t, iter0.Close())
 	assert.NoError(t, iter1.Close())

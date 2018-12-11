@@ -6,15 +6,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/biogo/hts/bam"
-	"github.com/biogo/hts/bgzf"
-	"github.com/biogo/hts/bgzf/index"
-	"github.com/biogo/hts/sam"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/bam"
+	"github.com/grailbio/hts/bgzf"
+	"github.com/grailbio/hts/bgzf/index"
+	"github.com/grailbio/hts/sam"
 	"v.io/x/lib/vlog"
 )
 

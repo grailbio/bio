@@ -11,8 +11,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/biogo/hts/bam"
 	grailbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/hts/bam"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/assert"
 )
@@ -31,7 +31,7 @@ func TestMarshal(t *testing.T) {
 		assert.NoError(t, err)
 
 		buf := bytes.NewBuffer(nil)
-		assert.NoError(t, grailbam.Marshal(rec, buf))
+		assert.NoError(t, bam.Marshal(rec, buf))
 		serialized := buf.Bytes()
 		serializedLen := int(binary.LittleEndian.Uint32(serialized[:4]))
 		assert.EQ(t, len(serialized)-4, serializedLen)
