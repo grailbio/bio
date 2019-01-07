@@ -3,7 +3,7 @@ module github.com/grailbio/bio
 require (
 	blainsmith.com/go/seahash v1.1.2
 	github.com/biogo/store v0.0.0-20160505134755-913427a1d5e8
-	github.com/gogo/protobuf v0.0.0-20170307180453-100ba4e88506
+	github.com/gogo/protobuf v1.2.0
 	github.com/golang/snappy v0.0.0-20170215233205-553a64147049
 	github.com/grailbio/base v0.0.0
 	github.com/grailbio/hts v0.0.0
