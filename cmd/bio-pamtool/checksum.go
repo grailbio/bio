@@ -7,7 +7,7 @@ import (
 	"hash"
 	"runtime"
 
-	"github.com/blainsmith/seahash"
+	"blainsmith.com/go/seahash"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/unsafe"

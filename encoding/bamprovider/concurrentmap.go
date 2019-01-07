@@ -3,7 +3,7 @@ package bamprovider
 import (
 	"sync"
 
-	"github.com/blainsmith/seahash"
+	"blainsmith.com/go/seahash"
 	"github.com/grailbio/base/unsafe"
 	"github.com/grailbio/hts/sam"
 )
