@@ -111,6 +111,121 @@ func TestParseRegionString(t *testing.T) {
 	}
 }
 
+type IntersectsByIDTestInstance struct {
+	refID    int
+	startPos PosType
+	limitPos PosType
+	want     bool
+}
+
+func TestIntersectsByID(t *testing.T) {
+	tests := []struct {
+		pathname string
+		insts    []IntersectsByIDTestInstance
+	}{
+		{
+			pathname: "testdata/test1.bed",
+			insts: []IntersectsByIDTestInstance{
+				{
+					startPos: 2488103,
+					limitPos: 2488104,
+					want:     false,
+				},
+				{
+					startPos: 2488103,
+					limitPos: 2488105,
+					want:     true,
+				},
+				{
+					startPos: 2488103,
+					limitPos: 2488171,
+					want:     true,
+				},
+				{
+					startPos: 2488103,
+					limitPos: 2488172,
+					want:     true,
+				},
+				{
+					startPos: 2488103,
+					limitPos: 2488173,
+					want:     true,
+				},
+				{
+					startPos: 2488104,
+					limitPos: 2488105,
+					want:     true,
+				},
+				{
+					startPos: 2488104,
+					limitPos: 2488171,
+					want:     true,
+				},
+				{
+					startPos: 2488104,
+					limitPos: 2488172,
+					want:     true,
+				},
+				{
+					startPos: 2488104,
+					limitPos: 2488173,
+					want:     true,
+				},
+				{
+					startPos: 2488105,
+					limitPos: 2488171,
+					want:     true,
+				},
+				{
+					startPos: 2488105,
+					limitPos: 2488172,
+					want:     true,
+				},
+				{
+					startPos: 2488105,
+					limitPos: 2488173,
+					want:     true,
+				},
+				{
+					startPos: 2488171,
+					limitPos: 2488172,
+					want:     true,
+				},
+				{
+					startPos: 2488171,
+					limitPos: 2488173,
+					want:     true,
+				},
+				{
+					startPos: 2488172,
+					limitPos: 2488173,
+					want:     false,
+				},
+			},
+		},
+	}
+	// Mock a *sam.Header and calling NewBEDUnionFromPath()
+	ref1, _ := sam.NewReference("chr1", "", "", 249250621, nil, nil)
+	ref2, _ := sam.NewReference("chr2", "", "", 243199373, nil, nil)
+	samHeader, _ := sam.NewHeader(nil, []*sam.Reference{ref1, ref2})
+	opts := NewBEDOpts{
+		SAMHeader: samHeader,
+	}
+	for _, tt := range tests {
+		bedUnion, err := NewBEDUnionFromPath(
+			tt.pathname,
+			opts,
+		)
+		expect.NoError(t, err)
+		for _, ii := range tt.insts {
+			result := bedUnion.IntersectsByID(ii.refID, ii.startPos, ii.limitPos)
+			if result != ii.want {
+				t.Errorf("Unexpected result for test case %v", ii.want, result)
+			}
+		}
+	}
+}
+
 type SubsetTestInstance struct {
 	startRefID int
 	startPos   PosType

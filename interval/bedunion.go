@@ -232,7 +232,6 @@ func (u *BEDUnion) ContainsByName(refName string, pos PosType) bool {
 // region intersects the interval set.  References must be specified by ID.
 // It panics if limitRefID:limitPos isn't after startRefID:startPos.
 func (u *BEDUnion) Intersects(startRefID int, startPos PosType, limitRefID int, limitPos PosType) bool {
-	// May want a variant of this which takes a single reference name.
 	if startRefID > limitRefID {
 		panic("BEDUnion.Intersects: startRefID <= limitRefID required")
 	}
@@ -264,6 +263,50 @@ func (u *BEDUnion) Intersects(startRefID int, startPos PosType, limitRefID int, 
 		return limitRefIntervals[0] < limitPos
 	}
 	return false
+}
+
+// IntersectsByID checks whether the given nonempty single-reference [startPos,
+// limitPos) interval intersects the BEDUnion, where the reference is specified
+// by ID.
+func (u *BEDUnion) IntersectsByID(refID int, startPos PosType, limitPos PosType) bool {
+	// Implementation has more in common with ContainsByID(); this is optimized
+	// for a sequence of queries with nondecreasing startPos.
+	// (add ByName version of this function when necessary)
+	posPlus1 := startPos + 1
+	if refID != u.lastRefID {
+		u.lastRefID = refID
+		u.lastRefName = ""
+		u.lastRefIntervals = u.idMap[refID]
+		if u.lastRefIntervals == nil {
+			return false
+		}
+		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
+		u.lastPosPlus1 = posPlus1
+		u.isSequential = true
+		if (u.lastIdx & 1) == 1 {
+			return true
+		}
+		return (len(u.lastRefIntervals) > u.lastIdx) && (u.lastRefIntervals[u.lastIdx] < limitPos)
+	}
+	if u.lastRefIntervals == nil {
+		return false
+	}
+	if u.isSequential {
+		if posPlus1 >= u.lastPosPlus1 {
+			u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
+			u.lastPosPlus1 = posPlus1
+			if (u.lastIdx & 1) == 1 {
+				return true
+			}
+			return (len(u.lastRefIntervals) > u.lastIdx) && (u.lastRefIntervals[u.lastIdx] < limitPos)
+		}
+		u.isSequential = false
+	}
+	startIdx := SearchPosType(u.lastRefIntervals, posPlus1)
+	if (startIdx & 1) == 1 {
+		return true
+	}
+	return (len(u.lastRefIntervals) > startIdx) && (u.lastRefIntervals[startIdx] < limitPos)
 }
 
 // RefByID gets the raw length-2n []PosType for the given reference.  (If
