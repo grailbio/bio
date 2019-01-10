@@ -1,7 +1,5 @@
 package sorter
 
-//go:generate protoc -I. -I../../../vendor -I../../../vendor/github.com/gogo/protobuf/protobuf --gogofaster_out=. sort.proto
-
 import (
 	"bytes"
 	"crypto/sha256"
