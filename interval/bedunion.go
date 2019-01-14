@@ -281,32 +281,72 @@ func (u *BEDUnion) IntersectsByID(refID int, startPos PosType, limitPos PosType)
 			return false
 		}
 		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
-		u.lastPosPlus1 = posPlus1
 		u.isSequential = true
-		if (u.lastIdx & 1) == 1 {
-			return true
+	} else {
+		if u.lastRefIntervals == nil {
+			return false
 		}
-		return (len(u.lastRefIntervals) > u.lastIdx) && (u.lastRefIntervals[u.lastIdx] < limitPos)
-	}
-	if u.lastRefIntervals == nil {
-		return false
-	}
-	if u.isSequential {
-		if posPlus1 >= u.lastPosPlus1 {
-			u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
-			u.lastPosPlus1 = posPlus1
-			if (u.lastIdx & 1) == 1 {
+		if posPlus1 < u.lastPosPlus1 {
+			u.isSequential = false
+		}
+		if !u.isSequential {
+			startIdx := SearchPosType(u.lastRefIntervals, posPlus1)
+			if (startIdx & 1) == 1 {
 				return true
 			}
-			return (len(u.lastRefIntervals) > u.lastIdx) && (u.lastRefIntervals[u.lastIdx] < limitPos)
+			return (len(u.lastRefIntervals) > startIdx) && (u.lastRefIntervals[startIdx] < limitPos)
 		}
-		u.isSequential = false
+		u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
 	}
-	startIdx := SearchPosType(u.lastRefIntervals, posPlus1)
-	if (startIdx & 1) == 1 {
+	if (u.lastIdx & 1) == 1 {
 		return true
 	}
-	return (len(u.lastRefIntervals) > startIdx) && (u.lastRefIntervals[startIdx] < limitPos)
+	return (len(u.lastRefIntervals) > u.lastIdx) && (u.lastRefIntervals[u.lastIdx] < limitPos)
+}
+
+// OverlapByID is a low-level function which returns a []PosType describing all
+// the BED intervals overlapping [startPos, limitPos) on the given reference,
+// where the reference is specified by ID.  For example, assuming positive
+// startPos, the BED interval [0, startPos) would not be returned, while [0,
+// startPos + 1) would.
+// IMPORTANT: the return value must be treated as read-only; it may alias an
+// internal data structure.
+// The return slice is arranged such that the value at index 2n is the start of
+// overlapping interval n, and the value at index (2n+1) is the end of that
+// overlapping interval.
+func (u *BEDUnion) OverlapByID(refID int, startPos, limitPos PosType) []PosType {
+	posPlus1 := startPos + 1
+	if refID != u.lastRefID {
+		u.lastRefID = refID
+		u.lastRefName = ""
+		u.lastRefIntervals = u.idMap[refID]
+		if u.lastRefIntervals == nil {
+			return nil
+		}
+		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
+		u.isSequential = true
+	} else {
+		if u.lastRefIntervals == nil {
+			return nil
+		}
+		if posPlus1 < u.lastPosPlus1 {
+			u.isSequential = false
+		}
+		if !u.isSequential {
+			startIdx := SearchPosType(u.lastRefIntervals, posPlus1)
+			// If start of query is inside an interval, get the beginning of that
+			// interval by rounding down to the next even index.
+			resultStart := startIdx & (^1)
+			// If end of query is inside an interval, get the end of that interval by
+			// rounding up to the next even index.
+			resultEnd := (SearchPosType(u.lastRefIntervals, limitPos) + 1) & (^1)
+			return u.lastRefIntervals[resultStart:resultEnd]
+		}
+		u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
+	}
+	resultStart := u.lastIdx & (^1)
+	resultEnd := (FwdsearchPosType(u.lastRefIntervals, limitPos, u.lastIdx) + 1) & (^1)
+	return u.lastRefIntervals[resultStart:resultEnd]
 }
 
 // RefByID gets the raw length-2n []PosType for the given reference.  (If
