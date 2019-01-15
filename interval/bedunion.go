@@ -298,6 +298,7 @@ func (u *BEDUnion) IntersectsByID(refID int, startPos PosType, limitPos PosType)
 		}
 		u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
 	}
+	u.lastPosPlus1 = posPlus1
 	if (u.lastIdx & 1) == 1 {
 		return true
 	}
@@ -344,6 +345,7 @@ func (u *BEDUnion) OverlapByID(refID int, startPos, limitPos PosType) []PosType 
 		}
 		u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
 	}
+	u.lastPosPlus1 = posPlus1
 	resultStart := u.lastIdx & (^1)
 	resultEnd := (FwdsearchPosType(u.lastRefIntervals, limitPos, u.lastIdx) + 1) & (^1)
 	return u.lastRefIntervals[resultStart:resultEnd]

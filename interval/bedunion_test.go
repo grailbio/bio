@@ -172,6 +172,11 @@ func TestIntersectsByID(t *testing.T) {
 					want:     true,
 				},
 				{
+					startPos: 2488172,
+					limitPos: 2488173,
+					want:     false,
+				},
+				{
 					startPos: 2488105,
 					limitPos: 2488171,
 					want:     true,
@@ -195,11 +200,6 @@ func TestIntersectsByID(t *testing.T) {
 					startPos: 2488171,
 					limitPos: 2488173,
 					want:     true,
-				},
-				{
-					startPos: 2488172,
-					limitPos: 2488173,
-					want:     false,
 				},
 			},
 		},
