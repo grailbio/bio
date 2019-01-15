@@ -127,9 +127,8 @@ func (fr *Reader) SkipStringDeltaField() {
 	copy(rb.prevString[md.PrefixLen:], rb.blobBuf.RawBytes(md.DeltaLen))
 }
 
-// ReadStringDeltaField reads a delta-encoded string. The function call must be
-// preceded by a call to ReadSTringDeltaMetadata, which returns the value of
-// "md".
+// ReadStringDeltaField reads a delta-encoded string.  The arg "md" must be the
+// value reported by ReadStringDeltaMetadata.
 func (fr *Reader) ReadStringDeltaField(md StringDeltaMetadata, arena *UnsafeArena) string {
 	rb := &fr.fb
 	rb.remaining--
@@ -288,7 +287,7 @@ func (fr *Reader) readNextBlock() bool {
 func (fr *Reader) SkipCigarField() {
 	rb := &fr.fb
 	rb.remaining--
-	nOps, ok := fr.ReadCigarLen()
+	nOps, ok := fr.ReadCigarMetadata()
 	if !ok {
 		panic(fr)
 	}
@@ -297,21 +296,21 @@ func (fr *Reader) SkipCigarField() {
 	}
 }
 
-// ReadCigarLen reads the the # of cigar ops.
-func (fr *Reader) ReadCigarLen() (int, bool) {
+// ReadCigarMetadata reads the the # of cigar ops.
+func (fr *Reader) ReadCigarMetadata() (int, bool) {
 	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
 		return 0, false
 	}
 	return int(fr.fb.defaultBuf.Uvarint32()), true
 }
 
-// ReadCigarField reads next the Cigar field. The function call must be preceded
-// by a call to ReadCigarLen, which returns the value of nOps.
-func (fr *Reader) ReadCigarField(nOps int, arena *UnsafeArena) sam.Cigar {
+// ReadCigarField reads next the Cigar field.  The arg "nOp" must be the value
+// reported by ReadCigarMetadata.
+func (fr *Reader) ReadCigarField(nOp int, arena *UnsafeArena) sam.Cigar {
 	rb := &fr.fb
 	rb.remaining--
-	cigar := gbam.UnsafeBytesToCigar(arena.Alloc(nOps * 4))
-	for i := 0; i < nOps; i++ {
+	cigar := gbam.UnsafeBytesToCigar(arena.Alloc(nOp * 4))
+	for i := 0; i < nOp; i++ {
 		cigar[i] = sam.CigarOp(rb.defaultBuf.Uvarint32())
 	}
 	return cigar
@@ -369,16 +368,47 @@ func (fr *Reader) ReadBytesMetadata() (int, bool) {
 	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
 		return 0, false
 	}
-	return int(fr.fb.defaultBuf.Uvarint32()), true
+	return int(fr.fb.defaultBuf.Uvarint64()), true
 }
 
-// ReadBytesField reads the next variable-length byteslice field. The function
-// call must be preceded by a call to ReadBytesMetadata.
+// ReadBytesField reads the next variable-length byteslice field.  The arg "n"
+// must be the value reported by ReadBytesMetadata.
 func (fr *Reader) ReadBytesField(n int, arena *UnsafeArena) []byte {
 	rb := &fr.fb
 	rb.remaining--
 	buf := arena.Alloc(n)
 	copy(buf, rb.blobBuf.RawBytes(n))
+	return buf
+}
+
+// SkipVarint32sField skips the next varint slice field.  It panics on EOF or
+// any error.
+func (fr *Reader) SkipVarint32sField() {
+	rb := &fr.fb
+	rb.remaining--
+	nBases := int(rb.defaultBuf.Uvarint64())
+	for i := 0; i < nBases; i++ {
+		_ = rb.defaultBuf.Varint64()
+	}
+}
+
+// ReadVarint32sMetadata returns the count of the varint slice field.
+func (fr *Reader) ReadVarint32sMetadata() (int, bool) {
+	if fr.fb.remaining <= 0 && !fr.readNextBlock() {
+		return 0, false
+	}
+	return int(fr.fb.defaultBuf.Uvarint64()), true
+}
+
+// ReadVarint32sField reads the next varint slice field. The arg "n" must be the
+// value reported by ReadVarint32sMetadata.
+func (fr *Reader) ReadVarint32sField(n int, arena *UnsafeArena) []int32 {
+	rb := &fr.fb
+	rb.remaining--
+	buf := unsafeBytesToint32s(arena.Alloc(n * 4))
+	for i := 0; i < n; i++ {
+		buf[i] = int32(rb.blobBuf.Varint64())
+	}
 	return buf
 }
 
@@ -442,8 +472,8 @@ func (fr *Reader) SkipAuxField() {
 // SizeofSliceHeader is the internal size of a slice. Usually 2*(CPU word size).
 const SizeofSliceHeader = int(unsafe.Sizeof(reflect.SliceHeader{}))
 
-// ReadAuxField reads the next aux field. This function call must be preceded by
-// a call to ReadAuxMetadata.
+// ReadAuxField reads the next aux field. Arg "md" must be the value reported by
+// ReadAuxMetadata.
 func (fr *Reader) ReadAuxField(md AuxMetadata, arena *UnsafeArena) []sam.Aux {
 	rb := &fr.fb
 	rb.remaining--

@@ -163,7 +163,7 @@ func (r *ShardReader) readRecord() *sam.Record {
 	arenaBytes := 0
 	nCigarOps := 0
 	if r.needField[gbam.FieldCigar] {
-		if nCigarOps, ok = r.fieldReaders[gbam.FieldCigar].ReadCigarLen(); !ok {
+		if nCigarOps, ok = r.fieldReaders[gbam.FieldCigar].ReadCigarMetadata(); !ok {
 			return nil
 		}
 		arenaBytes += nCigarOps * gbam.CigarOpSize

@@ -137,6 +137,16 @@ func (fw *Writer) PutVarintField(addr biopb.Coord, value int64) {
 	b.PutVarint64(value)
 }
 
+// PutVarint32sField adds an array of varints.
+func (fw *Writer) PutVarint32sField(addr biopb.Coord, values []int32) {
+	wb := fw.buf
+	wb.updateAddrBounds(addr)
+	wb.defaultBuf.PutUvarint64(uint64(len(values)))
+	for _, v := range values {
+		wb.blobBuf.PutVarint64(int64(v))
+	}
+}
+
 // PutUint16Field adds a uint16 field.
 func (fw *Writer) PutUint16Field(addr biopb.Coord, v uint16) {
 	wb := fw.buf
