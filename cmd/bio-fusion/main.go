@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grailbio/base/compress"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/grail"
@@ -44,7 +45,6 @@ import (
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/encoding/fastq"
 	"github.com/grailbio/bio/fusion"
-	"grail.com/cloud/grailfile"
 )
 
 type memStats struct {
@@ -217,19 +217,29 @@ func processRequests(reqCh chan req, resCh chan res, geneDB *fusion.GeneDB, opts
 
 func readFASTQ(ctx context.Context, reqCh chan req, fileseq uint, r1Path, r2Path string) {
 	var (
-		in1, in2 *grailfile.File
+		in1, in2 file.File
 		sc       *fastq.PairScanner
 		r1R, r2R fastq.Read
 		nRead    uint
 		err      error
 	)
-	if in1, err = grailfile.Open(ctx, r1Path); err != nil {
+	if in1, err = file.Open(ctx, r1Path); err != nil {
 		log.Panicf("open %v: %v", r1Path, err)
 	}
-	if in2, err = grailfile.Open(ctx, r2Path); err != nil {
+	if in2, err = file.Open(ctx, r2Path); err != nil {
 		log.Panicf("open %v: %v", r2Path, err)
 	}
-	sc = fastq.NewPairScanner(in1.UncompressingReader(ctx), in2.UncompressingReader(ctx), fastq.ID|fastq.Seq)
+	var (
+		inr1 io.Reader = in1.Reader(ctx)
+		inr2 io.Reader = in2.Reader(ctx)
+	)
+	if u1 := compress.NewReaderPath(inr1, in1.Name()); u1 != nil {
+		inr1 = u1
+	}
+	if u2 := compress.NewReaderPath(inr2, in2.Name()); u2 != nil {
+		inr2 = u2
+	}
+	sc = fastq.NewPairScanner(inr1, inr2, fastq.ID|fastq.Seq)
 	for {
 		if !sc.Scan(&r1R, &r2R) {
 			break
@@ -480,7 +490,7 @@ func Main(ctx context.Context, flags flags, opts fusion.Opts) {
 }
 
 func createFile(ctx context.Context, path string) (io.Writer, func()) {
-	out, err := grailfile.Create(ctx, path)
+	out, err := file.Create(ctx, path)
 	if err != nil {
 		log.Panicf("create %s: %v", path, err)
 	}
