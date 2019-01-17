@@ -1,0 +1,20 @@
+1. file_1.fa
+	Naive run. No bells or whistles. Just a transcriptome output.
+2. file_2.fa
+	Padding exons by 20 bp. No separate junctions.
+3. file_3.fa
+	No padding. But only coding sequences considered.
+4. file_4.fa
+	20 padding. Separate junctions. 5 retained exon bases.
+5. file_5.fa
+	No padding. Whole Genes only.
+6. file_6.fa
+	20 padding. Whole Genes only.
+7. file_7.fa
+	20 padding. Whole Genes only. Coding only/
+8. file_8.fa
+	No padding. Collapsed Genes.
+9. file_9.fa
+	20 padding. Collapsed Genes.
+10. file_10.fa
+	20 padding. Collapsed Genes. Coding only.

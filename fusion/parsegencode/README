@@ -1,0 +1,152 @@
+####################################################################################################
+Description
+####################################################################################################
+
+parsegencode accepts a GENCODE GTF, a genome FASTA and outputs transcriptomic FASTA records to an
+output file. It can optionally print gene records, or overlapping exonic regions for every gene
+instead. These ranges can also be padded with any number of sequential bases from the input genomic
+fasta. Overlapping ranges will be merged into a single range before being printed.
+
+For padded transcripts, an additional possibility of printing junctions separately is provided.
+In this case the user must specify the number of bases to retain on the exon side of the junction,
+and only overlapping intron padding will be merged.
+
+The output FASTA is in the same format as a GENCODE transcriptome fasta. The output can be filtered
+for only coding genes/transcripts.
+
+####################################################################################################
+Usage
+####################################################################################################
+Usage:
+  Build with
+  go build -o parse_gencode main.go
+
+  Run with
+  ./parse_gencode [-outfile /path/to/output.fa]
+                  [-exon_padding INT]
+                  [-coding_only]
+                  [-separate_junctions | -whole_genes | -collapse_transcripts]
+                  [-retained_exon_bases INT]
+                  /path/to/gencode_annotation.gtf /path/to/hgxx.fa
+
+
+  Required Positional Arguments:
+    gencode_gtf            STRING :: Gencode gtf file.
+
+    genome_fasta           STRING :: Genomic fasta corresponding to the gencode annotation.
+
+  Optional Arguments:
+    -exon_padding              INT :: Residues to pad exons by. (default 0, minimum 0)
+
+    -coding_only                   :: Print only transcripts with coding biotypes.
+
+    -outfile                STRING :: Path to an output file. (default <genome_fasta>_parsed.fa
+
+    Mutually Exclusive Flags:
+      -separate_junctions          :: Print the regular transcript and then add the junctions to the
+                                      end of the sequence (separated by |'s. This is recommended if
+                                      using the output fasta for fusion calling to account for
+                                      prespliced-mRNA
+
+      -whole_genes                 :: Print out the gene records from start to end instead of
+                                      printing individual transcripts. (-exon_padding will pad
+                                      genes)
+
+      -collapse_transcripts        :: Print out all overlapping exonic regions (+<exon_padding>)
+                                      identified for every gene (separated by |'s').
+
+    -retained_exon_bases       INT :: If -separate_junctions is specified, how much of the exon
+                                      should be retained? (default 18, minimum 1)
+
+####################################################################################################
+Example Usage
+####################################################################################################
+
+We can obtain 3 basic types of outputs from parsegencode. Each output can be either padded or not.
+Output fastas are always stored to `/path/to/genome_fasta_parsed.fa` if the input fasta was
+`/path/to/genome_fasta.fa`. An outfile can be specified with `-outfile /path/to/output_fasta.fa`
+
+For each case below. Assume each '-' and '=' correspond to 1 base pair in an intron and exon
+respectively. '+' and '#' represent the same on a different transcript.
+
+CASE 1: A standard transcriptome fasta where every record is a concatenation of all exons in a
+        single transcript.
+  UNPADDED: This will output a gencode transcriptome fasta
+
+  `./parse_gencode -gencode_gtf /path/to/gencode_gtf -genome_fasta /path/to/genome_fasta`
+
+  input region     : ------======------======---======-------
+  retained regions :       ======      ======   ======
+  output sequence  : ==================
+
+  PADDED: This will output a '|'-separated list of exon sequences that are each padded with
+          the specified number of intron bases. Overlapping ranges are merged. This retains
+          exon-intron junction information and may have some use to someone.
+
+  `./parse_gencode -gencode_gtf /path/to/gencode_gtf -genome_fasta /path/to/genome_fasta \
+       -exon_padding 2`
+
+  input region     : ------======------======---======-------
+  retained regions :     --======--  --======--
+                                              --======--
+  output sequence  : --======--|--======---======--
+
+  PADDED WITH SEPARATE JUNCTIONS: A special case of padded exons that outputs the standard
+                                  transcriptome followed by a '|'-separated list of junctions
+                                  containing a specified number of exons and introns at each
+                                  junction.
+
+  `./parse_gencode -gencode_gtf /path/to/gencode_gtf -genome_fasta /path/to/genome_fasta \
+       -exon_padding 2 -separate_junctions -retained_exon_bases 1`
+
+  input region     : ------======------======---======-------
+  retained regions :     --======--  --======--
+                                              --======--
+  output sequence  : ==================|--=|=--|--=|=---=|=--
+
+CASE 2: A per-gene transcriptome fasta where all overlapping coding regions across all transcripts
+        for every gene are merged and the resulting regions are printed in a single '|'-separated
+        record.
+
+  UNPADDED:
+  `./parse_gencode -gencode_gtf /path/to/gencode_gtf -genome_fasta /path/to/genome_fasta \
+       -collapse_transcripts`
+
+  input regions    : -------======------======---======-------------
+                        +++######++++++++++++++++######+++++######++
+  retained regions :        ======      ======   ======
+                           ######                ######     ######
+  output sequence  : #=====|=====|=====|######
+
+  PADDED:
+  `./parse_gencode -gencode_gtf /path/to/gencode_gtf -genome_fasta /path/to/genome_fasta \
+       -collapse_transcripts -exon_padding 2`
+
+  input regions    : -------======------======---======-------------
+                        +++######++++++++++++++++######+++++######++
+  retained regions :        ======      ======   ======
+                           ######                ######    ######
+                 =>      --#======--  --======---======-- --######--
+  output sequence  : --#======--|--======---======--|--######--
+
+CASE 3: Just the Gene sequence from beginning to end.
+
+  UNPADDED:
+  `./parse_gencode -gencode_gtf /path/to/gencode_gtf -genome_fasta /path/to/genome_fasta \
+       -whole_genes`
+
+  input regions    : -------======------======---======-------------
+                        +++######++++++++++++++++######+++++######++
+  retained regions :        ======------======---======
+                           ######++++++++++++++++######+++++######
+  output sequence  : ######++++++++++++++++######+++++######
+
+  PADDED:
+  `./parse_gencode -gencode_gtf /path/to/gencode_gtf -genome_fasta /path/to/genome_fasta \
+       -whole_genes -exon_padding 2`
+
+  input regions    : -------======------======---======-------------
+                        +++######++++++++++++++++######+++++######++
+  retained regions :      --======------======---======--
+                         ++######++++++++++++++++######+++++######++
+  output sequence  : ++######++++++++++++++++######+++++######++

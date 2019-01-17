@@ -6,9 +6,11 @@ package main
 // the filtering phase.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/gob"
+	"io"
 	"log"
 
 	"github.com/grailbio/base/file"
@@ -175,5 +177,24 @@ func (r *fusionReader) Close(ctx context.Context) {
 	}
 	if err := r.in.Close(ctx); err != nil {
 		log.Panic(err)
+	}
+}
+
+// Open a buffered file writer. The 2nd arg (func) must be called to flush &
+// close the file.
+func createFile(ctx context.Context, path string) (io.Writer, func()) {
+	out, err := file.Create(ctx, path)
+	if err != nil {
+		log.Panicf("create %s: %v", path, err)
+	}
+	log.Printf("Creating %v", path)
+	buf := bufio.NewWriterSize(out.Writer(ctx), 1<<20)
+	return buf, func() {
+		if err := buf.Flush(); err != nil {
+			log.Panicf("close %s: %v", path, err)
+		}
+		if err := out.Close(ctx); err != nil {
+			log.Panicf("close %s: %v", path, err)
+		}
 	}
 }

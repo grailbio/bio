@@ -51,7 +51,7 @@ func TestEndToEndSmall(t *testing.T) {
 	opts.MaxProximityDistance = 1000
 	opts.MaxProximityGenes = 0
 	log.Printf("Starting e2e test using testdata files in %s", cacheDir)
-	Main(ctx, flags{
+	DetectFusion(ctx, fusionFlags{
 		fastaOutputPath:    tmpDir + "/all.fa",
 		rioOutputPath:      tmpDir + "/all.rio",
 		filteredOutputPath: tmpDir + "/filtered.fa",

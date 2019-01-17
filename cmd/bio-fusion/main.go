@@ -84,7 +84,7 @@ func (m *memStats) update() {
 }
 
 // Collection of options set via cmdline flags
-type flags struct {
+type fusionFlags struct {
 	transcriptPath     string
 	cosmicFusionPath   string
 	r1, r2             string
@@ -444,7 +444,7 @@ func filterCandidates(
 	return filteredCandidates
 }
 
-func Main(ctx context.Context, flags flags, opts fusion.Opts) {
+func DetectFusion(ctx context.Context, flags fusionFlags, opts fusion.Opts) {
 	var (
 		geneDB        *fusion.GeneDB
 		allCandidates []fusion.Candidate
@@ -489,40 +489,74 @@ func Main(ctx context.Context, flags flags, opts fusion.Opts) {
 	log.Printf("Stats: %d final candidates", len(filteredCandidates))
 }
 
-func createFile(ctx context.Context, path string) (io.Writer, func()) {
-	out, err := file.Create(ctx, path)
-	if err != nil {
-		log.Panicf("create %s: %v", path, err)
-	}
-	log.Printf("Creating %v", path)
-	buf := bufio.NewWriterSize(out.Writer(ctx), 1<<20)
-	return buf, func() {
-		if err := buf.Flush(); err != nil {
-			log.Panicf("close %s: %v", path, err)
-		}
-		if err := out.Close(ctx); err != nil {
-			log.Panicf("close %s: %v", path, err)
-		}
-	}
+func usage() {
+	// TODO(saito) This doc is only for gencode. Update once we have a full README.
+	fmt.Fprintln(os.Stderr, `
+parse_gencode accepts a gencode GTF, a genome fasta and prints transcript fasta records to a
+user-specified (or default) output, optionally padding the exons by any number of bases.
+
+Examples:
+
+1. Get a simple transcriptome fasta
+
+    parse_gencode /home/test/gencode.gtf /home/test/hg38.fa
+
+2. Pad exons by 50bp
+
+    parse_gencode /home/test/gencode.gtf /home/test/hg38.fa -exon-padding 50
+
+3. Print only genes
+
+    parse_gencode /home/test/gencode.gtf /home/test/hg38.fa -whole-genes
+
+Usage:
+  parse_gencode [flags] /path/to/gencode_annotation.gtf /path/to/hgxx.fa
+
+  Required Positional Arguments:
+    gtf            Gencode gtf file.
+    fasta          Genomic fasta corresponding to the gencode annotation.
+`)
+	panic("")
 }
 
 func main() {
+	flag.Usage = usage
+
+	// Flags for gencode->fasta translator.
+	generateTranscriptomeFlag := false
+	gencodeFlags := gencodeFlags{}
+	flag.BoolVar(&generateTranscriptomeFlag, "generate-transcriptome", false, "Generate a transcriptome FASTA file.")
+	flag.IntVar(&gencodeFlags.exonPadding, "exon-padding", 0, "Residues to pad exons by. (default 0, minimum 0)")
+	flag.StringVar(&gencodeFlags.output, "transcript", "", "Path to an output file. (default stdout)")
+	flag.BoolVar(&gencodeFlags.codingOnly, "coding-only", false, "Output protein coding transcripts only.")
+	flag.BoolVar(&gencodeFlags.separateJns, "separate-junctions", false, `Print the regular transcript and then add the junctions to the
+end of the sequence (separated by |'s. This is recommended if
+using the output fasta for fusion calling.`)
+	flag.IntVar(&gencodeFlags.retainedExonBases, "retained-exon-bases", 18,
+		`If -separate_junctions is specified, how much of the exon should be retained? (default 18, minimum 1)`)
+	flag.BoolVar(&gencodeFlags.wholeGenes, "whole-genes", false, `Print out the gene records from start to end instead of
+printing individual transcripts. (-exon_padding will pad
+genes)`)
+	flag.BoolVar(&gencodeFlags.collapseTranscripts, "collapse-transcripts", false,
+		`Print out all overlapping exonic regions (+<exon_padding>) identified for every gene (separated by |'s')`)
+
+	// Flags for the fusion detector.
 	opts := fusion.DefaultOpts
-	flags := flags{}
-	flag.StringVar(&flags.transcriptPath, "transcript", "", "File containing all transcripts")
-	flag.StringVar(&flags.cosmicFusionPath, "cosmic-fusion", "", `Fixed list of fusions to query within the input.
+	fusionFlags := fusionFlags{}
+	flag.StringVar(&fusionFlags.transcriptPath, "transcript", "", "File containing all transcripts")
+	flag.StringVar(&fusionFlags.cosmicFusionPath, "cosmic-fusion", "", `Fixed list of fusions to query within the input.
 If this flag is empty, all possible combinations of genes in the --transcript file will be examined as fusion candidates.`)
-	flag.StringVar(&flags.r1, "r1", "", "Comma-separated list of FASTQ files containing R1 reads.")
-	flag.StringVar(&flags.r2, "r2", "", "Comma-separated list of FASTQ files containing R2 reads.")
-	flag.StringVar(&flags.fastaOutputPath, "fasta-output", "./all-outputs.fa", "FASTA file to store all candidates.")
-	flag.StringVar(&flags.rioInputPath, "rio-input", "", "FASTA file that store all candidates. If this flag is nonempty, af4 will run only the 2nd filtering stage using the input. If this flag is empty (default) af4 will run the whole process from scratch.")
-	flag.StringVar(&flags.rioOutputPath, "rio-output", "./all-outputs.rio", "FASTA file to store all candidates.")
-	flag.StringVar(&flags.filteredOutputPath, "filtered-output", "./filtered-outputs.fa", "FASTA file to store all candidates.")
-	flag.StringVar(&flags.geneListInputPath, "gene-list", "", `NOT FOR GENERAL USE. If set,
+	flag.StringVar(&fusionFlags.r1, "r1", "", "Comma-separated list of FASTQ files containing R1 reads.")
+	flag.StringVar(&fusionFlags.r2, "r2", "", "Comma-separated list of FASTQ files containing R2 reads.")
+	flag.StringVar(&fusionFlags.fastaOutputPath, "fasta-output", "./all-outputs.fa", "FASTA file to store all candidates.")
+	flag.StringVar(&fusionFlags.rioInputPath, "rio-input", "", "FASTA file that store all candidates. If this flag is nonempty, af4 will run only the 2nd filtering stage using the input. If this flag is empty (default) af4 will run the whole process from scratch.")
+	flag.StringVar(&fusionFlags.rioOutputPath, "rio-output", "./all-outputs.rio", "FASTA file to store all candidates.")
+	flag.StringVar(&fusionFlags.filteredOutputPath, "filtered-output", "./filtered-outputs.fa", "FASTA file to store all candidates.")
+	flag.StringVar(&fusionFlags.geneListInputPath, "gene-list", "", `NOT FOR GENERAL USE. If set,
 gene DB is seeded with the genes in this list. Gene IDs are assigned in
 first-come, first-serve order, so this file can be used to explicitly assign
 gene IDs to genes to maintain compatibility with old code`)
-	flag.StringVar(&flags.geneListOutputPath, "gene-list-output", "", "NOT FOR GENERAL USE. If set, list of registered genes are written to this file")
+	flag.StringVar(&fusionFlags.geneListOutputPath, "gene-list-output", "", "NOT FOR GENERAL USE. If set, list of registered genes are written to this file")
 
 	flag.BoolVar(&opts.UMIInRead, "umi-in-read", fusion.DefaultOpts.UMIInRead, "If true, UMI is embedded in the sequence.")
 	flag.BoolVar(&opts.UMIInName, "umi-in-name", fusion.DefaultOpts.UMIInName, "If true, UMI is embedded in the readname.")
@@ -538,7 +572,6 @@ gene IDs to genes to maintain compatibility with old code`)
 	cleanup := grail.Init()
 	defer cleanup()
 	ctx := vcontext.Background()
-
 	var memStats memStats
 	go func() {
 		for {
@@ -547,8 +580,15 @@ gene IDs to genes to maintain compatibility with old code`)
 		}
 	}()
 
-	Main(ctx, flags, opts)
-
+	if generateTranscriptomeFlag {
+		if flag.NArg() < 2 {
+			log.Fatal("exactly two arguments (<gencode_gtf> <gencode_fasta>) are required")
+		}
+		gtfPath, fastaPath := flag.Arg(0), flag.Arg(1)
+		GenerateTranscriptome(ctx, gtfPath, fastaPath, gencodeFlags)
+	} else {
+		DetectFusion(ctx, fusionFlags, opts)
+	}
 	memStats.update()
 	log.Printf("MemStats: %s", memStats.String())
 	log.Printf("All done")
