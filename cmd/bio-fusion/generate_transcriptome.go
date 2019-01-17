@@ -28,31 +28,24 @@ import (
 )
 
 type gencodeFlags struct {
-	exonPadding         int
-	output              string
-	codingOnly          bool
-	separateJns         bool
-	retainedExonBases   int
-	wholeGenes          bool
-	collapseTranscripts bool
+	exonPadding                int
+	output                     string // the destination FASTA file. If empty, stdout.
+	codingOnly                 bool
+	separateJns                bool
+	retainedExonBases          int
+	wholeGenes                 bool
+	collapseTranscripts        bool
+	keepMitochondrialGenes     bool
+	keepReadthroughTranscripts bool
+	keepPARYLocusTranscripts   bool
+	keepVersionedGenes         bool
 }
 
+// GenerateTranscriptome generates the AF4 transcriptome FASTA file from the
+// given inputs. gtfPath is gencode comprehenve antotation file (e.g.,
+// gencode.v26.annotation.gtf), and fastaPath is the reference genome (e.g.,
+// hg38.fa). gtfPath may be compressed, but fastaPath must be uncompressed.
 func GenerateTranscriptome(ctx context.Context, gtfPath, fastaPath string, flags gencodeFlags) {
-	if flags.separateJns {
-		if flags.retainedExonBases < 1 || flags.wholeGenes || flags.collapseTranscripts {
-			log.Fatalf("illegal flag combinations (-separate-jns): %+v", flags)
-		}
-	}
-	if flags.wholeGenes {
-		if flags.separateJns || flags.collapseTranscripts {
-			log.Fatalf("illegal flag combinations (-whole-genes): %+v", flags)
-		}
-	}
-	if flags.collapseTranscripts {
-		if flags.separateJns || flags.wholeGenes {
-			log.Fatalf("illegal flag combinations (-collapse-transcripts): %+v", flags)
-		}
-	}
 	if flags.exonPadding < 0 {
 		log.Fatal("Pad cannot be negative.")
 	}
@@ -73,9 +66,15 @@ func GenerateTranscriptome(ctx context.Context, gtfPath, fastaPath string, flags
 		}
 	}
 	if flags.wholeGenes {
+		if flags.separateJns || flags.collapseTranscripts {
+			log.Fatalf("illegal flag combinations (-whole-genes): %+v", flags)
+		}
 		n++
 	}
 	if flags.collapseTranscripts {
+		if flags.separateJns || flags.wholeGenes {
+			log.Fatalf("illegal flag combinations (-collapse-transcripts): %+v", flags)
+		}
 		n++
 	}
 	if n > 1 {
@@ -83,6 +82,11 @@ func GenerateTranscriptome(ctx context.Context, gtfPath, fastaPath string, flags
 			"exclusive. Please specify just one")
 	}
 	records := parsegencode.ReadGTF(ctx, gtfPath,
+		// flags.codingOnly is used for exons and transcripts but not genes. When
+		// flag.wholeGenes is set, transcript entries need not be inspected in the
+		// gtf, only the start and end of gene record will be used; when
+		// flags.collapseTranscripts is set, all transcripts that overlap are
+		// collapsed into one single final record"
 		flags.codingOnly && !flags.wholeGenes && !flags.collapseTranscripts,
 		flags.exonPadding,
 		flags.separateJns,
@@ -107,6 +111,12 @@ func GenerateTranscriptome(ctx context.Context, gtfPath, fastaPath string, flags
 	case flags.collapseTranscripts:
 		parsegencode.PrintCollapsedTranscripts(out, fasta, records, flags.codingOnly)
 	default:
-		parsegencode.PrintParsedGTFRecords(out, fasta, records, flags.codingOnly, flags.separateJns)
+		parsegencode.PrintParsedGTFRecords(
+			out, fasta, records, flags.codingOnly, flags.separateJns,
+			false, /* new format */
+			flags.keepMitochondrialGenes,
+			flags.keepReadthroughTranscripts,
+			flags.keepPARYLocusTranscripts,
+			flags.keepVersionedGenes)
 	}
 }

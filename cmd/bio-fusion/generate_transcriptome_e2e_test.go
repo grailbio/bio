@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io/ioutil"
 	"os"
 	"sort"
 	"testing"
@@ -15,72 +16,78 @@ import (
 func TestParseGencodeWithoutPadding(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         0,
-			codingOnly:          false,
-			separateJns:         false,
-			retainedExonBases:   0,
-			wholeGenes:          false,
-			collapseTranscripts: false},
+			exonPadding:            0,
+			codingOnly:             false,
+			separateJns:            false,
+			retainedExonBases:      0,
+			keepMitochondrialGenes: true,
+			wholeGenes:             false,
+			collapseTranscripts:    false},
 		"file_1.fa")
 }
 
 func TestParseGencodeWithPadding(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         20,
-			codingOnly:          false,
-			separateJns:         false,
-			retainedExonBases:   0,
-			wholeGenes:          false,
-			collapseTranscripts: false},
+			exonPadding:            20,
+			codingOnly:             false,
+			separateJns:            false,
+			retainedExonBases:      0,
+			keepMitochondrialGenes: true,
+			wholeGenes:             false,
+			collapseTranscripts:    false},
 		"file_2.fa")
 }
 
 func TestParseGencodeOnlyCoding(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         0,
-			codingOnly:          true,
-			separateJns:         false,
-			retainedExonBases:   0,
-			wholeGenes:          false,
-			collapseTranscripts: false},
+			exonPadding:            0,
+			codingOnly:             true,
+			separateJns:            false,
+			retainedExonBases:      0,
+			keepMitochondrialGenes: true,
+			wholeGenes:             false,
+			collapseTranscripts:    false},
 		"file_3.fa")
 }
 
 func TestParseGencodeSeparateJunctions(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         20,
-			codingOnly:          false,
-			separateJns:         true,
-			retainedExonBases:   5,
-			wholeGenes:          false,
-			collapseTranscripts: false},
+			exonPadding:            20,
+			codingOnly:             false,
+			separateJns:            true,
+			retainedExonBases:      5,
+			keepMitochondrialGenes: true,
+			wholeGenes:             false,
+			collapseTranscripts:    false},
 		"file_4.fa")
 }
 
 func TestParseGencodeWholeGenesWithoutPadding(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         0,
-			codingOnly:          false,
-			separateJns:         false,
-			retainedExonBases:   0,
-			wholeGenes:          true,
-			collapseTranscripts: false},
+			exonPadding:            0,
+			codingOnly:             false,
+			separateJns:            false,
+			retainedExonBases:      0,
+			keepMitochondrialGenes: true,
+			wholeGenes:             true,
+			collapseTranscripts:    false},
 		"file_5.fa") // expectedFileName
 }
 
 func TestParseGencodeWholeGenesWithPadding(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         20,
-			codingOnly:          false,
-			separateJns:         false,
-			retainedExonBases:   5,
-			wholeGenes:          true,
-			collapseTranscripts: false},
+			exonPadding:            20,
+			codingOnly:             false,
+			separateJns:            false,
+			retainedExonBases:      5,
+			keepMitochondrialGenes: true,
+			wholeGenes:             true,
+			collapseTranscripts:    false},
 		"file_6.fa") // expectedFileName
 }
 
@@ -99,36 +106,39 @@ func TestParseGencodeWholeGenesWithPaddingCodingOnly(t *testing.T) {
 func TestParseGencodeCollapseTranscriptsWithoutPadding(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         0,
-			codingOnly:          false,
-			separateJns:         false,
-			retainedExonBases:   0,
-			wholeGenes:          false,
-			collapseTranscripts: true},
+			exonPadding:            0,
+			codingOnly:             false,
+			separateJns:            false,
+			retainedExonBases:      0,
+			keepMitochondrialGenes: true,
+			wholeGenes:             false,
+			collapseTranscripts:    true},
 		"file_8.fa") // expectedFileName
 }
 
 func TestParseGencodeCollapseTranscriptsWithPadding(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         20,
-			codingOnly:          false,
-			separateJns:         false,
-			retainedExonBases:   0,
-			wholeGenes:          false,
-			collapseTranscripts: true},
+			exonPadding:            20,
+			codingOnly:             false,
+			separateJns:            false,
+			retainedExonBases:      0,
+			keepMitochondrialGenes: true,
+			wholeGenes:             false,
+			collapseTranscripts:    true},
 		"file_9.fa")
 }
 
 func TestParseGencodeCollapseTranscriptsWithPaddingCodingOnly(t *testing.T) {
 	testGenerateTranscriptome(t,
 		gencodeFlags{
-			exonPadding:         20,
-			codingOnly:          true,
-			separateJns:         false,
-			retainedExonBases:   0,
-			wholeGenes:          false,
-			collapseTranscripts: true},
+			exonPadding:            20,
+			codingOnly:             true,
+			separateJns:            false,
+			retainedExonBases:      0,
+			keepMitochondrialGenes: true,
+			wholeGenes:             false,
+			collapseTranscripts:    true},
 		"file_10.fa")
 }
 
@@ -162,7 +172,13 @@ func testGenerateTranscriptome(t *testing.T, flags gencodeFlags, want string) {
 		testutil.GetFilePath("//go/src/github.com/grailbio/bio/fusion/parsegencode/testdata/annotation.gtf"),
 		testutil.GetFilePath("//go/src/github.com/grailbio/bio/fusion/parsegencode/testdata/genome.fa"),
 		flags)
-	expect.EQ(t,
-		readFASTA(t, testutil.GetFilePath("//go/src/github.com/grailbio/bio/fusion/parsegencode/testdata/"+want)),
-		readFASTA(t, flags.output))
+	if *updateGoldenFlag {
+		data, err := ioutil.ReadFile(flags.output)
+		assert.NoError(t, err)
+		assert.NoError(t, ioutil.WriteFile(testutil.GetFilePath("//go/src/github.com/grailbio/bio/fusion/parsegencode/testdata/"+want), data, 0644))
+	} else {
+		expect.EQ(t,
+			readFASTA(t, testutil.GetFilePath("//go/src/github.com/grailbio/bio/fusion/parsegencode/testdata/"+want)),
+			readFASTA(t, flags.output))
+	}
 }

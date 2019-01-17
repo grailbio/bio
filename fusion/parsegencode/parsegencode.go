@@ -7,15 +7,20 @@ package parsegencode
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/grailbio/base/compress"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/tsv"
 	"github.com/grailbio/bio/encoding/fasta"
 )
+
+var digitsRe = regexp.MustCompile(`^\d+$`)
 
 type genomicRange struct {
 	start, stop int // both ends are closed.
@@ -86,15 +91,16 @@ func (g *genomicRanges) reverse() {
 
 // gencodeTranscript will store a gencode transcript record
 type gencodeTranscript struct {
-	geneID           string
-	transcriptID     string
-	start            int
-	stop             int
-	transcriptType   string
-	transcriptName   string
-	havanaTranscript string
-	exons            genomicRanges
-	junctions        genomicRanges
+	geneID              string
+	transcriptID        string
+	start               int
+	stop                int
+	transcriptType      string
+	transcriptName      string
+	havanaTranscript    string
+	unpaddedExonLengths []int32
+	exons               genomicRanges
+	junctions           genomicRanges
 }
 
 // GencodeGene will store a gencode gene record
@@ -108,6 +114,7 @@ type GencodeGene struct {
 	havanaGene  string
 	geneName    string
 	geneType    string
+	index       int // rank within the chromosome.
 }
 
 // Return gene.transcripts in ascending order of transcriptIDs.
@@ -129,9 +136,9 @@ func (gene GencodeGene) sortedTranscripts() []*gencodeTranscript {
 }
 
 // ParseInfoFields parses the "INFO" field of the record to yield a map of key,value pairs.
-func parseInfoFields(parsedInfo *map[string]string, info string) {
-	for k := range *parsedInfo {
-		delete(*parsedInfo, k)
+func parseInfoFields(parsedInfo map[string]string, info string) {
+	for k := range parsedInfo {
+		delete(parsedInfo, k)
 	}
 	fields := strings.Split(strings.TrimSpace(info), ";")
 	for _, field := range fields {
@@ -140,7 +147,7 @@ func parseInfoFields(parsedInfo *map[string]string, info string) {
 			continue
 		}
 		pair := strings.Split(field, " ")
-		(*parsedInfo)[pair[0]] = strings.Trim(pair[1], "\"")
+		parsedInfo[pair[0]] = strings.Trim(pair[1], "\"")
 	}
 }
 
@@ -150,18 +157,18 @@ func reverseComplement(seq string) string {
 	seqSize := len(seq)
 	for i := range seq {
 		switch x := seq[seqSize-i-1]; x {
-		case 'A':
+		case 'A', 'a':
 			revcomp.WriteRune('T')
-		case 'C':
+		case 'C', 'c':
 			revcomp.WriteRune('G')
-		case 'T':
+		case 'T', 't':
 			revcomp.WriteRune('A')
-		case 'G':
+		case 'G', 'g':
 			revcomp.WriteRune('C')
-		case 'N':
+		case 'N', 'n':
 			revcomp.WriteRune('N')
 		default:
-			log.Fatal("Unrecognized nucleotide : " + string(x))
+			log.Fatalf("reversecomplement: Unrecognized nucleotide '%c' in '%s'", x, seq)
 		}
 	}
 	return revcomp.String()
@@ -174,6 +181,54 @@ func max(x, y int) int {
 	return y
 }
 
+// gtfRecord will store data read from one line of the gencode file
+type gtfRecord struct {
+	Chrom    string
+	Source   string
+	Molecule string
+	Start    int
+	Stop     int
+	Score    string // unused floating point value, but may be "."
+	Strand   string
+	Frame    string
+	Fields   string
+}
+
+func readRawGTF(ctx context.Context, path string) (genes []gtfRecord, transcripts []gtfRecord, exons []gtfRecord) {
+	in, err := file.Open(ctx, path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var inr io.Reader = in.Reader(ctx)
+	if u := compress.NewReaderPath(inr, in.Name()); u != nil {
+		inr = u
+	}
+	scanner := tsv.NewReader(bufio.NewReaderSize(inr, 64<<10))
+	scanner.Comment = '#'
+	scanner.LazyQuotes = true
+	var line gtfRecord
+	for {
+		if err := scanner.Read(&line); err != nil {
+			if err != io.EOF {
+				log.Panicf("%s: %v", path, err)
+			}
+			break
+		}
+		switch line.Molecule {
+		case "gene":
+			genes = append(genes, line)
+		case "transcript":
+			transcripts = append(transcripts, line)
+		case "exon":
+			exons = append(exons, line)
+		}
+	}
+	if err := in.Close(ctx); err != nil {
+		log.Panic(err)
+	}
+	return
+}
+
 // ReadGTF will read a GTF file line by line into a list of GencodeGenes.  The
 // genes are sorted in the increasing order of geneIDs.
 func ReadGTF(ctx context.Context,
@@ -182,168 +237,149 @@ func ReadGTF(ctx context.Context,
 	exonPadding int,
 	separateJns bool,
 	retainedExonBases int) []*GencodeGene {
-	log.Print("Parsing gtf at " + pathname)
-
 	// to retain 5 exonic basepairs, you need to add or subtract 4 from the start and end coordinates
 	retainedExonBases--
-
 	var totalGenes, totalTranscripts, retainedTranscripts, totalExons, retainedExons int
 	// Define a map to store the data
 	records := make(map[string]*GencodeGene)
-	in, err := file.Open(ctx, pathname)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// create a new scanner and apply the function to the scanner
-	scanner := tsv.NewReader(in.Reader(ctx))
-	scanner.Comment = '#'
-	scanner.LazyQuotes = true
 	fields := map[string]string{}
-	for {
-		// gtfRecord will store data read from one line of the gencode file
-		type gtfRecord struct {
-			Chrom    string
-			Source   string
-			Molecule string
-			Start    int
-			Stop     int
-			Score    string // unused floating point value, but may be "."
-			Strand   string
-			Frame    string
-			Fields   string
+	log.Print("GTF: " + pathname)
+	genes, transcripts, exons := readRawGTF(ctx, pathname)
+	log.Printf("Read %d genes, %d transcripts, %d exons", len(genes), len(transcripts), len(exons))
+	for _, gtfLine := range genes {
+		parseInfoFields(fields, gtfLine.Fields)
+		gene := GencodeGene{
+			chrom:       gtfLine.Chrom,
+			start:       gtfLine.Start,
+			stop:        gtfLine.Stop,
+			strand:      gtfLine.Strand,
+			geneName:    fields["gene_name"],
+			geneType:    fields["gene_type"],
+			geneID:      fields["gene_id"],
+			havanaGene:  fields["havana_gene"],
+			transcripts: make(map[string]*gencodeTranscript)}
+		records[gene.geneID] = &gene
+		totalGenes++
+	}
+
+	for _, gtfLine := range transcripts {
+		parseInfoFields(fields, gtfLine.Fields)
+		geneID := fields["gene_id"]
+		gene, ok := records[geneID]
+		if !ok {
+			log.Fatal("GTF not sorted properly.")
 		}
-		var gtfLine gtfRecord
-		err := scanner.Read(&gtfLine)
-		if err != nil {
-			if err != io.EOF {
-				log.Panicf("%s: %v", pathname, err)
-			}
-			break
-		}
-		parseInfoFields(&fields, gtfLine.Fields)
-		if gtfLine.Molecule == "gene" {
-			gene := GencodeGene{
-				chrom:       gtfLine.Chrom,
-				start:       gtfLine.Start,
-				stop:        gtfLine.Stop,
-				strand:      gtfLine.Strand,
-				geneName:    fields["gene_name"],
-				geneType:    fields["gene_type"],
-				geneID:      fields["gene_id"],
-				havanaGene:  fields["havana_gene"],
-				transcripts: make(map[string]*gencodeTranscript)}
-			records[gene.geneID] = &gene
-			totalGenes++
+		totalTranscripts++
+		if codingOnly && !isCodingBiotype(fields["transcript_type"]) {
 			continue
 		}
-		if gtfLine.Molecule == "transcript" {
-			geneID := fields["gene_id"]
-			gene, ok := records[geneID]
-			if !ok {
-				log.Fatal("GTF not sorted properly.")
-			}
-			totalTranscripts++
-			if codingOnly && !isCodingBiotype(fields["transcript_type"]) {
-				continue
-			}
-			transcript := gencodeTranscript{
-				start:            gtfLine.Start,
-				stop:             gtfLine.Stop,
-				geneID:           fields["gene_id"],
-				transcriptName:   fields["transcript_name"],
-				transcriptType:   fields["transcript_type"],
-				transcriptID:     fields["transcript_id"],
-				havanaTranscript: fields["havana_transcript"],
-				exons:            make([]genomicRange, 0),
-				junctions:        make([]genomicRange, 0)}
-			if transcript.havanaTranscript == "" {
-				transcript.havanaTranscript = "-"
-			}
-			gene.transcripts[transcript.transcriptID] = &transcript
-			retainedTranscripts++
+		transcript := gencodeTranscript{
+			start:            gtfLine.Start,
+			stop:             gtfLine.Stop,
+			geneID:           fields["gene_id"],
+			transcriptName:   fields["transcript_name"],
+			transcriptType:   fields["transcript_type"],
+			transcriptID:     fields["transcript_id"],
+			havanaTranscript: fields["havana_transcript"]}
+		if transcript.havanaTranscript == "" {
+			transcript.havanaTranscript = "-"
+		}
+		gene.transcripts[transcript.transcriptID] = &transcript
+		retainedTranscripts++
+	}
+
+	for _, gtfLine := range exons {
+		parseInfoFields(fields, gtfLine.Fields)
+		totalExons++
+		if codingOnly && !isCodingBiotype(fields["transcript_type"]) {
 			continue
 		}
-		if gtfLine.Molecule == "exon" {
-			totalExons++
-			if codingOnly && !isCodingBiotype(fields["transcript_type"]) {
-				continue
-			}
-			geneID := fields["gene_id"]
-			transcriptID := fields["transcript_id"]
-			transcript, ok := records[geneID].transcripts[transcriptID]
-			if !ok {
-				log.Fatal("GTF not sorted properly.")
-			}
+		geneID := fields["gene_id"]
+		transcriptID := fields["transcript_id"]
+		transcript, ok := records[geneID].transcripts[transcriptID]
+		if !ok {
+			log.Fatal("GTF not sorted properly.")
+		}
 
-			var gRange genomicRange
-			gRange.start = gtfLine.Start
-			gRange.stop = gtfLine.Stop
+		var gRange genomicRange
+		gRange.start = gtfLine.Start
+		gRange.stop = gtfLine.Stop
 
-			if !separateJns {
-				if exonPadding > 0 {
-					gRange.start -= exonPadding
-					if gRange.start < 0 {
-						gRange.start = 0
-					}
-					gRange.stop += exonPadding
+		transcript.unpaddedExonLengths = append(transcript.unpaddedExonLengths, int32(gtfLine.Stop-gtfLine.Start+1))
+		if !separateJns {
+			if exonPadding > 0 {
+				gRange.start -= exonPadding
+				if gRange.start < 0 {
+					gRange.start = 0
 				}
-				transcript.exons.merge(gRange)
-			} else {
-				// Add the exon to the list of exons
-				transcript.exons = append(transcript.exons, gRange)
-				// We want separate junctions. Store the junction ranges in gencodeTranscript.junctions
-				// as genomicRanges
-				exonStartJn := genomicRange{gRange.start - exonPadding, gRange.start + retainedExonBases}
-				exonStopJn := genomicRange{gRange.stop - retainedExonBases, gRange.stop + exonPadding}
-				if records[geneID].strand == "-" {
-					// do this is reverse order so the junctions are printed out in the correct order
-					tmpJn := exonStartJn
-					exonStartJn = exonStopJn
-					exonStopJn = tmpJn
-				}
+				gRange.stop += exonPadding
+			}
+			transcript.exons.merge(gRange)
+		} else {
+			// Add the exon to the list of exons
+			transcript.exons = append(transcript.exons, gRange)
+			// We want separate junctions. Store the junction ranges in gencodeTranscript.junctions
+			// as genomicRanges
+			exonStartJn := genomicRange{gRange.start - exonPadding, gRange.start + retainedExonBases}
+			exonStopJn := genomicRange{gRange.stop - retainedExonBases, gRange.stop + exonPadding}
+			if records[geneID].strand == "-" {
+				// do this is reverse order so the junctions are printed out in the correct order
+				tmpJn := exonStartJn
+				exonStartJn = exonStopJn
+				exonStopJn = tmpJn
+			}
 
-				// If there is a previous juntion, see if it merges with the start of this one.
-				// These merges are different from the non-separate-junctions ones . E.g.
-				//                     ...-----=|------||
-				//                          ||------|=-------
-				//              =>             =|---|=             (padding + intron overlap)
-				//             !=>          ||-=-----=-||          (largest span)
-				if overlap, _ := transcript.junctions.overlaps(
-					exonStartJn); overlap {
-					// overlaps
-					idx := len(transcript.junctions) - 1
-					if records[geneID].strand == "+" {
-						// Need to replace only the stop
-						transcript.junctions[idx].stop = exonStartJn.stop
-					} else {
-						// Need to replace only the start
-						transcript.junctions[idx].start = exonStartJn.start
-					}
+			// If there is a previous juntion, see if it merges with the start of this one.
+			// These merges are different from the non-separate-junctions ones . E.g.
+			//                     ...-----=|------||
+			//                          ||------|=-------
+			//              =>             =|---|=             (padding + intron overlap)
+			//             !=>          ||-=-----=-||          (largest span)
+			if overlap, _ := transcript.junctions.overlaps(
+				exonStartJn); overlap {
+				// overlaps
+				idx := len(transcript.junctions) - 1
+				if records[geneID].strand == "+" {
+					// Need to replace only the stop
+					transcript.junctions[idx].stop = exonStartJn.stop
 				} else {
-					// no overlap. append start jn
-					transcript.junctions = append(transcript.junctions, exonStartJn)
+					// Need to replace only the start
+					transcript.junctions[idx].start = exonStartJn.start
 				}
-				// Append the stop jn
-				transcript.junctions = append(transcript.junctions, exonStopJn)
+			} else {
+				// no overlap. append start jn
+				transcript.junctions = append(transcript.junctions, exonStartJn)
 			}
-			retainedExons++
+			// Append the stop jn
+			transcript.junctions = append(transcript.junctions, exonStopJn)
 		}
+		retainedExons++
 	}
 	log.Printf("Successfully parsed %d genes, %d transcripts and %d exons\n", totalGenes,
 		totalTranscripts, totalExons)
 	log.Printf("Retained %d transcripts and %d exons\n", retainedTranscripts, retainedExons)
-	if err := in.Close(ctx); err != nil {
-		log.Panic(err)
+
+	genesByChromMap := map[string][]*GencodeGene{}
+	for _, gene := range records {
+		genesByChromMap[gene.chrom] = append(genesByChromMap[gene.chrom], gene)
+	}
+	for _, genes := range genesByChromMap {
+		sort.SliceStable(genes, func(i, j int) bool {
+			return genes[i].start < genes[j].start
+		})
+		for i, gene := range genes {
+			gene.index = i
+		}
 	}
 
-	genes := make([]*GencodeGene, 0, len(records))
+	sortedGenes := make([]*GencodeGene, 0, len(records))
 	for _, gene := range records {
-		genes = append(genes, gene)
+		sortedGenes = append(sortedGenes, gene)
 	}
-	sort.Slice(genes, func(i, j int) bool {
-		return genes[i].geneID < genes[j].geneID
+	sort.Slice(sortedGenes, func(i, j int) bool {
+		return sortedGenes[i].geneID < sortedGenes[j].geneID
 	})
-	return genes
+	return sortedGenes
 }
 
 // Obtained from https://www.gencodegenes.org/gencode_biotypes.html
@@ -390,22 +426,64 @@ func PrintParsedGTFRecords(
 	fasta fasta.Fasta,
 	newGTFRecords []*GencodeGene,
 	codingOnly bool,
-	separateJns bool) {
+	separateJns bool,
+	oldFormat bool,
+	keepMitochondrialGenes bool,
+	keepReadthroughTranscripts bool,
+	keepPARYLocusTranscripts bool,
+	keepVersionedGenes bool) {
 	w := bufio.NewWriter(out)
 	defer flush(w)
 	for geneID := range newGTFRecords {
 		gene := *newGTFRecords[geneID]
 		for _, transcript := range gene.sortedTranscripts() {
-			write(w, ">"+
-				strings.Join([]string{transcript.transcriptID,
-					gene.geneID,
-					gene.havanaGene,
-					transcript.havanaTranscript,
-					transcript.transcriptName,
+			if oldFormat {
+				write(w, ">"+
+					strings.Join([]string{transcript.transcriptID,
+						gene.geneID,
+						gene.havanaGene,
+						transcript.havanaTranscript,
+						transcript.transcriptName,
+						gene.geneName,
+						"NA",
+						"NA",
+						"\n"}, "|"))
+			} else {
+				if !keepMitochondrialGenes && gene.chrom == "chrM" {
+					continue
+				}
+				if !keepPARYLocusTranscripts && strings.Contains(gene.geneID, "_PAR_Y") {
+					continue
+				}
+				if !keepVersionedGenes && strings.Contains(gene.geneName, ".") {
+					continue
+				}
+				if !keepReadthroughTranscripts {
+					names := strings.Split(gene.geneName, "-")
+					if len(names) < 2 {
+						goto ok
+					}
+					if names[0] == "HLA" || names[0] == "MT" {
+						goto ok
+					}
+					if digitsRe.MatchString(names[1]) {
+						goto ok
+					}
+					continue
+				ok:
+				}
+				write(w, fmt.Sprintf(">%s|%s|%s:%d-%d:%d|",
+					transcript.transcriptID,
 					gene.geneName,
-					"NA",
-					"NA",
-					"\n"}, "|"))
+					gene.chrom, gene.start, gene.stop, gene.index))
+				for i, l := range transcript.unpaddedExonLengths {
+					if i > 0 {
+						write(w, ",")
+					}
+					write(w, fmt.Sprintf("%d", l))
+				}
+				write(w, "\n")
+			}
 			for _, exon := range transcript.exons {
 				seq, err := fasta.Get(gene.chrom, uint64(exon.start-1), uint64(exon.stop))
 				if err != nil {

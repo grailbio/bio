@@ -110,7 +110,7 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument('--cache_dir', default='/scratch-nvme/cache_tmp',
                    help='Benchmark cache dir')
-    p.add_argument('--result_dir', default='/scratch-sata/af4_benchmark_results',
+    p.add_argument('--result_dir', default='/scratch-nvme/af4_benchmark_results',
                    help='Benchmark result dir')
     p.add_argument('--rerun_af4', action='store_true',
                    help='Always run AF4 even if the result file already exists')

@@ -1,26 +1,6 @@
 package main
 
-//
-// AF4
-//
-//
-// This application has two phases
-//
-//   1. list fusion candidates and write the results in --fasta-output, --rio-output.
-//
-//   2. filter candidates produced above to produce the final outputs in --filtered-output.
-//
-// Example 1: run both phases, targeted.
-//
-//    run.py --transcript=tr.fa --cosmic_fusion=/scratch-nvme/fusion/all_pair.txt --r1=r1.fastq --r2=r2.fastq --fasta-output=all.fa --rio-output=all.rio
-//
-// Example 2: run only the 2nd phase using the result from the previous example
-//
-//    run.py --rio-input=all.rio
-//
-// Example 3: run both phases, denovo mode
-//
-//    run.py --transcript=tr.fa --r1=r1.fastq --r2=r2.fastq --fasta-output=all.fa --rio-output=all.rio
+// The main AF4 binary.  See README.md for usage.
 
 import (
 	"bufio"
@@ -444,6 +424,7 @@ func filterCandidates(
 	return filteredCandidates
 }
 
+// DetectFusion is the main entry point for AF4 fusion detector.
 func DetectFusion(ctx context.Context, flags fusionFlags, opts fusion.Opts) {
 	var (
 		geneDB        *fusion.GeneDB
@@ -492,31 +473,10 @@ func DetectFusion(ctx context.Context, flags fusionFlags, opts fusion.Opts) {
 func usage() {
 	// TODO(saito) This doc is only for gencode. Update once we have a full README.
 	fmt.Fprintln(os.Stderr, `
-parse_gencode accepts a gencode GTF, a genome fasta and prints transcript fasta records to a
-user-specified (or default) output, optionally padding the exons by any number of bases.
-
-Examples:
-
-1. Get a simple transcriptome fasta
-
-    parse_gencode /home/test/gencode.gtf /home/test/hg38.fa
-
-2. Pad exons by 50bp
-
-    parse_gencode /home/test/gencode.gtf /home/test/hg38.fa -exon-padding 50
-
-3. Print only genes
-
-    parse_gencode /home/test/gencode.gtf /home/test/hg38.fa -whole-genes
-
-Usage:
-  parse_gencode [flags] /path/to/gencode_annotation.gtf /path/to/hgxx.fa
-
-  Required Positional Arguments:
-    gtf            Gencode gtf file.
-    fasta          Genomic fasta corresponding to the gencode annotation.
+See [README.md](https://github.com/grailbio/bio/fusion/README.md) for more details.
 `)
-	panic("")
+	flag.PrintDefaults()
+	os.Exit(1)
 }
 
 func main() {
@@ -527,7 +487,7 @@ func main() {
 	gencodeFlags := gencodeFlags{}
 	flag.BoolVar(&generateTranscriptomeFlag, "generate-transcriptome", false, "Generate a transcriptome FASTA file.")
 	flag.IntVar(&gencodeFlags.exonPadding, "exon-padding", 0, "Residues to pad exons by. (default 0, minimum 0)")
-	flag.StringVar(&gencodeFlags.output, "transcript", "", "Path to an output file. (default stdout)")
+	flag.StringVar(&gencodeFlags.output, "output", "", "Path to an output file. (default stdout)")
 	flag.BoolVar(&gencodeFlags.codingOnly, "coding-only", false, "Output protein coding transcripts only.")
 	flag.BoolVar(&gencodeFlags.separateJns, "separate-junctions", false, `Print the regular transcript and then add the junctions to the
 end of the sequence (separated by |'s. This is recommended if
@@ -539,7 +499,13 @@ printing individual transcripts. (-exon_padding will pad
 genes)`)
 	flag.BoolVar(&gencodeFlags.collapseTranscripts, "collapse-transcripts", false,
 		`Print out all overlapping exonic regions (+<exon_padding>) identified for every gene (separated by |'s')`)
-
+	flag.BoolVar(&gencodeFlags.keepMitochondrialGenes, "keep-mitochondrial-genes", false, "keep mitochondrial genes")
+	flag.BoolVar(&gencodeFlags.keepReadthroughTranscripts, "keep-readthrough-transcripts", false,
+		"Keep readthrough transcripts")
+	flag.BoolVar(&gencodeFlags.keepPARYLocusTranscripts, "keep-pary-locus-transcripts", false,
+		"Keep PARY locas transcripts")
+	flag.BoolVar(&gencodeFlags.keepVersionedGenes, "keep-versioned-genes", false,
+		"Keep versioned genes")
 	// Flags for the fusion detector.
 	opts := fusion.DefaultOpts
 	fusionFlags := fusionFlags{}
