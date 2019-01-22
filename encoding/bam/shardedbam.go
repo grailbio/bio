@@ -6,9 +6,9 @@ import (
 	"sync"
 
 	"github.com/grailbio/base/syncqueue"
+	"github.com/grailbio/bio/encoding/bgzf"
 	htsbam "github.com/grailbio/hts/bam"
 	"github.com/grailbio/hts/sam"
-	"grail.com/bio/encoding/bgzf"
 	"v.io/x/lib/vlog"
 )
 
