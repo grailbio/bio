@@ -13,7 +13,7 @@ require (
 	github.com/minio/highwayhash v0.0.0-20190112144901-fc990dfafa15
 	github.com/pkg/errors v0.8.1
 	github.com/stretchr/testify v1.2.2
-	github.com/youtube/vitess v2.1.1+incompatible
+	github.com/vitessio/vitess v2.1.1+incompatible
 	golang.org/x/sys v0.0.0-20190116161447-11f53e031339
 	v.io/x/lib v0.1.1
 )

@@ -11,7 +11,7 @@ import (
 	"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/youtube/vitess/go/cgzip"
+	"github.com/vitessio/vitess/go/cgzip"
 )
 
 func TestWriter(t *testing.T) {

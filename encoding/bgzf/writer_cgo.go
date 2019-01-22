@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/youtube/vitess/go/cgzip"
+	"github.com/vitessio/vitess/go/cgzip"
 )
 
 // cgzipCreate creates cgzip WriteClosers.
