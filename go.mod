@@ -8,7 +8,7 @@ require (
 	github.com/golang/snappy v0.0.0-20170215233205-553a64147049
 	github.com/grailbio/base v0.0.0
 	github.com/grailbio/hts v0.0.0
-	github.com/grailbio/testutil v0.0.0
+	github.com/grailbio/testutil v0.0.0-20190109212408-dbe52faee1b0
 	github.com/klauspost/compress v1.4.0
 	github.com/minio/highwayhash v0.0.0-20190112144901-fc990dfafa15
 	github.com/pkg/errors v0.8.1
