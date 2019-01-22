@@ -63,11 +63,11 @@ type WriteOpts struct {
 func validateRecord(r *sam.Record, recRange biopb.CoordRange) error {
 	recAddr := gbam.CoordFromSAMRecord(r, 0)
 	if recAddr.LT(recRange.Start) {
-		return fmt.Errorf("Record (%d,%d) out of start of shard range %+v : record %v",
+		return fmt.Errorf("record (%d,%d) out of start of shard range %+v : record %v",
 			r.Ref.ID(), r.Pos, recRange, r)
 	}
 	if recAddr.GE(recRange.Limit) {
-		return fmt.Errorf("Record (%d,%d) out of limit of shard range: %+v : record %v",
+		return fmt.Errorf("record (%d,%d) out of limit of shard range: %+v : record %v",
 			r.Ref.ID(), r.Pos, recRange, r)
 	}
 	return nil

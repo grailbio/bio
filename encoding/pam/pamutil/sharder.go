@@ -24,8 +24,8 @@ type readSubshard struct {
 
 func validateFieldIndex(index biopb.PAMFieldIndex) error {
 	for _, block := range index.Blocks {
-		if block.NumRecords <= 0 {
-			return fmt.Errorf("Corrupt block index: %+v", block)
+		if block.NumRecords == 0 {
+			return fmt.Errorf("corrupt block index: %+v", block)
 		}
 	}
 	return nil
@@ -53,10 +53,10 @@ func readFieldIndex(ctx context.Context, dir string, recRange biopb.CoordRange, 
 	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
 	trailer := rio.Trailer()
 	if len(trailer) == 0 {
-		return index, errors.E(err, fmt.Sprintf("%v: file does not contain an index", path))
+		return index, errors.E(err, fmt.Sprintf("readfieldindex %v: file does not contain an index", path))
 	}
 	if err := index.Unmarshal(trailer); err != nil {
-		return index, errors.E(err, fmt.Sprintf("%v: Failed to unmarshal field index for field '%s'", path, field))
+		return index, errors.E(err, fmt.Sprintf("%v: unmarshal field index for field '%s'", path, field))
 	}
 	err = validateFieldIndex(index)
 	if e := rio.Finish(); e != nil && err == nil {

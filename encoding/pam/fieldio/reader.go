@@ -49,7 +49,7 @@ func NewReader(ctx context.Context, path, label string, coordField bool, errp *e
 	}
 	in, err := file.Open(ctx, path)
 	if err != nil {
-		return fr, errors.E(err, fmt.Sprintf("%s: Failed to open field file for %s", label, path))
+		return fr, errors.E(err, fmt.Sprintf("fieldio open %s: %s", path, label))
 	}
 	fr.in = in
 	fr.rin = fr.in.Reader(ctx)
@@ -57,10 +57,10 @@ func NewReader(ctx context.Context, path, label string, coordField bool, errp *e
 	fr.addrGenerator = gbam.NewCoordGenerator()
 	trailer := fr.rio.Trailer()
 	if len(trailer) == 0 {
-		return fr, errors.E(fr.rio.Err(), fmt.Sprintf("%v: file does not contain an index", path))
+		return fr, errors.E(fr.rio.Err(), fmt.Sprintf("fieldio open %v: file does not contain an index", path))
 	}
 	if err := fr.index.Unmarshal(trailer); err != nil {
-		return fr, errors.E(err, fmt.Sprintf("%s: Failed to unmarshal field index for %s", label, path))
+		return fr, errors.E(err, fmt.Sprintf("fieldio open %s: Failed to unmarshal field index for %s", path, label))
 	}
 	return fr, nil
 }
@@ -238,7 +238,7 @@ func (fr *Reader) readBlock(fileOff int64) error {
 	if !fr.rio.Scan() {
 		err := fr.rio.Err()
 		if err == nil {
-			err = fmt.Errorf("Failed to read a block at offset %d", fileOff)
+			err = fmt.Errorf("read block (offset %d)", fileOff)
 		}
 		return err
 	}
@@ -505,7 +505,7 @@ func (fr *Reader) PeekCoordField() (biopb.Coord, bool) {
 func readBlockHeader(buf *[]byte) (biopb.PAMBlockHeader, error) {
 	headerSize, n := binary.Varint(*buf)
 	if n <= 0 {
-		err := fmt.Errorf("Failed to read the block header size")
+		err := fmt.Errorf("read block header size")
 		log.Error.Print(err)
 		return biopb.PAMBlockHeader{}, err
 	}
@@ -615,7 +615,7 @@ func SeekReaders(requestedRange biopb.CoordRange, coordReader *Reader, columns [
 	fr := coordReader
 	if _, ok := fr.Seek(coordRange); !ok {
 		// This shouldn't happen, unless is the file is corrupt
-		return fmt.Errorf("Cannot find blocks for coords in range %+v", coordRange)
+		return fmt.Errorf("no block for coords in range %+v", coordRange)
 	}
 
 	// readingField is for eliding calls to addr.GE() below in the fast path.

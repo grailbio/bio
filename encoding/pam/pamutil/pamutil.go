@@ -64,7 +64,7 @@ func BlockIntersectsRange(startAddr, endAddr biopb.Coord, userRange biopb.CoordR
 
 func validateRecAddr(r biopb.Coord) error {
 	if r.RefId < -1 || r.Pos < 0 || r.Seq < 0 {
-		return fmt.Errorf("Invalid record addr: %+v", r)
+		return fmt.Errorf("invalid record addr: %+v", r)
 	}
 	return nil
 }
@@ -86,7 +86,7 @@ func ValidateCoordRange(r *biopb.CoordRange) error {
 		return err
 	}
 	if r.Limit.LE(r.Start) {
-		return fmt.Errorf("LimitRef (%+v) <= StartRef (%+v)", r.Limit, r.Start)
+		return fmt.Errorf("limitref (%+v) <= startref (%+v)", r.Limit, r.Start)
 	}
 	return nil
 }

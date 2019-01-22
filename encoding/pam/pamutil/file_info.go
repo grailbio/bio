@@ -87,20 +87,20 @@ func ParsePath(path string) (FileInfo, error) {
 	basename := file.Base(path)
 	m := basenameRe.FindStringSubmatch(basename)
 	if m == nil {
-		return fi, fmt.Errorf("%s: Unknown file type", path)
+		return fi, fmt.Errorf("parsepath %s: unknown file type", path)
 	}
 	// Dir is the all but the last component of the path, plus the first part
 	// of the basename.
 	fi.Dir = file.Dir(path)
 	var ok bool
 	if fi.Type, fi.Field, ok = parseExtension(m[7]); !ok {
-		return fi, fmt.Errorf("%s: Failed to parse suffix %v", path, m[7])
+		return fi, fmt.Errorf("parsepath %s: failed to parse suffix %v", path, m[7])
 	}
 	if fi.Range.Start, ok = parseRecAddr(m[1], m[2], m[3]); !ok {
-		return fi, fmt.Errorf("%s: Invalid range start", path)
+		return fi, fmt.Errorf("parsepath %s: invalid range start", path)
 	}
 	if fi.Range.Limit, ok = parseRecAddr(m[4], m[5], m[6]); !ok {
-		return fi, fmt.Errorf("%s: Invalid range limit", path)
+		return fi, fmt.Errorf("parsepath %s: invalid range limit", path)
 	}
 	return fi, nil
 }
@@ -124,7 +124,7 @@ func ListIndexes(ctx context.Context, dir string) ([]FileInfo, error) {
 		return nil, err
 	}
 	if len(infos) == 0 {
-		return nil, fmt.Errorf("ListIndexes %v: no index files found", dir)
+		return nil, fmt.Errorf("listindexes %s: no index files found", dir)
 	}
 	// TODO(saito) Check that ranges covers the universal range.
 	sort.SliceStable(infos,

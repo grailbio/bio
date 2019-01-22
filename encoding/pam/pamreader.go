@@ -248,11 +248,11 @@ func (r *ShardReader) readRecord() *sam.Record {
 func validateReadOpts(o *ReadOpts) error {
 	for _, fi := range o.DropFields {
 		if int(fi) < 0 || int(fi) >= gbam.NumFields {
-			return fmt.Errorf("Invalid DropField %v in %+v", fi, *o)
+			return fmt.Errorf("invalid DropField %v in %+v", fi, *o)
 		}
 		if fi == gbam.FieldCoord {
 			// Coord field is needed to support range reads.
-			return fmt.Errorf("Dropping Coord field is not supported in %+v", *o)
+			return fmt.Errorf("dropping Coord field is not supported in %+v", *o)
 		}
 	}
 	return pamutil.ValidateCoordRange(&o.Range)
@@ -327,13 +327,13 @@ func NewShardReader(
 	var err error
 	if r.index, err = pamutil.ReadShardIndex(vcontext.Background(), r.path, r.shardRange); err != nil {
 		vlog.Errorf("Failed to read shard index: %v", err)
-		r.err.Set(errors.E(err, fmt.Sprintf("Failed to read shard index for %v", r.path)))
+		r.err.Set(errors.E(err, fmt.Sprintf("newshardreader %s: read shard index", r.path)))
 		return r
 	}
 
 	r.header, err = gbam.UnmarshalHeader(r.index.EncodedBamHeader)
 	if err != nil {
-		r.err.Set(errors.E(err, fmt.Sprintf("%v: Failed to decode sam.Header in index", r.path)))
+		r.err.Set(errors.E(err, fmt.Sprintf("newshardeader %s: decode sam.Header in index", r.path)))
 		return r
 	}
 	if !r.requestedRange.Intersects(r.shardRange) {
@@ -406,7 +406,7 @@ func NewReader(opts ReadOpts, dir string) *Reader {
 		return r
 	}
 	if len(r.indexFiles) == 0 {
-		r.err.Set(fmt.Errorf("%v: No pam file found for range %+v", dir, r.opts))
+		r.err.Set(fmt.Errorf("newreader %v: No pam file found for range %+v", dir, r.opts))
 		return r
 	}
 	vlog.VI(1).Infof("Found index files in range %+v: %+v", r.opts.Range, r.indexFiles)

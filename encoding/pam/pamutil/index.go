@@ -25,17 +25,17 @@ func ReadShardIndex(ctx context.Context, dir string, recRange biopb.CoordRange) 
 	rio := recordio.NewScanner(in.Reader(ctx), recordio.ScannerOpts{})
 	defer rio.Finish() // nolint: errcheck
 	if !rio.Scan() {
-		return index, errors.E(rio.Err(), fmt.Sprintf("ReadShardIndex %v: Failed to read record: %v", path, rio.Err()))
+		return index, errors.E(rio.Err(), fmt.Sprintf("readshardindex %v: %v", path, rio.Err()))
 	}
 	err = index.Unmarshal(rio.Get().([]byte))
 	if err != nil {
 		return index, err
 	}
 	if index.Magic != ShardIndexMagic {
-		return index, fmt.Errorf("Wrong index version '%v'; expect '%v'", index.Magic, ShardIndexMagic)
+		return index, fmt.Errorf("readshardindex %s: wrong index version '%v'; expect '%v'", dir, index.Magic, ShardIndexMagic)
 	}
 	if index.Version != DefaultVersion {
-		return index, fmt.Errorf("Wrong PAM version '%v'; expect '%v'", index.Version, DefaultVersion)
+		return index, fmt.Errorf("readshardindex %s: wrong PAM version '%v'; expect '%v'", dir, index.Version, DefaultVersion)
 	}
 	return index, rio.Err()
 }
