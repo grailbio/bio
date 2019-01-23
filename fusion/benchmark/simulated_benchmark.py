@@ -108,52 +108,48 @@ def main() -> None:
         format="%(asctime)s:%(levelname)s: %(message)s")
 
     p = argparse.ArgumentParser()
-    p.add_argument('--cache_dir', default='/scratch-nvme/cache_tmp',
+    p.add_argument('--cache_dir', default=util.DEFAULT_CACHE_DIR,
                    help='Benchmark cache dir')
-    p.add_argument('--result_dir', default='/scratch-nvme/af4_benchmark_results',
+    p.add_argument('--result_dir', default=util.DEFAULT_RESULT_DIR,
                    help='Benchmark result dir')
     p.add_argument('--rerun_af4', action='store_true',
                    help='Always run AF4 even if the result file already exists')
     p.add_argument('--recache_files', action='store_true',
                    help='Always copy benchmark data files, even if they already exist locally.')
     args = p.parse_args()
-
-    if False:
-        if not os.path.exists(f'{args.cache_dir}/liu_et_al_data') or args.recache_files:
-            util.s3_cache_dir('s3://grail-arao/liu_et_al_data', Path(args.cache_dir))
-        if not os.path.exists(f'{args.cache_dir}/fusion_referencs') or args.recache_files:
-            util.s3_cache_dir('s3://grail-arao/fusion_references', Path(args.cache_dir))
-
+    util.s3_cache_files([util.REFERENCE_DIR + '/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa',
+                         util.REFERENCE_DIR + '/all_pair_art_lod_gpair_merged.txt',
+                         util.REFERENCE_DIR + '/liu_gpair.txt'],
+                        args.cache_dir)
     for mode in ['denovo', 'targeted']:
-        for n in ['50', '75', '100']:
-            for x in ['5X', '50X', '20X', '100X', '200X']:
-                fastqs = (f'/read{n}/{x}/{x}_FRG500_SD50_R{n}_1.fastq.gz',
-                          f'/read{n}/{x}/{x}_FRG500_SD50_R{n}_2.fastq.gz')
-                result_dir = f'{args.result_dir}/synthetic-{mode}-{n}-{x}'
-                try:
-                    os.makedirs(result_dir, 0o755)
-                except:
-                    logging.error("mkdir %s failed", result_dir)
-                if not os.path.exists(f'{result_dir}/filtered.fa') or args.rerun_af4:
-                    logging.info('running benchmark in %s', result_dir)
-                    af4_args = [str(util.af4_path()),
-                                f'-log_dir={result_dir}',
-                                f'-r1={args.cache_dir}/{fastqs[0]}',
-                                f'-r2={args.cache_dir}/{fastqs[1]}',
-                                f'-fasta-output={result_dir}/all.fa',
-                                f'-filtered-output={result_dir}/filtered.fa',
-                                '-transcript=' + args.cache_dir + '/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa']
-                    if mode == 'targeted':
-                        af4_args.append('-cosmic-fusion=' + args.cache_dir + '/all_pair_art_lod_gpair_merged.txt')
-                    util.check_call(af4_args)
-                    logging.info("Runtime stats: %s", util.run_stats(Path(result_dir)))
+        for sample in util.SIMULATED_SAMPLES:
+            util.s3_cache_files([sample.path.r1, sample.path.r2], args.cache_dir)
+            result_dir = f'{args.result_dir}/synthetic-{mode}-{sample.n}-{sample.coverage}'
+            try:
+                os.makedirs(result_dir, 0o755)
+            except:
+                logging.error("mkdir %s failed", result_dir)
+            if not os.path.exists(f'{result_dir}/filtered.fa') or args.rerun_af4:
+                logging.info('running benchmark in %s', result_dir)
+                af4_args = [str(util.af4_path()),
+                            f'-log_dir={result_dir}',
+                            f'-r1={args.cache_dir}/{sample.path.r1}',
+                            f'-r2={args.cache_dir}/{sample.path.r2}',
+                            f'-fasta-output={result_dir}/all.fa',
+                            f'-filtered-output={result_dir}/filtered.fa',
+                            '-transcript=' + args.cache_dir + '/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa']
+                if mode == 'targeted':
+                    af4_args.append('-cosmic-fusion=' + args.cache_dir + '/all_pair_art_lod_gpair_merged.txt')
+                util.check_call(af4_args)
+                logging.info("Runtime stats: %s", util.run_stats(Path(result_dir)))
 
-                stats = TargetedFusionStats(Path(f'{args.cache_dir}/liu_gpair.txt'),
-                                            Path(f'{result_dir}/filtered.fa'))
+            stats = TargetedFusionStats(Path(f'{args.cache_dir}/liu_gpair.txt'),
+                                        Path(f'{result_dir}/filtered.fa'))
 
-                s = stats.stats()
-                tp = "%d" % (s.tp,)
-                fp = "%d" % (s.fp,)
-                fn = "%d" % (s.fn,)
-                print(f'{mode} & {n} & {x} & {tp} & {fp} & {fn}\\\\')
+            s = stats.stats()
+            tp = "%d" % (s.tp,)
+            fp = "%d" % (s.fp,)
+            fn = "%d" % (s.fn,)
+            print(f'{mode} & {sample.n} & {sample.coverage} & {tp} & {fp} & {fn}\\\\')
+
 main()

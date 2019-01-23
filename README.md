@@ -1,4 +1,8 @@
-Grail's bioinformatics infrastructure libraries
+## Bioinformatics tools
+
+- [bio-fusion](https://github.com/grailbio/bio/tree/master/fusion): High-performance RNA/DNA fusion detector
+
+## Infrastructure libraries
 
 - [encoding/bamprovider](https://godoc.org/github.com/grailbio/bio/encoding/bamprovider): Parallel BAM/PAM reader and parallel paired reader.
 - [encoding/fasta](https://godoc.org/github.com/grailbio/bio/encoding/fasta): FASTA reader and writer.
@@ -9,5 +13,4 @@ Grail's bioinformatics infrastructure libraries
 - [cmd/bio-pamtool](https://github.com/grailbio/bio/tree/master/cmd/bio-pamtool): "samtool" like tool for PAM and BAM.
 - [cmd/bio-bam-sort](https://github.com/grailbio/bio/tree/master/cmd/bio-bam-sort): Tool for sorting and merging aligner outputs into PAM or BAM.
 - [cmd/bio-bam-gindex](https://github.com/grailbio/bio/tree/master/cmd/bio-bam-gindex): Alternate index for faster seeking into BAM files.
-- [biopb](https://godoc.org/github.com/grailbio/bio/biopb): Compiled protocol message files. TODO(saito): export the proto files too
 - [biosimd](https://godoc.org/github.com/grailbio/bio/biosimd): Fast reverse-complement, pack/unpack from BAM seq[] format, etc.

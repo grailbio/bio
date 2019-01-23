@@ -14,7 +14,7 @@ fragments. These fragments are then filtered in the second stage using criteria
 like the minimum supporting fragments per fusion event, genomic distance of
 fusion genes etc.
 
-Contact: XXXYYY
+Contact: saito@grail.com, xyang@grail.com
 
 ## Installation
 
@@ -62,6 +62,13 @@ ACBD6/RRP15	2	2	1
 
 - Passing `-h` will show more minor flags supported by `bio-fusion`.
 
+### PCR duplicates, UMIs
+
+By default, AF4 deals with 6bp dual UMIs and collapse sequences when their UMIs
+are within Hamming distance of two. However, when UMIs are absent, PCR
+duplicates are identified based on sequence similarity, where sequneces are
+collapsed if they are highly similar.
+
 ## Reference transcriptome
 
 The transcriptome is a FASTA file. Each key should be of form
@@ -101,16 +108,12 @@ bio-fusion -generate-transcriptome -exon-padding 250 -retained-exon-bases 18  -s
 
 For non-padded transcrptome used for other datasets, run the folowing:
 
-TODO(xyang): verify that this is correct.
-
 ```
 bio-fusion -generate-transcriptome -output gencode.v26.whole_genes.fa -keep-mitochondrial-genes -keep-readthrough-transcripts -keep-pary-locus-transcripts -keep-versioned-genes -/path/to/gencode.v26.annotation.gtf /path/to/hg38.fa
 ```
 
-### Pre-generatied transcriptomes
-
-Pre-generated transcriptome files used in our benchmark are found in X and
-Y. (TODO(xyang): fill the locations).
+Pre-generated transcriptome files used in our benchmark are found in
+[s3://grail-publications/2019-ISMB/references](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html).
 
 ## Output format
 
@@ -157,13 +160,37 @@ For example,
 
 ## Running the benchmarks
 
-TODO: explain uses of synthetic_benchmark, rna_benchmark, titration_benchmark.
+References and FASTQ files used in the ISMB paper are in
+[s3://grail-publications/2019-ISMB](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html).
+Directory [benchmark] also contains helper scripts to run the benchmarks.
 
-## Miscellaneous
+### Simulated dataset
 
-- PCR duplicates, UMIs
+[Simulated fusion FASTQ files](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4797269/)
+are in [s3://grail-publications/2019-ISMB/simulated_benchmark](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html). First download the [reference files](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html) and the FASTQ files in a local directory, then run:
 
-By default, AF4 deals with 6bp dual UMIs and collapse sequences when their UMIs
-are within Hamming distance of two. However, when UMIs are absent, PCR
-duplicates are identified based on sequence similarity, where sequneces are
-collapsed if they are highly similar.
+```
+bio-fusion -r1=path_to/r1.fastq.gz -r2=path_to/r2.fastq.gz -transcript=path_to/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
+```
+
+The results will be created in `./all.fa` and `./filtered.fa`.
+
+### CfRNA dataset
+
+CfRNA files are in [s3://grail-publications/2019-ISMB/rna_benchmark](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html). First download the [reference files](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html) and the FASTQ files in a local directory, then run:
+
+```
+bio-fusion -r1=path_to/r1.fastq.gz,... -r2=path_to/r2.fastq.gz,... -transcript=path_to/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
+```
+
+The results will be created in `./all.fa` and `./filtered.fa`.
+
+### CfDNA dataset
+
+CfDNA files are in [s3://grail-publications/2019-ISMB/titration_benchmark](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html). First download the [reference files](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html) and the FASTQ files in a local directory, then run:
+
+```
+bio-fusion -r1=path_to/r1.fastq.gz,... -r2=path_to/r2.fastq.gz,... -transcript=path_to/gencode.v26.whole_genes.fa [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
+```
+
+The results will be created in `./all.fa` and `./filtered.fa`.
