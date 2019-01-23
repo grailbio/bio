@@ -40,7 +40,8 @@ type Reader struct {
 // NewReader creates a new Reader that reads from the given path. Label is shown
 // in log messages. coordField should be true if the file stores the genomic
 // coordinate. Setting setting coordField=true enables the codepath that
-// computes biopb.Coord.Seq values.
+// computes biopb.Coord.Seq values. If no file is found for this field, return
+// value is nil, nil.
 func NewReader(ctx context.Context, path, label string, coordField bool, errp *errors.Once) (*Reader, error) {
 	fr := &Reader{
 		coordField: coordField,
@@ -49,6 +50,9 @@ func NewReader(ctx context.Context, path, label string, coordField bool, errp *e
 	}
 	in, err := file.Open(ctx, path)
 	if err != nil {
+		if e, ok := err.(*errors.Error); ok && e.Kind == errors.NotExist {
+			return nil, nil
+		}
 		return fr, errors.E(err, fmt.Sprintf("fieldio open %s: %s", path, label))
 	}
 	fr.in = in

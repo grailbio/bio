@@ -348,9 +348,12 @@ func NewShardReader(
 				pamutil.CoordRangePathString(pamIndex.Range),
 				pamutil.CoordRangePathString(r.requestedRange),
 				gbam.FieldType(f))
-			r.fieldReaders[f], err = fieldio.NewReader(ctx, path, label, (f == int(gbam.FieldCoord)), errp)
+			r.fieldReaders[f], err = fieldio.NewReader(ctx, path, label, f == int(gbam.FieldCoord), errp)
 			if err != nil {
 				r.err.Set(err)
+				return r
+			} else if r.fieldReaders[f] == nil {
+				r.err.Set(fmt.Errorf("missing file for %s: %s", label, path))
 				return r
 			}
 		}
