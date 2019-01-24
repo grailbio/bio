@@ -69,8 +69,14 @@ func FindIndexFilesInRange(ctx context.Context, dir string, recRange biopb.Coord
 	if allFiles, err = ListIndexes(ctx, dir); err != nil {
 		return nil, err
 	}
+	return ChooseIndexFilesInRange(allFiles, recRange)
+}
+
+// ChooseIndexFilesInRange returns the subset of allIndexFiles that overlap recRange.
+// REQUIRES: allIndexFiles[i].Type == FileTypeShardIndex for all i.
+func ChooseIndexFilesInRange(allIndexFiles []FileInfo, recRange biopb.CoordRange) ([]FileInfo, error) {
 	var files []FileInfo
-	for _, fi := range allFiles {
+	for _, fi := range allIndexFiles {
 		if fi.Type != FileTypeShardIndex {
 			panic(fi)
 		}
