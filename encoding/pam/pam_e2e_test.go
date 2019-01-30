@@ -168,7 +168,7 @@ func TestNewReaderError0(t *testing.T) {
 	assert.False(t, r.Scan(), "No record is expected")
 	err := r.Close()
 	assert.NotNil(t, err)
-	assert.Regexp(t, err, ".*no index files found.*")
+	assert.Regexp(t, err, ".*no pam file found.*")
 }
 
 func TestReadSubsetColumns(t *testing.T) {

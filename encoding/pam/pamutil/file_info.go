@@ -123,9 +123,6 @@ func ListIndexes(ctx context.Context, dir string) ([]FileInfo, error) {
 	if err := lister.Err(); err != nil {
 		return nil, err
 	}
-	if len(infos) == 0 {
-		return nil, fmt.Errorf("listindexes %s: no index files found", dir)
-	}
 	// TODO(saito) Check that ranges covers the universal range.
 	sort.SliceStable(infos,
 		func(i, j int) bool {

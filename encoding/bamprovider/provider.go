@@ -200,7 +200,7 @@ func GuessFileType(path string) FileType {
 		return PAM
 	}
 	ctx := vcontext.Background()
-	if _, err := pamutil.ListIndexes(ctx, path); err == nil {
+	if indexes, err := pamutil.ListIndexes(ctx, path); err == nil && len(indexes) > 0 {
 		return PAM
 	}
 	vlog.VI(1).Infof("%v: could not detect file type.", path)

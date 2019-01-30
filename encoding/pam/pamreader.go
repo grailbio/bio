@@ -409,7 +409,7 @@ func NewReader(opts ReadOpts, dir string) *Reader {
 		return r
 	}
 	if len(r.indexFiles) == 0 {
-		r.err.Set(fmt.Errorf("newreader %v: No pam file found for range %+v", dir, r.opts))
+		r.err.Set(fmt.Errorf("newreader %v: no pam file found for range %+v", dir, r.opts))
 		return r
 	}
 	vlog.VI(1).Infof("Found index files in range %+v: %+v", r.opts.Range, r.indexFiles)

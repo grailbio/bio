@@ -49,9 +49,9 @@ func (p *PAMProvider) initInfo() {
 		if err != nil {
 			p.err.Set(err)
 			return
-		}
-		if len(indexes) == 0 {
-			panic(p)
+		} else if len(indexes) == 0 {
+			p.err.Set(fmt.Errorf("pamprovider %v: no pam file found for range %+v", p.Path, p.Opts))
+			return
 		}
 		p.indexes = indexes
 	}

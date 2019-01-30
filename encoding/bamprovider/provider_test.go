@@ -96,7 +96,7 @@ func TestPAMLarge(t *testing.T) {
 func TestError(t *testing.T) {
 	for _, test := range []struct{ path, errRe string }{
 		{"nonexistent.bam", "no such file"},
-		{"nonexistint.pam", "no index files found"},
+		{"nonexistent.pam", "no pam file found"},
 	} {
 		p := bamprovider.NewProvider(test.path)
 		_, err := p.GenerateShards(bamprovider.GenerateShardsOpts{IncludeUnmapped: true})
