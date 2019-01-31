@@ -6,41 +6,40 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/vitessio/vitess/go/cgzip"
+	"github.com/yasushi-saito/zlibng"
 )
 
-// cgzipCreate creates cgzip WriteClosers.
-type cgzipFactory struct {
+// gzipCreate creates gzip WriteClosers.
+type gzipFactory struct {
 	level     int
 	strategy  int
-	cgzWriter *cgzip.Writer
+	gzWriter *zlibng.Writer
 }
 
-func (c *cgzipFactory) create(w io.Writer) (io.WriteCloser, error) {
+func (c *gzipFactory) create(w io.Writer) (io.WriteCloser, error) {
 	var err error
-	c.cgzWriter, err = cgzip.NewWriterLevelFullConfig(w, c.level,
-		cgzip.DEFAULT_COMPRESSED_BUFFER_SIZE,
-		cgzip.DefaultWindow, cgzip.DefaultMemLevel,
-		c.strategy,
-	)
+	c.gzWriter, err = zlibng.NewWriter(w, zlibng.Opts{Level: c.level, Strategy: c.strategy})
 	if err != nil {
 		return nil, err
 	}
-	c.cgzWriter.Header.Extra = make([]byte, len(bgzfExtra))
-	copy(c.cgzWriter.Header.Extra[:], bgzfExtra[:])
-	c.cgzWriter.Header.OS = 0xff // Unknown OS value
-
-	return c.cgzWriter, nil
+	header := zlibng.GzipHeader{Extra: make([]byte, len(bgzfExtra))}
+	copy(header.Extra[:], bgzfExtra[:])
+	header.OS = 0xff // Unknown OS value
+	if err = c.gzWriter.SetHeader(header); err != nil {
+		c.gzWriter.Close() // nolint: errcheck
+		return nil, err
+	}
+	return c.gzWriter, nil
 }
 
 // NewWriterParams returns a new .bgzf writer, with the given
 // configuration parameters.  uncompressedBlockSize is the largest
 // number of bytes to put into each .bgzf block.  gzipStrategy is a
-// strategy value from cgzip; possible values are DefaultStrategy,
+// strategy value from gzip; possible values are DefaultStrategy,
 // FilteredStrategy, HuffmanOnlyStrategy, RLEStrategy, and
 // FixedStrategy.  gzipXFL will be written to the XFL gzip header
 // field for each of the gzip blocks in the output; if gzipXFL is -1,
-// then cgzip with set XFL according to the other cgzip configuration
+// then gzip with set XFL according to the other gzip configuration
 // parameters.  Returns nil, error if there is a problem.
 func NewWriterParams(w io.Writer, level, uncompressedBlockSize, gzipStrategy, gzipXFL int) (*Writer, error) {
 	if uncompressedBlockSize > MaxUncompressedBlockSize {
@@ -52,7 +51,7 @@ func NewWriterParams(w io.Writer, level, uncompressedBlockSize, gzipStrategy, gz
 	}
 
 	return &Writer{
-		factory:          &cgzipFactory{level, gzipStrategy, nil},
+		factory:          &gzipFactory{level, gzipStrategy, nil},
 		uncompressedSize: uncompressedBlockSize,
 		xfl:              gzipXFL,
 		w:                w,

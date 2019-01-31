@@ -26,7 +26,7 @@
 //     &bgzfFile,
 //     flate.DefaultCompression,
 //     DefaultUncompressedBlockSize,
-//     cgzip.RLEStrategy,
+//     zlibng.RLEStrategy,
 //     0,
 //   )
 //   n, err := w.Write([]byte("Foo bar"))
@@ -95,9 +95,9 @@ var (
 // implementation of Writer.  The cgo version can use one of two
 // factories; it uses the klauspost factory if the user uses
 // NewWriter.  If the user uses NewWriterParams, then the factory
-// creates a cgzip.Writer because cgzip supports more configuration
+// creates a zlibng.Writer because zlibng supports more configuration
 // params.  We use a factory here so that the factory can keep its own
-// pointer to the libdeflate.Writer or cgzip.Writer so that the factory can
+// pointer to the libdeflate.Writer or zlibng.Writer so that the factory can
 // use Reset() when possible instead of creating a new writer for each
 // call to create().
 type compressFactory interface {
