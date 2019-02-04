@@ -210,13 +210,16 @@ func readFASTQ(ctx context.Context, reqCh chan req, fileseq uint, r1Path, r2Path
 		log.Panicf("open %v: %v", r2Path, err)
 	}
 	var (
-		inr1 io.Reader = in1.Reader(ctx)
-		inr2 io.Reader = in2.Reader(ctx)
+		r1Compressed, r2Compressed           = false, false
+		inr1                       io.Reader = in1.Reader(ctx)
+		inr2                       io.Reader = in2.Reader(ctx)
 	)
 	if u1 := compress.NewReaderPath(inr1, in1.Name()); u1 != nil {
+		r1Compressed = true
 		inr1 = u1
 	}
 	if u2 := compress.NewReaderPath(inr2, in2.Name()); u2 != nil {
+		r2Compressed = true
 		inr2 = u2
 	}
 	sc = fastq.NewPairScanner(inr1, inr2, fastq.ID|fastq.Seq)
@@ -238,6 +241,12 @@ func readFASTQ(ctx context.Context, reqCh chan req, fileseq uint, r1Path, r2Path
 	log.Printf("Processed %d reads in %s", nRead, r1Path)
 	once := errors.Once{}
 	once.Set(sc.Err())
+	if r1Compressed {
+		once.Set(inr1.(io.Closer).Close())
+	}
+	if r2Compressed {
+		once.Set(inr2.(io.Closer).Close())
+	}
 	once.Set(in1.Close(ctx))
 	once.Set(in2.Close(ctx))
 	if err := once.Err(); err != nil {
