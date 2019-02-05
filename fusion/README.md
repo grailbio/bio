@@ -23,36 +23,36 @@ Currently, AF4 only supports UNIX platforms with ivy bridge CPU or newer.  Our r
 - If you have go environment set up, please use the following command directly
 
     	go install github.com/grailbio/bio/cmd/bio-fusion
-    	
+
 	The binary `bio-fusion` should be ready to use, for usage, type
-		
+
 		bio-fusion -h
-			
-- Setup go then install 
+
+- Setup go then install
 
 	- Assuming your current working folder is `$HOME/go_install`
 	- Obtain pre-compiled go package (this works for linux only, please check sha256 to make sure the `.tar.gz` file is properly downloaded)
-		
+
 			wget https://dl.google.com/go/go1.11.5.linux-amd64.tar.gz
 			tar -C $HOME/go_install -xvzf go1.11.5.linux-amd64.tar.gz
-	
+
 		The go binary path should be at: `$HOME/go_install/go/bin/go`
-	
-	- Set up go env 
-						
+
+	- Set up go env
+
 			export GOROOT=${HOME}/go_install/go
 			export PATH="${HOME}/go_install/go/bin:${PATH}"
-		
+
 	- Set up go work space & install fusion package
-			
+
 			# create workspace assuming you want to use $HOME/workdir folder
 			mkdir -p $HOME/workdir
 			cd $HOME/workdir
 			go mod init playground/
 			go install github.com/grailbio/bio/cmd/bio-fusion
-				
+
 	- The binary `bio-fusion` should be ready to use, for usage, type
-		
+
 			bio-fusion -h
 
 
@@ -203,7 +203,7 @@ Directory [benchmark] also contains helper scripts to run the benchmarks.
 are in [s3://grail-publications/2019-ISMB/simulated_benchmark](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html). First download the [reference files](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html) and the FASTQ files in a local directory, then run:
 
 ```
-bio-fusion -r1=path_to/r1.fastq.gz -r2=path_to/r2.fastq.gz -transcript=path_to/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
+bio-fusion -r1=path_to/r1.fastq.gz -r2=path_to/r2.fastq.gz -transcript=path_to/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa -umi-in-name -max-genes-per-kmer=2 -max-proximity-distance=1000 -max-proximity-genes=0 [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
 ```
 
 The results will be created in `./all.fa` and `./filtered.fa`.
@@ -213,7 +213,7 @@ The results will be created in `./all.fa` and `./filtered.fa`.
 CfRNA files are in [s3://grail-publications/2019-ISMB/rna_benchmark](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html). First download the [reference files](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html) and the FASTQ files in a local directory, then run:
 
 ```
-bio-fusion -r1=path_to/r1.fastq.gz,... -r2=path_to/r2.fastq.gz,... -transcript=path_to/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
+bio-fusion -r1=path_to/r1.fastq.gz,... -r2=path_to/r2.fastq.gz,... -transcript=path_to/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa -umi-in-name -max-genes-per-kmer=2 -max-proximity-distance=1000 -max-proximity-genes=0 [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
 ```
 
 The results will be created in `./all.fa` and `./filtered.fa`.
@@ -223,7 +223,7 @@ The results will be created in `./all.fa` and `./filtered.fa`.
 CfDNA files are in [s3://grail-publications/2019-ISMB/titration_benchmark](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html). First download the [reference files](https://grail-publications.s3-us-west-2.amazonaws.com/2019-ISMB/list.html) and the FASTQ files in a local directory, then run:
 
 ```
-bio-fusion -r1=path_to/r1.fastq.gz,... -r2=path_to/r2.fastq.gz,... -transcript=path_to/gencode.v26.whole_genes.fa [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
+bio-fusion -r1=path_to/r1.fastq.gz,... -r2=path_to/r2.fastq.gz,... -transcript=path_to/gencode.v26.whole_genes.fa -umi-in-name -max-genes-per-kmer=2 -max-proximity-distance=1000 -max-proximity-genes=0 [-cosmic_fusion=path_to/all_pair_art_lod_gpair_merged.txt]
 ```
 
 The results will be created in `./all.fa` and `./filtered.fa`.

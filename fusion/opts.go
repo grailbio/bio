@@ -43,7 +43,7 @@ type Opts struct {
 	// same chromsosome) below which they will be flagged as read-through events.
 	MaxProximityGenes int
 
-	// MaxGenePartners x capping number of partners a gene can have
+	// MaxGenePartners caps number of partners a gene can have
 	// this is used in the filtering stage.
 	MaxGenePartners int
 
@@ -54,19 +54,18 @@ type Opts struct {
 
 // DefaultOpts sets the default values to Opts.
 var DefaultOpts = Opts{
-	UMIInRead:                    false,
-	UMIInName:                    false,
-	KmerLength:                   19,
-	UnstrandedPrep:               true,
-	MaxGap:                       9, //kmerLength/2
-	MaxHomology:                  15,
-	MinSpan:                      25,
-	LowComplexityFraction:        0.9,
-	MaxGenesPerKmer:              2,
-	MaxGeneCandidatesPerFragment: 5,
-
-	MaxProximityDistance: 1000,
-	MaxProximityGenes:    0,
-	MaxGenePartners:      5,
-	MinReadSupport:       2,
+	UMIInRead:                    false,  // Go: -umi-in-read, C++: --umi_in_read
+	UMIInName:                    false,  // Go: -umi-in-name, C++: --umi_in_name
+	KmerLength:                   19,     // Go, C++: -k
+	UnstrandedPrep:               true,   // Go: no flag, C++: --unstranded-library default: false
+	MaxGap:                       9,      // Go, C++ no flag. in C++,the value is hardcoded to kmerLength/2
+	MaxHomology:                  15,     // Go: -max-homology, C++: --max_homology
+	MinSpan:                      25,     // Go: -min-span, C++: --min_span
+	LowComplexityFraction:        0.9,    // Go: -low-complexity-fraction, C++: -lc (specifies percentage, not fraction)
+	MaxGenesPerKmer:              5,      // Go: -max-genes-per-kmer, C++: --cap
+	MaxGeneCandidatesPerFragment: 5,      // Go, C++, no flag. In C++, the value is hardcoded to 5.
+	MaxProximityDistance:         100000, // Go: --max-proximity-distance, C++: --proximity_dist
+	MaxProximityGenes:            5,      // Go: --max-proximity-genes, C++: --proxmitity_num
+	MaxGenePartners:              5,      // Go: -max-gene-partners, C++: --cap_genepartner
+	MinReadSupport:               2,      // Go: no flag, C++: --min_read_support.
 }

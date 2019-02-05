@@ -51,6 +51,10 @@ def main() -> None:
                     f'-fasta-output={result_dir}/all.fa',
                     f'-filtered-output={result_dir}/filtered.fa',
                     f'-transcript={cached_ref}',
+                    f'-max-genes-per-kmer=2',
+                    f'-max-proximity-distance=1000',
+                    f'-max-proximity-genes=5',
+                    f'-unstranded-prep',
                     f'-cosmic-fusion={cached_cosmic_fusion}']
         util.check_call(af4_args)
         logging.info('Finished benchmark %d: %s', sample.name)

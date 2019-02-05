@@ -137,6 +137,9 @@ def main() -> None:
                             f'-r2={args.cache_dir}/{sample.path.r2}',
                             f'-fasta-output={result_dir}/all.fa',
                             f'-filtered-output={result_dir}/filtered.fa',
+                            f'-max-genes-per-kmer=2',
+                            f'-max-proximity-distance=1000',
+                            f'-max-proximity-genes=5',
                             '-transcript=' + args.cache_dir + '/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa']
                 if mode == 'targeted':
                     af4_args.append('-cosmic-fusion=' + args.cache_dir + '/all_pair_art_lod_gpair_merged.txt')

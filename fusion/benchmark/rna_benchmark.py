@@ -90,6 +90,9 @@ def run_af4(sample_name: str, cached_file_pairs: List[util.FASTQPair], args: Any
                     f'-umi-in-read',
                     f'-r1={cached_r1}',
                     f'-r2={cached_r2}',
+                    f'-max-genes-per-kmer=2',
+                    f'-max-proximity-distance=1000',
+                    f'-max-proximity-genes=5',
                     f'-fasta-output={result_dir}/all.fa',
                     f'-filtered-output={result_dir}/filtered.fa',
                     f'-transcript={args.cache_dir}/gencode.v26.250padded_separate_jns_transcripts_parsed_no_mt_no_overlap_no_pary_no_versioned.fa']
