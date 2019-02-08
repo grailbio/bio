@@ -11,10 +11,13 @@ import (
 	"reflect"
 	"unsafe"
 
+	"sync/atomic"
+
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/recordio"
+	"github.com/grailbio/base/traverse"
 	gunsafe "github.com/grailbio/base/unsafe"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
@@ -613,21 +616,31 @@ type ColumnSeeker interface {
 // requestedRange.  After a successful return, the read pointer of every reader
 // will be at requestedRange.StartAddr.
 func SeekReaders(requestedRange biopb.CoordRange, coordReader *Reader, columns []ColumnSeeker) error {
-	blockStarts := make([]biopb.Coord, len(columns))
+	var (
+		eof         uint32
+		blockStarts = make([]biopb.Coord, len(columns))
+	)
 
 	// For each column, seek to the block that contains requestedRange.StartAddr.
 	// coordRange.Start is set to the the minimum of addresses of these blocks.
-	coordRange := requestedRange
-	for ci, col := range columns {
-		blockStart, ok := col.Seek(requestedRange)
+	traverse.Each(len(columns), func(ci int) error { // nolint: errcheckx
+		blockStart, ok := columns[ci].Seek(requestedRange)
 		if !ok {
 			// There's no record to be read in the range.  We'll report EOF when
 			// reading later. Usually, if fr.blocks is empty for one field, it's
 			// empty for any other field too.
+			atomic.StoreUint32(&eof, 1)
 			return nil
 		}
-		coordRange.Start = coordRange.Start.Min(blockStart)
 		blockStarts[ci] = blockStart
+		return nil
+	})
+	if eof != 0 {
+		return nil
+	}
+	coordRange := requestedRange
+	for _, blockStart := range blockStarts {
+		coordRange.Start = coordRange.Start.Min(blockStart)
 	}
 
 	// We need to advance the read pointer of each field to the first record at or
