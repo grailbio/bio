@@ -391,7 +391,7 @@ func (fr *Reader) SkipVarint32sField() {
 	rb.remaining--
 	nBases := int(rb.defaultBuf.Uvarint64())
 	for i := 0; i < nBases; i++ {
-		_ = rb.defaultBuf.Varint64()
+		_ = rb.blobBuf.Varint64()
 	}
 }
 
@@ -623,7 +623,7 @@ func SeekReaders(requestedRange biopb.CoordRange, coordReader *Reader, columns [
 
 	// For each column, seek to the block that contains requestedRange.StartAddr.
 	// coordRange.Start is set to the the minimum of addresses of these blocks.
-	traverse.Each(len(columns), func(ci int) error { // nolint: errcheckx
+	traverse.Each(len(columns), func(ci int) error { // nolint: errcheck
 		blockStart, ok := columns[ci].Seek(requestedRange)
 		if !ok {
 			// There's no record to be read in the range.  We'll report EOF when
