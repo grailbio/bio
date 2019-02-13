@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grailbio/base/compress"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/grail"
@@ -25,6 +24,7 @@ import (
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/encoding/fastq"
 	"github.com/grailbio/bio/fusion"
+	"github.com/yasushi-saito/zlibng"
 )
 
 type memStats struct {
@@ -104,24 +104,20 @@ func writeFASTA(out io.Writer, c fusion.Candidate, geneDB *fusion.GeneDB, opts f
 		}
 	}
 
+	geneOrder := fusion.CosmicOrder
+	if opts.Denovo {
+		geneOrder = fusion.AlphabeticalOrder
+	}
 	writeString(">", c.Frag.Name, "|")
 	// Emit gene names.
 	for i, fi := range c.Fusions {
 		if i > 0 {
 			writeString(",")
 		}
-		gid1, gid2 := fi.G1ID, fi.G2ID
-		if !fi.RefOrder {
-			gid1, gid2 = fi.G2ID, fi.G1ID
-		}
-		writeString(geneDB.GeneInfo(gid1).Gene, "/", geneDB.GeneInfo(gid2).Gene)
-		if !opts.UnstrandedPrep {
-			if fi.RefOrder == fi.FusionOrder {
-				writeString("/+")
-			} else {
-				writeString("/-")
-			}
-		}
+		g1, g2 := fusion.SortGenePair(geneDB, fi.G1ID, fi.G2ID, geneOrder)
+		writeString(geneDB.GeneInfo(g1).Gene)
+		writeString("/")
+		writeString(geneDB.GeneInfo(g2).Gene)
 	}
 	writeString("|")
 	// Emit gene locations
@@ -129,13 +125,10 @@ func writeFASTA(out io.Writer, c fusion.Candidate, geneDB *fusion.GeneDB, opts f
 		if i > 0 {
 			writeString(",")
 		}
-		gid1, gid2 := fi.G1ID, fi.G2ID
-		if !fi.RefOrder {
-			gid1, gid2 = fi.G2ID, fi.G1ID
-		}
-		writeGeneLocation(gid1)
+		g1, g2 := fusion.SortGenePair(geneDB, fi.G1ID, fi.G2ID, geneOrder)
+		writeGeneLocation(g1)
 		writeString("/")
-		writeGeneLocation(gid2)
+		writeGeneLocation(g2)
 	}
 	writeString("|")
 	if _, err := fmt.Fprintf(out, "%d/%d|", c.Fusions[0].G1Span, c.Fusions[0].G2Span); err != nil {
@@ -197,31 +190,33 @@ func processRequests(reqCh chan req, resCh chan res, geneDB *fusion.GeneDB, opts
 
 func readFASTQ(ctx context.Context, reqCh chan req, fileseq uint, r1Path, r2Path string) {
 	var (
-		in1, in2 file.File
 		sc       *fastq.PairScanner
 		r1R, r2R fastq.Read
 		nRead    uint
-		err      error
 	)
-	if in1, err = file.Open(ctx, r1Path); err != nil {
-		log.Panicf("open %v: %v", r1Path, err)
+
+	openGzippedFASTQ := func(path string) (file.File, io.ReadCloser) {
+		in, err := file.Open(ctx, path)
+		if err != nil {
+			log.Panicf("open %v: %v", path, err)
+		}
+		gz, err := zlibng.NewReader(in.Reader(ctx))
+		if err != nil {
+			log.Panicf("open gzip %v: %v", path, err)
+		}
+		return in, gz
 	}
-	if in2, err = file.Open(ctx, r2Path); err != nil {
-		log.Panicf("open %v: %v", r2Path, err)
+	closeGzippedFASTQ := func(in file.File, r io.ReadCloser, path string) {
+		if err := r.Close(); err != nil {
+			log.Panicf("close gzip %s: %v", path, err)
+		}
+		if err := in.Close(ctx); err != nil {
+			log.Panicf("close %s: %v", path, err)
+		}
 	}
-	var (
-		r1Compressed, r2Compressed           = false, false
-		inr1                       io.Reader = in1.Reader(ctx)
-		inr2                       io.Reader = in2.Reader(ctx)
-	)
-	if u1 := compress.NewReaderPath(inr1, in1.Name()); u1 != nil {
-		r1Compressed = true
-		inr1 = u1
-	}
-	if u2 := compress.NewReaderPath(inr2, in2.Name()); u2 != nil {
-		r2Compressed = true
-		inr2 = u2
-	}
+
+	in1, inr1 := openGzippedFASTQ(r1Path)
+	in2, inr2 := openGzippedFASTQ(r2Path)
 	sc = fastq.NewPairScanner(inr1, inr2, fastq.ID|fastq.Seq)
 	for {
 		if !sc.Scan(&r1R, &r2R) {
@@ -239,22 +234,16 @@ func readFASTQ(ctx context.Context, reqCh chan req, fileseq uint, r1Path, r2Path
 		reqCh <- req{newSeq(fileseq, nRead), id, r1R.Seq, r2R.Seq}
 	}
 	log.Printf("Processed %d reads in %s", nRead, r1Path)
-	once := errors.Once{}
-	once.Set(sc.Err())
-	if r1Compressed {
-		once.Set(inr1.(io.Closer).Close())
+	if err := sc.Err(); err != nil {
+		log.Panicf("close pair: %v", err)
 	}
-	if r2Compressed {
-		once.Set(inr2.(io.Closer).Close())
-	}
-	once.Set(in1.Close(ctx))
-	once.Set(in2.Close(ctx))
-	if err := once.Err(); err != nil {
-		log.Panicf("close %v,%v: %v", r1Path, r2Path, err)
-	}
+	closeGzippedFASTQ(in1, inr1, r1Path)
+	closeGzippedFASTQ(in2, inr2, r2Path)
 }
 
-func processFASTQ(ctx context.Context, fileseq uint, r1Path, r2Path string, geneDB *fusion.GeneDB, opts fusion.Opts) ([]res, fusion.Stats) {
+func processFASTQ(ctx context.Context, fileseq uint,
+	r1Path, r2Path string,
+	geneDB *fusion.GeneDB, opts fusion.Opts) ([]res, fusion.Stats) {
 	reqCh := make(chan req, 1024*64)
 	resCh := make(chan res, 1024)
 
@@ -452,13 +441,20 @@ func DetectFusion(ctx context.Context, flags fusionFlags, opts fusion.Opts) {
 			flags.cosmicFusionPath,
 			flags.transcriptPath, opts)
 		fastaOut, cleanup1 := createFile(ctx, flags.fastaOutputPath)
-		rioOut := newFusionWriter(ctx, flags.rioOutputPath, geneDB, opts)
+		var rioOut *fusionWriter
+		if flags.rioOutputPath != "" {
+			rioOut = newFusionWriter(ctx, flags.rioOutputPath, geneDB, opts)
+		}
 		for _, c := range allCandidates {
 			writeFASTA(fastaOut, c, geneDB, opts)
-			rioOut.Write(c)
+			if rioOut != nil {
+				rioOut.Write(c)
+			}
 		}
 		cleanup1()
-		rioOut.Close(ctx)
+		if rioOut != nil {
+			rioOut.Close(ctx)
+		}
 	} else {
 		// Read candidates, genedb, and options from a recordio dump.
 		r := newFusionReader(ctx, flags.rioInputPath)
@@ -521,11 +517,11 @@ genes)`)
 	flag.StringVar(&fusionFlags.transcriptPath, "transcript", "", "File containing all transcripts")
 	flag.StringVar(&fusionFlags.cosmicFusionPath, "cosmic-fusion", "", `Fixed list of fusions to query within the input.
 If this flag is empty, all possible combinations of genes in the --transcript file will be examined as fusion candidates.`)
-	flag.StringVar(&fusionFlags.r1, "r1", "", "Comma-separated list of FASTQ files containing R1 reads.")
-	flag.StringVar(&fusionFlags.r2, "r2", "", "Comma-separated list of FASTQ files containing R2 reads.")
+	flag.StringVar(&fusionFlags.r1, "r1", "", "Comma-separated list of Gzipped FASTQ files containing R1 reads.")
+	flag.StringVar(&fusionFlags.r2, "r2", "", "Comma-separated list of Gzipped FASTQ files containing R2 reads.")
 	flag.StringVar(&fusionFlags.fastaOutputPath, "fasta-output", "./all-outputs.fa", "FASTA file to store all candidates.")
 	flag.StringVar(&fusionFlags.rioInputPath, "rio-input", "", "FASTA file that store all candidates. If this flag is nonempty, af4 will run only the 2nd filtering stage using the input. If this flag is empty (default) af4 will run the whole process from scratch.")
-	flag.StringVar(&fusionFlags.rioOutputPath, "rio-output", "./all-outputs.rio", "FASTA file to store all candidates.")
+	flag.StringVar(&fusionFlags.rioOutputPath, "rio-output", "", "Recordio checkpoint file to store all candidates. If empty, the file will not be created")
 	flag.StringVar(&fusionFlags.filteredOutputPath, "filtered-output", "./filtered-outputs.fa", "FASTA file to store all candidates.")
 	flag.StringVar(&fusionFlags.geneListInputPath, "gene-list", "", `NOT FOR GENERAL USE. If set,
 gene DB is seeded with the genes in this list. Gene IDs are assigned in
@@ -537,6 +533,7 @@ gene IDs to genes to maintain compatibility with old code`)
 	flag.BoolVar(&opts.UMIInName, "umi-in-name", fusion.DefaultOpts.UMIInName, "If true, UMI is embedded in the readname.")
 	flag.IntVar(&opts.KmerLength, "k", fusion.DefaultOpts.KmerLength, "Length of kmers")
 	flag.IntVar(&opts.MaxGenesPerKmer, "max-genes-per-kmer", fusion.DefaultOpts.MaxGenesPerKmer, "Upper limit on the max number of genes that a kmer belongs to")
+	flag.IntVar(&opts.MaxGenePartners, "max-gene-partners", fusion.DefaultOpts.MaxGenePartners, "The maximum number of partners a gene can have. Used in the 2nd stage only")
 	flag.IntVar(&opts.MaxProximityDistance, "max-proximity-distance", fusion.DefaultOpts.MaxProximityDistance,
 		`Upper limit on the distance cutoff below which a candidate will be rejected as a readthrough event.`)
 	flag.IntVar(&opts.MaxProximityGenes, "max-proximity-genes", fusion.DefaultOpts.MaxProximityGenes,

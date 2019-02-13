@@ -11,9 +11,6 @@ type Opts struct {
 	// KmerLength is the length of kmer used to match DNA sequences.
 	KmerLength int
 	Denovo     bool
-	// Is this an unstranded RNA-seq library? Default is stranded.
-	UnstrandedPrep bool
-
 	// maxGap specifies the max gap allowed between
 	// two consecutive ranges (this is to tolerate sequence errors).
 	MaxGap int
@@ -39,12 +36,12 @@ type Opts struct {
 	// rejected as a readthrough event
 	MaxProximityDistance int
 
-	// MaxProximityGenes is number of genes separating a gene pair (If on the
-	// same chromsosome) below which they will be flagged as read-through events.
+	// MaxProximityGenes is number of genes separating a gene pair (If on the same
+	// chromsosome) below which they will be flagged as read-through events.
 	MaxProximityGenes int
 
-	// MaxGenePartners caps number of partners a gene can have
-	// this is used in the filtering stage.
+	// MaxGenePartners is the maximum number of partners a gene can have this is
+	// used in the filtering stage.
 	MaxGenePartners int
 
 	// Minimum number of supporting reads required
@@ -57,7 +54,6 @@ var DefaultOpts = Opts{
 	UMIInRead:                    false,  // Go: -umi-in-read, C++: --umi_in_read
 	UMIInName:                    false,  // Go: -umi-in-name, C++: --umi_in_name
 	KmerLength:                   19,     // Go, C++: -k
-	UnstrandedPrep:               true,   // Go: no flag, C++: --unstranded-library default: false
 	MaxGap:                       9,      // Go, C++ no flag. in C++,the value is hardcoded to kmerLength/2
 	MaxHomology:                  15,     // Go: -max-homology, C++: --max_homology
 	MinSpan:                      25,     // Go: -min-span, C++: --min_span

@@ -1,12 +1,12 @@
 package fusion
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
 
-	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/assert"
 	"github.com/grailbio/testutil/expect"
@@ -71,7 +71,7 @@ func testWriteFile(dir, data string) string {
 }
 
 func TestInferGeneRangeInfo(t *testing.T) {
-	ctx := vcontext.Background()
+	ctx := context.Background()
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
@@ -106,7 +106,7 @@ func newR2PosRange(start, end Pos) PosRange {
 }
 
 func TestInferCandidatePair(t *testing.T) {
-	ctx := vcontext.Background()
+	ctx := context.Background()
 	tempDir, cleanup := testutil.TempDir(t, "", "")
 	defer cleanup()
 
@@ -116,11 +116,10 @@ func TestInferCandidatePair(t *testing.T) {
 			"YWHAE/FAM22A\t685\t2\t8\n")
 
 	opts := Opts{
-		KmerLength:     13,
-		MaxGap:         6,
-		UnstrandedPrep: false,
-		MaxHomology:    13,
-		MinSpan:        13,
+		KmerLength:  13,
+		MaxGap:      6,
+		MaxHomology: 13,
+		MinSpan:     13,
 	}
 	geneDB := NewGeneDB(opts)
 	geneDB.ReadFusionEvents(ctx, cosmicPath)
@@ -139,7 +138,7 @@ func TestInferCandidatePair(t *testing.T) {
 
 	got := inferCandidatePair(geneDB, "xx", 145, 145, gri, opts)
 	expect.EQ(t, len(got), 1)
-	expect.EQ(t, got[0].Name(geneDB, opts), "NUTM2B/YWHAE/-")
+	expect.EQ(t, got[0].Name(geneDB, opts), "NUTM2B/YWHAE")
 	expect.EQ(t, got[0].G1Span, 240)
 	expect.EQ(t, got[0].G2Span, 25)
 	expect.EQ(t, got[0].JointSpan, 265)
@@ -179,10 +178,8 @@ func TestInferLongestCombinedSpan(t *testing.T) {
 		// don't need to fill the expectations.
 		assert.EQ(t, fi.G1ID, GeneID(100))
 		assert.EQ(t, fi.G2ID, GeneID(101))
-		assert.EQ(t, fi.RefOrder, true)
 		fi.G1ID = 0
 		fi.G2ID = 0
-		fi.RefOrder = false
 		return fi
 	}
 	// LHS    ^ --------------  ---------------
@@ -657,7 +654,7 @@ func TestDiscardAbundantPartners(t *testing.T) {
 func TestDetectFusion(t *testing.T) {
 	t.Skip("not enabled by default")
 
-	ctx := vcontext.Background()
+	ctx := context.Background()
 	opts := DefaultOpts
 	geneDB := NewGeneDB(opts)
 	geneDB.ReadFusionEvents(ctx, "/scratch-nvme/fusion/small_pairs.txt")
@@ -678,7 +675,6 @@ func TestDetectFusion(t *testing.T) {
 			G1Span:      g1Span,
 			G2Span:      g2Span,
 			JointSpan:   jointSpan,
-			RefOrder:    true,
 			FusionOrder: order,
 			G1Range:     newCrossReadPosRange(Pos(g1Start), Pos(g1End)),
 			G2Range:     newCrossReadPosRange(Pos(g2Start), Pos(g2End)),

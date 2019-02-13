@@ -41,8 +41,6 @@ type FusionInfo struct {
 	//
 	// REQUIRES: JointSpan >= max(G1Span, G2Span)
 	JointSpan int
-	// RefOrder=true iff g1 is aligned before g2 in the reference fusion database.
-	RefOrder bool
 	// FusionOrder=true iff g1 is aligned before g2.
 	FusionOrder bool
 	// G1Range is the [min,max) range of the fragment covered by G1.
@@ -55,22 +53,14 @@ type FusionInfo struct {
 // fusion.
 func (fi FusionInfo) Name(geneDB *GeneDB, opts Opts) string {
 	buf := strings.Builder{}
-	if fi.RefOrder {
-		buf.WriteString(geneDB.GeneInfo(fi.G1ID).Gene)
-		buf.WriteByte('/')
-		buf.WriteString(geneDB.GeneInfo(fi.G2ID).Gene)
-	} else {
-		buf.WriteString(geneDB.GeneInfo(fi.G2ID).Gene)
-		buf.WriteByte('/')
-		buf.WriteString(geneDB.GeneInfo(fi.G1ID).Gene)
+	order := CosmicOrder
+	if opts.Denovo {
+		order = AlphabeticalOrder
 	}
-	if !opts.UnstrandedPrep {
-		if fi.RefOrder == fi.FusionOrder {
-			buf.WriteString("/+")
-		} else {
-			buf.WriteString("/-")
-		}
-	}
+	g1, g2 := SortGenePair(geneDB, fi.G1ID, fi.G2ID, order)
+	buf.WriteString(geneDB.GeneInfo(g1).Gene)
+	buf.WriteByte('/')
+	buf.WriteString(geneDB.GeneInfo(g2).Gene)
 	return buf.String()
 }
 
@@ -203,32 +193,11 @@ func inferCandidatePair(
 				break
 			}
 
-			// A flag that indicates the fusion is (gr.name, gr2.name)
-			// if true and (gr2.name, gr.name) if false
-			refOrder := false
-			if !opts.Denovo {
-				// If we are running targeted detection, any detected fusion must be
-				// in a preexisting pair Current checking gene pair (gr.name and
-				// gr2.name), set this flag to be true if this is
-				// consistent with documented fusion pair.
-				if geneDB.IsFusionPair(gr.geneID, gr2.geneID) {
-					refOrder = true
-				} else if !geneDB.IsFusionPair(gr2.geneID, gr.geneID) {
-					// NOT a known fusion pair.
-					break
-				}
-			} else {
-				// Fusion always ordered in alphabetical order. Add logic here to
-				// identify correct orientation.
-				if gr.geneID < gr2.geneID {
-					// G1/G2 is correct.
-					refOrder = true
-				} // else G1/G2 is wrong (G2/G1 is correct). Swap G1 and G2.
+			if !opts.Denovo && !geneDB.IsFusionPair(gr.geneID, gr2.geneID) && !geneDB.IsFusionPair(gr2.geneID, gr.geneID) {
+				break
 			}
-
 			// Algorithm to identify combined range by the gene pair.
 			fusionSpan := inferLongestCombinedSpan(gr, gr2, opts)
-			fusionSpan.RefOrder = refOrder
 
 			// Next further check positional information: whether
 			// gr2 extends on either side of gr for at least
@@ -336,7 +305,6 @@ func inferCandidatePair(
 func inferLongestCombinedSpan(gL, gR geneRangeInfo, opts Opts) (fi FusionInfo) {
 	fi.G1ID = gL.geneID
 	fi.G2ID = gR.geneID
-	fi.RefOrder = true
 	fi.FusionOrder = true
 
 	// Generate suffix and prefix lengths for lhs and rhs.
@@ -508,7 +476,7 @@ func inferLongestCombinedSpan(gL, gR geneRangeInfo, opts Opts) (fi FusionInfo) {
 		// Parsimonious to prefer one gene over fusion.
 		//
 		// Return a Null fusion
-		fi = FusionInfo{G1ID: gL.geneID, G2ID: gR.geneID, RefOrder: true, FusionOrder: true}
+		fi = FusionInfo{G1ID: gL.geneID, G2ID: gR.geneID, FusionOrder: true}
 	}
 	return
 }

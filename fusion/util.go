@@ -1,6 +1,7 @@
 package fusion
 
 import (
+	"github.com/grailbio/base/log"
 	gunsafe "github.com/grailbio/base/unsafe"
 	"github.com/grailbio/bio/biosimd"
 )
@@ -73,4 +74,35 @@ func IsLowComplexity(seq string, lowComplexityFrac float64) bool {
 		}
 	}
 	return float64(max+max2)/float64(len(seq)) > lowComplexityFrac
+}
+
+// GenePairOrder defines the order at which a gene pair is printed (A/B or B/A).
+// Possible values are CosmicOrder and AlphabeticalOrder.
+type GenePairOrder int
+
+const (
+	// Output the genes in the order that's listed in the cosmic DB.  This format
+	// requires that the either <g1,g2> or <g2,g2> to be listed in the cosmic.
+	CosmicOrder GenePairOrder = iota
+	// Output the genes in the alphabetical order.
+	AlphabeticalOrder
+)
+
+func SortGenePair(geneDB *GeneDB, g1, g2 GeneID, order GenePairOrder) (GeneID, GeneID) {
+	switch order {
+	case CosmicOrder:
+		if geneDB.IsFusionPair(g1, g2) {
+			// ok
+		} else if geneDB.IsFusionPair(g2, g1) {
+			g1, g2 = g2, g1
+		} else {
+			log.Panicf("Genes (%s, %s) doesn't appear in COSMIC", geneDB.GeneInfo(g1).Gene, geneDB.GeneInfo(g2).Gene)
+		}
+	default:
+		name1, name2 := geneDB.GeneInfo(g1).Gene, geneDB.GeneInfo(g2).Gene
+		if name2 < name1 {
+			g1, g2 = g2, g1
+		}
+	}
+	return g1, g2
 }

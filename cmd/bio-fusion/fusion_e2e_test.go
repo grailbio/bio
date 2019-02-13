@@ -40,7 +40,9 @@ func TestEndToEndSmall(t *testing.T) {
 		t.Skip("not enabled")
 	}
 	ctx := vcontext.Background()
-	cacheDir, err := benchmark.CacheDir(ctx, "s3://grail-go-testing/bio-target-rna-fusion/small", *cacheDirFlag)
+
+	const s3Dir = "s3://grail-go-testing/bio-target-rna-fusion/small"
+	cacheDir, err := benchmark.CacheDir(ctx, s3Dir, *cacheDirFlag)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,18 +57,24 @@ func TestEndToEndSmall(t *testing.T) {
 		fastaOutputPath:    tmpDir + "/all.fa",
 		rioOutputPath:      tmpDir + "/all.rio",
 		filteredOutputPath: tmpDir + "/filtered.fa",
-		r1:                 cacheDir + "/smallr1.fastq",
-		r2:                 cacheDir + "/smallr2.fastq",
+		r1:                 cacheDir + "/smallr1.fastq.gz",
+		r2:                 cacheDir + "/smallr2.fastq.gz",
 		transcriptPath:     cacheDir + "/transcriptome.fa",
 		cosmicFusionPath:   cacheDir + "/small_pairs.txt",
 		geneListInputPath:  cacheDir + "/gene_names.txt"},
 		opts)
+
+	const (
+		goldenAll      = "/all-2018-12-21.fa"
+		goldenFiltered = "/filtered-2018-12-21.fa"
+	)
+
 	if *updateGoldenFlag {
-		copyFile(ctx, t, cacheDir+"/all-2018-12-21.fa", tmpDir+"/all.fa")
-		copyFile(ctx, t, cacheDir+"/filtered-2018-12-21.fa", tmpDir+"/filtered.fa")
+		copyFile(ctx, t, s3Dir+goldenAll, tmpDir+"/all.fa")
+		copyFile(ctx, t, s3Dir+goldenFiltered, tmpDir+"/filtered.fa")
 	} else {
-		testutil.CompareFiles(t, tmpDir+"/all.fa", cacheDir+"/all-2018-12-21.fa", nil)
-		testutil.CompareFiles(t, tmpDir+"/filtered.fa", cacheDir+"/filtered-2018-12-21.fa", nil)
+		testutil.CompareFiles(t, tmpDir+"/all.fa", cacheDir+goldenAll, nil)
+		testutil.CompareFiles(t, tmpDir+"/filtered.fa", cacheDir+goldenFiltered, nil)
 	}
 }
 
