@@ -20,8 +20,10 @@ import (
 	"github.com/grailbio/hts/bgzf"
 	"github.com/grailbio/hts/sam"
 	"v.io/x/lib/vlog"
-) // DefaultSortBatchSize is the default number of records to keep in memory
-// before resorting to external sorting.
+)
+
+// DefaultSortBatchSize is the default number of records to keep in
+// memory before resorting to external sorting.
 const DefaultSortBatchSize = 1 << 20
 
 // DefaultParallelism is the default value for SortOptions.Parallelism.
@@ -62,42 +64,29 @@ type recCoord uint64
 
 type sortBatch struct {
 	sortTieBreaker uint64
-	recs           []*sam.Record
+	recs           []sortEntry
 }
 
-// sortKey is an efficient encoding of sam.Record sort order.
-type sortKey struct {
+// sortEntry is an efficient encoding of sam.Record sort order.
+type sortEntry struct {
 	coord recCoord
-
-	// Seq breaks ties between reads with the same key.  In practice, it is
-	// (SortOptions.ShardIndex<<32 | position of the read in the file)
-	seq uint64
+	body  []byte // Contains the full record in bam serialized form.
 }
 
-func (k sortKey) String() string {
+func (k sortEntry) String() string {
 	refid, pos, reverse := parseCoord(k.coord)
-	return fmt.Sprintf("(%d,%d,%v,%d)", refid, pos, reverse, k.seq)
+	return fmt.Sprintf("(%d,%d,%v,%d)", refid, pos, reverse, len(k.body))
 }
 
 // Return -1, 0, 1 if k0 < k1, k0==k1, k0 > k1, respectively.
-func (k0 sortKey) compare(k1 sortKey) int {
-	if k0.coord < k1.coord {
+func (k sortEntry) compare(other sortEntry) int {
+	if k.coord < other.coord {
 		return -1
 	}
-	if k0.coord > k1.coord {
+	if k.coord > other.coord {
 		return 1
 	}
-	if k0.seq < k1.seq {
-		return -1
-	}
-	if k0.seq > k1.seq {
-		return 1
-	}
-	return 0
-}
-
-func makeSortKey(rec *sam.Record, seq uint64) sortKey {
-	return sortKey{coordFromRecord(rec), seq}
+	return bytes.Compare(k.body, other.body)
 }
 
 func coordFromRecord(rec *sam.Record) (key recCoord) {
@@ -185,7 +174,7 @@ type Sorter struct {
 	smallPool     *sync.Pool          // used to serialize a single sam.Record.
 	sortBlockPool *sortShardBlockPool // used to reuse buffers.
 	totalRecords  uint32
-	recs          []*sam.Record
+	recs          []sortEntry
 	err           errors.Once
 	bgSorterCh    chan sortBatch
 
@@ -244,8 +233,8 @@ func (s *Sorter) mergeShards(paths []string, header *sam.Header, outPath string)
 	}
 	writer := newSortShardWriter(out.Writer(ctx), !s.options.NoCompressTmpFiles, true, header,
 		s.sortBlockPool, &s.err)
-	callback := func(key sortKey, data []byte) bool {
-		writer.add(key, data)
+	callback := func(key sortEntry) bool {
+		writer.add(key)
 		return true
 	}
 	internalMergeShards(shardReaders, callback, s.sortBlockPool, &s.err)
@@ -258,7 +247,7 @@ func (s *Sorter) mergeShards(paths []string, header *sam.Header, outPath string)
 // readCallback returns false, this function exits immediately.
 func internalMergeShards(
 	shards []*sortShardReader,
-	readCallback func(key sortKey, body []byte) bool,
+	readCallback func(key sortEntry) bool,
 	pool *sortShardBlockPool,
 	errReporter *errors.Once) {
 	// Sort all the inputs using a binary tree. This should be faster than
@@ -302,7 +291,7 @@ func internalMergeShards(
 		})
 		// Read records from top, until it becomes larger than next.
 		for {
-			if !readCallback(top.reader.key(), top.reader.body()) {
+			if !readCallback(top.reader.key()) {
 				done = true
 				break
 			}
@@ -374,7 +363,13 @@ func NewSorter(outPath string, header *sam.Header, optList ...SortOptions) *Sort
 // "rec". The caller shall not read or write "rec" after the call.
 func (s *Sorter) AddRecord(rec *sam.Record) {
 	s.totalRecords++
-	s.recs = append(s.recs, rec)
+	var buf bytes.Buffer
+	err := bam.Marshal(rec, &buf)
+	if err != nil {
+		s.err.Set(err)
+		return
+	}
+	s.recs = append(s.recs, sortEntry{coordFromRecord(rec), buf.Bytes()})
 	if len(s.recs) >= s.options.SortBatchSize {
 		s.startGenerateSortShard()
 	}
@@ -388,36 +383,24 @@ func (s *Sorter) startGenerateSortShard() {
 	s.recs = nil
 }
 
-func (s *Sorter) sortRecords(records []*sam.Record, sortTieBreaker uint64) string {
+func (s *Sorter) sortRecords(records []sortEntry, sortTieBreaker uint64) string {
 	vlog.VI(1).Infof("Sorting %d records, tiebreaker %x", len(records), sortTieBreaker)
-	smallBuf := s.smallPool.Get().(bytes.Buffer)
 	temp, err := ioutil.TempFile(s.options.TmpDir, "bamsort")
 	if err != nil {
 		s.err.Set(err)
 		return ""
 	}
 	sort.SliceStable(records, func(i, j int) bool {
-		ki := makeSortKey(records[i], 0)
-		kj := makeSortKey(records[j], 0)
-		return ki.compare(kj) < 0
+		return records[i].compare(records[j]) < 0
 	})
 	writer := newSortShardWriter(temp, !s.options.NoCompressTmpFiles, false, nil, s.sortBlockPool, &s.err)
-	for _, rec := range records {
-		smallBuf.Reset()
-		if err := bam.Marshal(rec, &smallBuf); err != nil {
-			s.err.Set(err)
-			continue
-		}
-		marshalled := smallBuf.Bytes()
-		key := makeSortKey(rec, sortTieBreaker)
-		writer.add(key, marshalled)
+	for _, key := range records {
+		writer.add(key)
 		// Note: don't call sam.PutInFreePool since rec may be produced by the
 		// native biogo code.
 	}
-
 	writer.finish()
 	s.err.Set(temp.Close())
-	s.smallPool.Put(smallBuf)
 	return temp.Name()
 }
 
@@ -464,7 +447,7 @@ func mergeHeader(shards []*sortShardReader) (*sam.Header, error) {
 	for _, t := range refTranslations {
 		for i, ref := range t {
 			if ref.ID() != i {
-				return nil, fmt.Errorf("Cannot merge sortshards with different SAM headers")
+				return nil, fmt.Errorf("cannot merge sortshards with different SAM headers")
 			}
 		}
 	}
@@ -476,7 +459,7 @@ func mergeHeader(shards []*sortShardReader) (*sam.Header, error) {
 // BAMFromSortShards merges a set of sortshard files into a single BAM file.
 func BAMFromSortShards(paths []string, bamPath string) error {
 	if len(paths) == 0 {
-		return fmt.Errorf("No shards to merge")
+		return fmt.Errorf("no shards to merge")
 	}
 	errReporter := errors.Once{}
 	pool := newSortShardBlockPool()
@@ -517,8 +500,8 @@ func BAMFromSortShards(paths []string, bamPath string) error {
 	writeBytes(buf.Bytes())
 
 	// Write the BAM records.
-	readCallback := func(key sortKey, data []byte) bool {
-		writeBytes(data)
+	readCallback := func(key sortEntry) bool {
+		writeBytes(key.body)
 		return true
 	}
 	internalMergeShards(shardReaders, readCallback, pool, &errReporter)

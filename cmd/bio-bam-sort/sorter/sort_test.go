@@ -54,42 +54,42 @@ func TestCompareKeys(t *testing.T) {
 	}
 
 	type testCase struct {
-		r0   *sam.Record
-		seq0 uint64
-		r1   *sam.Record
-		seq1 uint64
-		e    int // expected result of sortKey.compare.
+		r0 *sam.Record
+		r1 *sam.Record
+		e  int // expected result of sortEntry.compare.
 	}
 
 	for _, tc := range []testCase{
 		{
-			testRecord("r01", 1, sam.Flags(0)), 123,
-			testRecord("r01", 1, sam.Flags(0)), 123,
+			testRecord("r01", 1, sam.Flags(0)),
+			testRecord("r01", 1, sam.Flags(0)),
 			0},
 		{
-			testRecord("r01", 1, sam.Flags(0)), 234,
-			testRecord("r01", 1, sam.Flags(0)), 123,
-			1},
-		{
-			testRecord("r01", 1, sam.Flags(0)), 123,
-			testRecord("r01", 2, sam.Flags(0)), 123,
+			testRecord("r01", 1, sam.Flags(0)),
+			testRecord("r01", 2, sam.Flags(0)),
 			-1},
 		{
-			testRecord("r01", 1, sam.Reverse), 123,
-			testRecord("r01", 2, sam.Flags(0)), 123,
+			testRecord("r01", 1, sam.Reverse),
+			testRecord("r01", 2, sam.Flags(0)),
 			-1},
 		{
-			testRecord("r01", 1, sam.Flags(0)), 123,
-			testRecord("r02", 1, sam.Reverse), 123,
+			testRecord("r01", 1, sam.Flags(0)),
+			testRecord("r02", 1, sam.Reverse),
 			-1},
 	} {
-		r0Key := makeSortKey(tc.r0, tc.seq0)
-		r1Key := makeSortKey(tc.r1, tc.seq1)
+		var buf0, buf1 bytes.Buffer
+		err := bam.Marshal(tc.r0, &buf0)
+		assert.NoError(t, err)
+		err = bam.Marshal(tc.r1, &buf1)
+		assert.NoError(t, err)
+
+		r0Key := sortEntry{coordFromRecord(tc.r0), buf0.Bytes()}
+		r1Key := sortEntry{coordFromRecord(tc.r1), buf1.Bytes()}
 		// Test trivial comparison ops.
 		assert.Equalf(t, 0, r0Key.compare(r0Key), "R0: %+v", r0Key)
 		assert.Equalf(t, 0, r1Key.compare(r1Key), "R0: %+v", r1Key)
 		assert.Equalf(t, r0Key.compare(r1Key), tc.e,
-			"R0: %+v, r1: %+v, compare %d, expected %d",
+			"R0: %+v, R1: %+v, compare %d, expected %d",
 			r0Key, r1Key, r0Key.compare(r1Key), tc.e)
 	}
 }

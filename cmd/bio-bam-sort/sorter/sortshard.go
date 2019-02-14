@@ -27,7 +27,7 @@ import (
 // list of serialized BAM records, in the following format: There is no padding
 // between records.
 //
-//   key sortKey   // for sorting records.
+//   key sortEntry   // for sorting records.
 //   bytes uint32  // Size of the record, in bytes.
 //   data [bytes]byte  // sam.Record serialized in BAM format
 //
@@ -45,14 +45,14 @@ type sortShardBlock []byte
 // sortShardBuf stores contents of a recordio block during writes.
 type sortShardBuf struct {
 	buf       sortShardBlock
-	remaining []byte  // part of buf[].
-	lastKey   sortKey // last key in the block, set iff nRecords>0.
-	startKey  sortKey // first key in the block, set iff nRecords>0.
-	nRecords  int     // # of records stored in buf.
+	remaining []byte    // part of buf[].
+	lastKey   sortEntry // last key in the block, set iff nRecords>0.
+	startKey  sortEntry // first key in the block, set iff nRecords>0.
+	nRecords  int       // # of records stored in buf.
 }
 
 const sortShardBlockSize = 1 << 20   // size of one sortShardBlock.buf
-const sortShardRecordHeaderSize = 20 // 16 byte sortKey + 4 byte record size.
+const sortShardRecordHeaderSize = 12 // 8 byte sortEntry + 4 byte record size.
 
 // Class for producing a SortShard file
 //
@@ -123,7 +123,6 @@ func newSortShardWriter(out io.Writer,
 			if w.writeBlockIndex {
 				bi := biopb.SortShardBlockIndex{
 					StartKey:   uint64(b.startKey.coord),
-					StartSeq:   b.startKey.seq,
 					FileOffset: loc.Block,
 					NumRecords: uint32(b.nRecords),
 				}
@@ -140,7 +139,7 @@ func newSortShardWriter(out io.Writer,
 }
 
 // Add a BAM-serialized record to the buffer.
-func (w *sortShardWriter) add(key sortKey, body []byte) {
+func (w *sortShardWriter) add(key sortEntry) {
 	if key.coord == invalidCoord {
 		vlog.Fatalf("Key: %v", key)
 	}
@@ -149,14 +148,14 @@ func (w *sortShardWriter) add(key sortKey, body []byte) {
 		panic("key")
 	}
 	w.curBlock.lastKey = key
-	if w.tryAdd(key, body) {
+	if w.tryAdd(key) {
 		return // Common case.
 	}
 	// For all but the last block in the shard, the buffer size is fixed at w.shardSize.
 	// w.remaining = nil
 	w.flush()
 	vlog.VI(1).Infof("Starting new buffer at key: %+v", key)
-	if !w.tryAdd(key, body) {
+	if !w.tryAdd(key) {
 		vlog.Fatalf("Key: %v", key)
 	}
 }
@@ -203,21 +202,19 @@ func (b *sortShardBuf) bytes() []byte {
 	return b.buf[:n]
 }
 
-func (w *sortShardWriter) tryAdd(key sortKey, body []byte) bool {
+func (w *sortShardWriter) tryAdd(key sortEntry) bool {
 	b := &w.curBlock
-	if len(b.remaining) < sortShardRecordHeaderSize+len(body) {
+	if len(b.remaining) < sortShardRecordHeaderSize+len(key.body) {
 		if len(b.remaining) >= sortShardRecordHeaderSize {
 			binary.LittleEndian.PutUint64(b.remaining[:8], uint64(invalidCoord))
-			binary.LittleEndian.PutUint64(b.remaining[8:16], uint64(invalidCoord))
-			binary.LittleEndian.PutUint32(b.remaining[16:20], 0xffffffff)
+			binary.LittleEndian.PutUint32(b.remaining[8:12], 0xffffffff)
 		}
 		return false
 	}
 	binary.LittleEndian.PutUint64(b.remaining[:8], uint64(key.coord))
-	binary.LittleEndian.PutUint64(b.remaining[8:16], key.seq)
-	binary.LittleEndian.PutUint32(b.remaining[16:20], uint32(len(body)))
-	copy(b.remaining[sortShardRecordHeaderSize:], body)
-	b.remaining = b.remaining[sortShardRecordHeaderSize+len(body):]
+	binary.LittleEndian.PutUint32(b.remaining[8:12], uint32(len(key.body)))
+	copy(b.remaining[sortShardRecordHeaderSize:], key.body)
+	b.remaining = b.remaining[sortShardRecordHeaderSize+len(key.body):]
 
 	if b.nRecords == 0 {
 		b.startKey = key
@@ -231,12 +228,11 @@ func (w *sortShardWriter) tryAdd(key sortKey, body []byte) bool {
 //
 // Example:
 //   for r := newSortShardBlockParser(buf); !r.done(); r.next() {
-//      vlog.Infof("Key %v, body %v", r.key(), r.body())
+//      vlog.Infof("Key %v", r.key())
 //   }
 type sortShardBlockParser struct {
-	curKey  sortKey // The currennt key. EOD iff curKey.key==invalidKey.
-	curBody []byte  // The current serialized record.
-	buf     []byte  // Records that remain to be read.
+	curKey sortEntry // The currennt key. EOD iff curKey.key==invalidKey.
+	buf    []byte    // Records that remain to be read.
 }
 
 func (r *sortShardBlockParser) reset(buf sortShardBlock) {
@@ -250,20 +246,20 @@ func (r *sortShardBlockParser) reset(buf sortShardBlock) {
 func (r *sortShardBlockParser) next() {
 	if len(r.buf) <= sortShardRecordHeaderSize {
 		// The header is chopped at the end.
-		r.curKey = sortKey{invalidCoord, 0}
+		r.curKey = sortEntry{invalidCoord, nil}
 		return
 	}
 	r.curKey.coord = recCoord(binary.LittleEndian.Uint64(r.buf[:8]))
-	r.curKey.seq = binary.LittleEndian.Uint64(r.buf[8:16])
 	if r.curKey.coord == invalidCoord {
 		return
 	}
-	recLen := binary.LittleEndian.Uint32(r.buf[16:20])
+	recLen := binary.LittleEndian.Uint32(r.buf[8:12])
 	if uint64(len(r.buf)) < sortShardRecordHeaderSize+uint64(recLen) {
 		r.curKey.coord = invalidCoord
 		return
 	}
-	r.curBody = r.buf[sortShardRecordHeaderSize : sortShardRecordHeaderSize+recLen]
+	r.curKey.body = make([]byte, recLen)
+	copy(r.curKey.body, r.buf[sortShardRecordHeaderSize:sortShardRecordHeaderSize+recLen])
 	r.buf = r.buf[sortShardRecordHeaderSize+recLen:]
 }
 
@@ -271,18 +267,11 @@ func (r *sortShardBlockParser) done() bool {
 	return r.curKey.coord == invalidCoord
 }
 
-func (r *sortShardBlockParser) key() sortKey {
+func (r *sortShardBlockParser) key() sortEntry {
 	if r.done() {
 		vlog.Fatal(r)
 	}
 	return r.curKey
-}
-
-func (r *sortShardBlockParser) body() []byte {
-	if r.done() {
-		vlog.Fatal(r)
-	}
-	return r.curBody
 }
 
 // Class for reading a SortShard file.
@@ -292,7 +281,7 @@ func (r *sortShardBlockParser) body() []byte {
 //   pool := newSortShardBlockPool()
 //   r := newSortShardReader(..., pool, &err)
 //   for r.scan() {
-//     use r.key(), r.body()
+//     use r.key()
 //   }
 //   if err.err() != nil { panic(err) }
 type sortShardReader struct {
@@ -302,7 +291,7 @@ type sortShardReader struct {
 	index   biopb.SortShardIndex
 	pool    *sortShardBlockPool
 	err     *errors.Once
-	lastKey sortKey // last key read.
+	lastKey sortEntry // last key read.
 
 	parser sortShardBlockParser
 	buf    []byte
@@ -317,7 +306,7 @@ func readSortShardIndex(rio recordio.Scanner) (biopb.SortShardIndex, error) {
 	index := biopb.SortShardIndex{}
 	header := rio.Header()
 	if !header.HasTrailer() {
-		return index, fmt.Errorf("No index found in sortshard file (header: %+v, version %+v)", header, rio.Version())
+		return index, fmt.Errorf("no index found in sortshard file (header: %+v, version %+v)", header, rio.Version())
 	}
 	if err := index.Unmarshal(rio.Trailer()); err != nil {
 		return index, err
@@ -353,7 +342,7 @@ func newSortShardReader(path string,
 		pool: pool,
 		err:  errReporter,
 		// The parser is initially at done() state.
-		parser: sortShardBlockParser{curKey: sortKey{invalidCoord, 0}},
+		parser: sortShardBlockParser{curKey: sortEntry{invalidCoord, nil}},
 		ch:     make(chan sortShardBlock),
 	}
 
@@ -434,15 +423,8 @@ func (r *sortShardReader) drain() {
 // Return the key of the current record.
 //
 // REQUIRES: scan() returned true.
-func (r *sortShardReader) key() sortKey {
+func (r *sortShardReader) key() sortEntry {
 	return r.parser.key()
-}
-
-// Return the current BAM-serialized record body.
-//
-// REQUIRES: scan() returned true.
-func (r *sortShardReader) body() []byte {
-	return r.parser.body()
 }
 
 // Read a sequence of raw sortShardBlocks and send them to "r.ch".

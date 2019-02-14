@@ -19,7 +19,7 @@ import (
 // in all the shard files being merged. recordsPerShard is the goal # of reads
 // to store in each rowshard.
 //
-// The resulting "bounds" are a sequence of sortKeys. The element are in an
+// The resulting "bounds" are a sequence of sortEntrys. The element are in an
 // increasing key order. The caller should create len(bounds)+1 PAM rowshards,
 // with the boundary between K'th and K+1'th shard at bounds[k].
 func computePAMShardBounds(
@@ -30,13 +30,13 @@ func computePAMShardBounds(
 		return makeCoord(ref, pos, false)
 	}
 
-	allKeys := []sortKey{}
+	allKeys := []sortEntry{}
 	totalRecords := int64(0)
 	totalBlocks := int64(0)
 	// Sort the starting keys for all the blocks in increasing order.
 	for _, shard := range shards {
 		for _, block := range shard {
-			allKeys = append(allKeys, sortKey{recCoord(block.StartKey), block.StartSeq})
+			allKeys = append(allKeys, sortEntry{recCoord(block.StartKey), nil})
 			totalRecords += int64(block.NumRecords)
 		}
 		totalBlocks += int64(len(shard))
@@ -69,25 +69,22 @@ func computePAMShardBounds(
 }
 
 // Find the location of the first recordio block to read, assuming one wants
-// read records >= sortKey{coord,0}
+// read records >= sortEntry{coord}
 func startFileOffset(blocks []biopb.SortShardBlockIndex, coord recCoord) int64 {
-	key := sortKey{coord: coord, seq: 0}
+	key := sortEntry{coord: coord, body: nil}
 	n := sort.Search(len(blocks), func(i int) bool {
-		b := sortKey{recCoord(blocks[i].StartKey), blocks[i].StartSeq}
+		b := sortEntry{recCoord(blocks[i].StartKey), nil}
 		return b.compare(key) >= 0
 	})
 	// blocks[n] is the first block >= "coord"
 	if n >= len(blocks) {
 		return int64(blocks[len(blocks)-1].FileOffset)
 	}
-	// If block[n] starts exactly at "key", then block[n] is the starting point.
-	b := sortKey{recCoord(blocks[n].StartKey), blocks[n].StartSeq}
-	if comp := b.compare(key); comp == 0 {
-		return int64(blocks[n].FileOffset)
-	} else if comp < 0 {
-		vlog.Fatalf("blocks: %v coord %v", blocks[n], coord)
-	}
-	// Else, we need to seek one block back.
+
+	// There can be sortShard entries with identical keys that
+	// straddle the block boundary. Always back up one block to ensure
+	// we start reading from before the first entry with the target
+	// coord.
 	if n >= 1 {
 		return int64(blocks[n-1].FileOffset)
 	}
@@ -95,11 +92,11 @@ func startFileOffset(blocks []biopb.SortShardBlockIndex, coord recCoord) int64 {
 }
 
 // Find location of the first recordio block that doesn't need to be read,
-// assuming one wants read records < sortKey{coord,0}.
+// assuming one wants read records < sortEntry{coord,0}.
 func limitFileOffset(blocks []biopb.SortShardBlockIndex, coord recCoord) int64 {
-	key := sortKey{coord: coord, seq: 0}
+	key := sortEntry{coord: coord, body: nil}
 	n := sort.Search(len(blocks), func(i int) bool {
-		b := sortKey{recCoord(blocks[i].StartKey), blocks[i].StartSeq}
+		b := sortEntry{recCoord(blocks[i].StartKey), nil}
 		return b.compare(key) >= 0
 	})
 	// blocks[n:] are the blocks that we can exclude.
@@ -109,8 +106,8 @@ func limitFileOffset(blocks []biopb.SortShardBlockIndex, coord recCoord) int64 {
 	return int64(blocks[n].FileOffset)
 }
 
-// TODO(saito) Consider unifying sortKey and RecAddr, or at least representing
-// sortKey in using RecAddr.
+// TODO(saito) Consider unifying sortEntry and RecAddr, or at least representing
+// sortEntry in using RecAddr.
 func recCoordToRecAddr(coord recCoord) (r biopb.Coord) {
 	switch coord {
 	case 0:
@@ -149,14 +146,14 @@ func generatePAMShard(readers []*sortShardReader,
 	}
 	vlog.VI(1).Infof("%v: Generating PAM shard %+v", path, opts)
 	pamWriter := pam.NewWriter(opts, header, path)
-	readCallback := func(key sortKey, data []byte) bool {
+	readCallback := func(key sortEntry) bool {
 		if key.coord >= limit {
 			// The rest of the records are not needed.
 			return false
 		}
 		if key.coord >= start {
 			// The first 4 bytes of data is the length field. Remove it.
-			rec, err := grailbam.Unmarshal(data[4:], header)
+			rec, err := grailbam.Unmarshal(key.body[4:], header)
 			if err != nil {
 				errReporter.Set(err)
 				return false
@@ -181,7 +178,7 @@ type generatePAMShardRequest struct {
 // recordsPerShard is the goal # of reads to store in each rowshard.
 func PAMFromSortShards(paths []string, pamPath string, recordsPerShard int64, parallelism int) error {
 	if len(paths) == 0 {
-		return fmt.Errorf("No shards to merge")
+		return fmt.Errorf("no shards to merge")
 	}
 	vlog.VI(1).Infof("%v: Generate PAM, #recordspershard=%d", pamPath, recordsPerShard)
 	// Delete existing files to avoid mixing up files from multiple generations.
