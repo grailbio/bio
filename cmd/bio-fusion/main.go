@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grailbio/base/compress"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/grail"
@@ -24,7 +25,6 @@ import (
 	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/encoding/fastq"
 	"github.com/grailbio/bio/fusion"
-	"github.com/yasushi-saito/zlibng"
 )
 
 type memStats struct {
@@ -195,18 +195,15 @@ func readFASTQ(ctx context.Context, reqCh chan req, fileseq uint, r1Path, r2Path
 		nRead    uint
 	)
 
-	openGzippedFASTQ := func(path string) (file.File, io.ReadCloser) {
+	openFASTQ := func(path string) (file.File, io.ReadCloser) {
 		in, err := file.Open(ctx, path)
 		if err != nil {
 			log.Panicf("open %v: %v", path, err)
 		}
-		gz, err := zlibng.NewReader(in.Reader(ctx))
-		if err != nil {
-			log.Panicf("open gzip %v: %v", path, err)
-		}
+		gz, _ := compress.NewReader(in.Reader(ctx))
 		return in, gz
 	}
-	closeGzippedFASTQ := func(in file.File, r io.ReadCloser, path string) {
+	closeFASTQ := func(in file.File, r io.ReadCloser, path string) {
 		if err := r.Close(); err != nil {
 			log.Panicf("close gzip %s: %v", path, err)
 		}
@@ -215,8 +212,8 @@ func readFASTQ(ctx context.Context, reqCh chan req, fileseq uint, r1Path, r2Path
 		}
 	}
 
-	in1, inr1 := openGzippedFASTQ(r1Path)
-	in2, inr2 := openGzippedFASTQ(r2Path)
+	in1, inr1 := openFASTQ(r1Path)
+	in2, inr2 := openFASTQ(r2Path)
 	sc = fastq.NewPairScanner(inr1, inr2, fastq.ID|fastq.Seq)
 	for {
 		if !sc.Scan(&r1R, &r2R) {
@@ -237,8 +234,8 @@ func readFASTQ(ctx context.Context, reqCh chan req, fileseq uint, r1Path, r2Path
 	if err := sc.Err(); err != nil {
 		log.Panicf("close pair: %v", err)
 	}
-	closeGzippedFASTQ(in1, inr1, r1Path)
-	closeGzippedFASTQ(in2, inr2, r2Path)
+	closeFASTQ(in1, inr1, r1Path)
+	closeFASTQ(in2, inr2, r2Path)
 }
 
 func processFASTQ(ctx context.Context, fileseq uint,
