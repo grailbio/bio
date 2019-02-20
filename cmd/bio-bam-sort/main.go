@@ -92,19 +92,24 @@ This command can either sort a list of BAM/SAM records into a sortshard file, or
 merge multiple sortshard files into a BAM/PAM file. It is invoked one of the
 following three ways.
 
-1. bio-bam-sort [-sam] <input> <sortshard>
+The "sortshard" format is not one of SAM/BAM/PAM format, it is a compressed
+format used to efficiently work with SAM/BAM/PAM records for the purpose of
+sorting and merging.
+
+1. bio-bam-sort [-sam] <input> <output.sortshard>
 
    The command reads a sequence of bam or sam records from input, sorts them,
-   and produces file <sortshard>. If <input> is '-', records are read from
-   stdin.  With -sam flag, the records are assumed to be in SAM format. Else, it
-   is assumed to be in BAM format.
+   and produces file <output.sortshard> (note: this is NOT a BAM formatted file,
+   it is a shard file). If <input> is '-', records are read from stdin.  With
+   -sam flag, the records are assumed to be in SAM format. Else, it is assumed
+   to be in BAM format.
 
-2. bio-bam-sort -bam <foo.bam> <sortshard...>
+2. bio-bam-sort -bam <foo.bam> <input.sortshard...>
 
    The command reads a list of sortshard files and merges them into foo.bam.
    Existing contents of foo.bam, if any, are destroyed.
 
-3. bio-bam-sort -pam <foo.pam> <sortshard...>
+3. bio-bam-sort -pam <foo.pam> <input.sortshard...>
 
    The command reads a list of sortshard files and merges them into foo.pam.
    Existing contents of foo.pam, if any, are destroyed.
