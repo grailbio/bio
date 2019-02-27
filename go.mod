@@ -14,7 +14,7 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/stretchr/testify v1.2.2
 	github.com/yasushi-saito/zlibng v0.0.0-20190128191412-2ee128fff508
-	golang.org/x/sys v0.0.0-20190124100055-b90733256f2e
+	golang.org/x/sys v0.0.0-20190226215855-775f8194d0f9
 	v.io/x/lib v0.1.1
 )
 
