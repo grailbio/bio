@@ -12,10 +12,10 @@ require (
 	github.com/klauspost/compress v1.4.1
 	github.com/minio/highwayhash v0.0.0-20190112144901-fc990dfafa15
 	github.com/pkg/errors v0.8.1
-	github.com/stretchr/testify v1.2.2
+	github.com/stretchr/testify v1.3.0
 	github.com/yasushi-saito/zlibng v0.0.0-20190128191412-2ee128fff508
-	golang.org/x/sys v0.0.0-20190226215855-775f8194d0f9
-	v.io/x/lib v0.1.1
+	golang.org/x/sys v0.0.0-20190302025703-b6889370fb10
+	v.io/x/lib v0.1.2
 )
 
 
