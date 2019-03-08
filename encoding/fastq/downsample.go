@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
@@ -113,8 +114,13 @@ func doDownsample(ctx context.Context, rate float64, fh1, fh2 *fileHandle, r1Out
 // pairs will be randomly selected for inclusion in the output at the given
 // sampling rate.
 func Downsample(ctx context.Context, rate float64, r1Path, r2Path string, r1Out, r2Out io.Writer) error {
-	if rate < 0.0 || rate > 1.0 {
-		return errors.New("rate must be between 0 and 1 (inclusive)")
+	if rate < 0.0 {
+		return errors.New("rate must be >= 0.0")
+	}
+	if rate > 1.0 {
+		fmt.Fprintln(os.Stderr, "warning: Downsample called with input rate > 1.0, interpreting it as rate = 1.0")
+		rate = 1.0
+		// TODO(kshashidhar): Just copy input to output in this case (better fix the asymmetry in current API first)
 	}
 	e := errors.Once{}
 	fh1 := newFileHandle(ctx, r1Path, &e)

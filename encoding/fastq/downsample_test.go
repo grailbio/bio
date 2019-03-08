@@ -43,6 +43,14 @@ func TestDownsample(t *testing.T) {
 			nil,
 		},
 		{
+			1.2,
+			[]string{"a", "b", "c", "d", "e", "f", "g", "h"},
+			[]string{"i", "j", "k", "l", "m", "n", "o", "p"},
+			[]string{"a", "b", "c", "d", "e", "f", "g", "h"},
+			[]string{"i", "j", "k", "l", "m", "n", "o", "p"},
+			nil,
+		},
+		{
 			0.0,
 			[]string{"a", "b", "c", "d", "e", "f", "g", "h"},
 			[]string{"i", "j", "k", "l", "m", "n", "o", "p"},
@@ -130,6 +138,14 @@ func TestDownsampleToCount(t *testing.T) {
 	}{
 		{
 			2,
+			[]string{"a", "b", "c", "d", "e", "f", "g", "h"},
+			[]string{"i", "j", "k", "l", "m", "n", "o", "p"},
+			[]string{"a", "b", "c", "d", "e", "f", "g", "h"},
+			[]string{"i", "j", "k", "l", "m", "n", "o", "p"},
+			nil,
+		},
+		{
+			4,
 			[]string{"a", "b", "c", "d", "e", "f", "g", "h"},
 			[]string{"i", "j", "k", "l", "m", "n", "o", "p"},
 			[]string{"a", "b", "c", "d", "e", "f", "g", "h"},
