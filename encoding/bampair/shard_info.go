@@ -4,9 +4,8 @@ import (
 	"fmt"
 
 	"github.com/biogo/store/llrb"
-	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/hts/sam"
-	"grail.com/bio/encoding/bam"
 )
 
 type key struct {
@@ -58,7 +57,7 @@ func (i *ShardInfo) getInfoByRecord(r *sam.Record) *ShardInfoEntry {
 	k := key{r.Ref.ID(), r.Pos, nil}
 	c := i.byKey.Floor(k)
 	info := c.(key).info
-	if !info.Shard.CoordInShard(0, gbam.CoordFromSAMRecord(r, 0)) {
+	if !info.Shard.CoordInShard(0, bam.CoordFromSAMRecord(r, 0)) {
 		panic(fmt.Sprintf("Could not find shard for %v; found %+v instead", r, info.Shard))
 	}
 	return info
@@ -83,7 +82,7 @@ func (i *ShardInfo) getMateShard(r *sam.Record) bam.Shard {
 	k := key{r.MateRef.ID(), r.MatePos, nil}
 	c := i.byKey.Floor(k)
 	info := c.(key).info
-	if !info.Shard.CoordInShard(0, gbam.NewCoord(r.MateRef, r.MatePos, 0)) {
+	if !info.Shard.CoordInShard(0, bam.NewCoord(r.MateRef, r.MatePos, 0)) {
 		panic(fmt.Sprintf("Could not find shard for mate of %v; found %+v instead", r, info.Shard))
 	}
 	return info.Shard

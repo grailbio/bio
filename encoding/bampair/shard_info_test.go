@@ -3,13 +3,13 @@ package bampair
 import (
 	"testing"
 
+	"github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/hts/sam"
 	"github.com/stretchr/testify/assert"
-	grailbam "grail.com/bio/encoding/bam"
 )
 
-func newShard(ref *sam.Reference, start, end, padding, index int) *grailbam.Shard {
-	return &grailbam.Shard{ref, ref, start, end, 0, 0, padding, index}
+func newShard(ref *sam.Reference, start, end, padding, index int) *bam.Shard {
+	return &bam.Shard{ref, ref, start, end, 0, 0, padding, index}
 }
 
 func TestShardInfo(t *testing.T) {
@@ -33,7 +33,7 @@ func TestShardInfo(t *testing.T) {
 	checkInfoByRecord(newRecord("foo", chr1, 101, 0, 0, nil, nil), chr1, 100)
 	checkInfoByRecord(newRecord("foo", chr2, 0, 0, 0, nil, nil), chr2, 0)
 
-	checkInfoByShard := func(s *grailbam.Shard, expectedRef *sam.Reference, expectedShardStart int) {
+	checkInfoByShard := func(s *bam.Shard, expectedRef *sam.Reference, expectedShardStart int) {
 		info := shardInfo.GetInfoByShard(s)
 		assert.Equal(t, expectedRef.ID(), info.Shard.StartRef.ID())
 		assert.Equal(t, expectedShardStart, info.Shard.Start)

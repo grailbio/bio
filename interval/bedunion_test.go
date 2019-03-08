@@ -7,7 +7,6 @@ import (
 
 	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil/expect"
-	_ "grail.com/cloud/grailfile"
 )
 
 func TestLoadSortedBEDIntervals(t *testing.T) {

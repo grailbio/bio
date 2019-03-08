@@ -9,10 +9,9 @@ import (
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/sync/multierror"
 	"github.com/grailbio/bio/biopb"
-	gbam "github.com/grailbio/bio/encoding/bam"
+	"github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/hts/sam"
-	"grail.com/bio/encoding/bam"
 )
 
 const (
@@ -51,7 +50,7 @@ type shardInfoUpdate struct {
 func GetDistantMates(provider bamprovider.Provider, shardList []bam.Shard, opts *Opts,
 	createProcessor func() RecordProcessor) (distantMates *DistantMateTable, shardInfo *ShardInfo, returnErr error) {
 	log.Debug.Printf("scanning %d shards", len(shardList))
-	shardChannel := gbam.NewShardChannel(shardList)
+	shardChannel := bam.NewShardChannel(shardList)
 
 	// Scan all shards, looking for distant mates.
 	header, returnErr := provider.GetHeader()
@@ -141,7 +140,7 @@ func isDistantMate(shardInfo *ShardInfo, r *sam.Record) []int {
 
 	shards := []int{}
 	mateShard := shardInfo.getMateShard(r)
-	mateCoord := gbam.NewCoord(r.MateRef, r.MatePos, 0)
+	mateCoord := bam.NewCoord(r.MateRef, r.MatePos, 0)
 	potentials := []bam.Shard{}
 	for shardIdx := mateShard.ShardIdx; shardIdx >= 0; shardIdx-- {
 		info := shardInfo.GetInfoByIdx(shardIdx)
@@ -187,7 +186,7 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 		t0 := time.Now()
 		for iter.Scan() {
 			record := iter.Record()
-			coord := gbam.CoordFromSAMRecord(record, 0)
+			coord := bam.CoordFromSAMRecord(record, 0)
 			if lastCoord.GT(coord) {
 				return fmt.Errorf("record were out of order last position %v, read %v", lastCoord, record)
 			}
@@ -255,12 +254,11 @@ func collectDistantMates(collectionChannel chan interface{}, shardInfo *ShardInf
 	// Wait for all distant mates to arrive on collectionChannel, and put them
 	// into the distantMates map.
 	for item := range collectionChannel {
-		switch item.(type) {
+		switch item := item.(type) {
 		case shardInfoUpdate:
-			update := item.(shardInfoUpdate)
-			shardInfo.updateInfoByShard(&update.shard, update.numStartPadding, update.numReads)
+			shardInfo.updateInfoByShard(&item.shard, item.numStartPadding, item.numReads)
 		default:
-			return fmt.Errorf("Unexpected item type: %v", reflect.TypeOf(item))
+			return fmt.Errorf("unexpected item type: %v", reflect.TypeOf(item))
 		}
 	}
 	shardInfo.computeFileIndexes()

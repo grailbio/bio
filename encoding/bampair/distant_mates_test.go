@@ -11,7 +11,6 @@ import (
 	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/stretchr/testify/assert"
-	grailbam "grail.com/bio/encoding/bam"
 )
 
 var (
@@ -275,7 +274,7 @@ func ExampleResolvePairs() {
 			// records with unmapped mates.
 			if (r.Flags&sam.Secondary) != 0 || (r.Flags&sam.Supplementary) != 0 {
 				continue
-			} else if (r.Flags&sam.Unmapped) != 0 || grailbam.HasNoMappedMate(r) {
+			} else if (r.Flags&sam.Unmapped) != 0 || gbam.HasNoMappedMate(r) {
 				continue
 			}
 
