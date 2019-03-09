@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // This file defines fusionWriter and fusionReader. Type fusionWriter dumps
 // GeneDB and Fragment into a recordio file, and fusionReader reads them back.

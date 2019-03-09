@@ -14,7 +14,7 @@ parse_gencode /path/to/gencode_gtf /path/to/genome_fasta -exon_padding 20
 
 See `func Usage` for more details.
 */
-package main
+package cmd
 
 import (
 	"context"

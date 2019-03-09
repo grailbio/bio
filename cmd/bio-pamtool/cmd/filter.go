@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // Functions for parsing and evaluating the --filter expressions.
 // Syntax is very similar to sambamba's:
@@ -308,12 +308,12 @@ func (p *exprParser) parse(node interface{}) *filterExpr {
 	case *ast.CallExpr:
 		fun, ok := e.Fun.(*ast.Ident)
 		if !ok {
-			p.setError(fmt.Errorf("Expect ident, got %v", astDebugString(e.Fun)))
+			p.setError(fmt.Errorf("expect ident, got %v", astDebugString(e.Fun)))
 			return nil
 		}
 		if fun.Name == "re" {
 			if len(e.Args) != 2 {
-				p.setError(fmt.Errorf("Expect two args for re(), but found %v",
+				p.setError(fmt.Errorf("expect two args for re(), but found %v",
 					astDebugString(node)))
 				return nil
 			}
@@ -381,7 +381,7 @@ func (p *exprParser) parse(node interface{}) *filterExpr {
 				ntype = nodeGTR
 			}
 		default:
-			p.setError(fmt.Errorf("Unknown binary op: %v", astDebugString(node)))
+			p.setError(fmt.Errorf("unknown binary op: %v", astDebugString(node)))
 			return &filterExpr{}
 		}
 		return &filterExpr{
@@ -462,7 +462,7 @@ func (p *exprParser) parse(node interface{}) *filterExpr {
 			return &filterExpr{ntype: nodeChimeric, vtype: valueTypeBool}
 		}
 	}
-	p.setError(fmt.Errorf("Unknown expr type %v", astDebugString(node)))
+	p.setError(fmt.Errorf("unknown expr type %v", astDebugString(node)))
 	return nil
 }
 
@@ -470,8 +470,10 @@ func (p *exprParser) parse(node interface{}) *filterExpr {
 func astDebugString(node interface{}) string {
 	out := bytes.Buffer{}
 	fset := token.NewFileSet()
-	ast.Fprint(&out, fset, node, nil)
-	return string(out.Bytes())
+	if err := ast.Fprint(&out, fset, node, nil); err != nil {
+		panic(err)
+	}
+	return out.String()
 }
 
 // Parse a filter expression.
@@ -486,7 +488,7 @@ func parseFilterExpr(str string) (*filterExpr, error) {
 		return nil, p.err
 	}
 	if node.vtype != valueTypeBool {
-		return nil, fmt.Errorf("Not a boolean expression: %v", astDebugString(expr))
+		return nil, fmt.Errorf("not a boolean expression: %v", astDebugString(expr))
 	}
 	return node, nil
 }

@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -98,7 +98,9 @@ func viewShards(provider bamprovider.Provider, filter *filterExpr, shards []gbam
 			defer wgW.Done()
 			for shard := range shardCh {
 				recCh := make(chan *sam.Record, 16<<10)
-				oq.Insert(shard.ShardIdx, recCh)
+				if err := oq.Insert(shard.ShardIdx, recCh); err != nil {
+					panic(err)
+				}
 				iter := provider.NewIterator(shard)
 				for iter.Scan() {
 					if filter == nil || evaluateFilterExpr(filter, iter.Record()) {
@@ -137,7 +139,9 @@ func viewShards(provider bamprovider.Provider, filter *filterExpr, shards []gbam
 		}
 	}()
 	wgW.Wait()
-	oq.Close(nil)
+	if err := oq.Close(nil); err != nil {
+		panic(err)
+	}
 	wgR.Wait()
 	return e.Err()
 }
@@ -168,7 +172,7 @@ func viewSubregion(provider bamprovider.Provider, region viewRegion, filter *fil
 				return r, nil
 			}
 		}
-		return nil, fmt.Errorf("Reference %v not found in header", name)
+		return nil, fmt.Errorf("reference %v not found in header", name)
 	}
 	shard := gbam.Shard{
 		Start:    region.startPos,
