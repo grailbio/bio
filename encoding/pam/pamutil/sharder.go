@@ -213,7 +213,8 @@ func GenerateReadShards(
 	}
 	if len(indexes) == 0 {
 		log.Printf("GenerateReadShards %s: no intersecting index found for %+v", path, opts.Range)
-		return nil, nil
+		// No data is found in the given range.
+		return []biopb.CoordRange{opts.Range}, nil
 	}
 
 	totalBlocks := 0
