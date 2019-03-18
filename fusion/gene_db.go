@@ -216,7 +216,7 @@ func (m *GeneDB) ReadFusionEvents(ctx context.Context, path string) {
 	}
 	r := tsv.NewReader(in.Reader(ctx))
 	r.HasHeaderRow = true
-	r.ValidateHeader = true
+	r.UseHeaderNames = true
 
 	row := struct{ Genes string }{} // Rest of the fields are ignored
 	nLine := 0
