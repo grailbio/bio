@@ -110,7 +110,7 @@ func ParsePath(path string) (FileInfo, error) {
 func ListIndexes(ctx context.Context, dir string) ([]FileInfo, error) {
 	var infos []FileInfo
 
-	lister := file.List(ctx, dir, true)
+	lister := file.List(ctx, dir, false)
 	for lister.Scan() {
 		fi, err := ParsePath(lister.Path())
 		if err != nil {
