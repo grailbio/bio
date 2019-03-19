@@ -10,17 +10,22 @@ from typing import List, NamedTuple, Optional, Set, Counter
 import util
 
 class GenePair:
-    def __init__(self, pair: str) -> None:
-        """Arg pair is a two gene names separated by '/'. For example "EXOSC7/KIAA1328"."""
-        g1, g2 = pair.split('/')
-        if g1 > g2:
-            g1, g2 = g2, g1
-        self.g1 = g1
-        self.g2 = g2
-    def __hash__(self):
-        return hash(self.g1) + hash(self.g2)
-    def __eq__(self, other) -> bool:
-        return self.g1 == other.g1 and self.g2 == other.g2
+  def __init__(self, pair: str) -> None:
+    """Arg pair is a two gene names separated by '/' or '--'. For example "EXOSC7/KIAA1328" or EXOSC7--KIAA1328."""
+    g1: str
+    g2: str
+    if "/" in pair:
+      g1, g2 = pair.split('/')
+    else:
+      g1, g2 = pair.split('--')
+    if g1 > g2:
+      g1, g2 = g2, g1
+    self.g1 = g1
+    self.g2 = g2
+  def __hash__(self):
+    return hash(self.g1) + hash(self.g2)
+  def __eq__(self, other) -> bool:
+    return self.__dict__ == other.__dict__
 
 Score = NamedTuple('Score', [('tp', int), ('fp', int), ('fn', int)])
 
@@ -155,4 +160,5 @@ def main() -> None:
             fn = "%d" % (s.fn,)
             print(f'{mode} & {sample.n} & {sample.coverage} & {tp} & {fp} & {fn}\\\\')
 
-main()
+if __name__ == "__main__":
+    main()

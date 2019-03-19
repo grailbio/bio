@@ -52,11 +52,11 @@ def run_starfusion(sample_name: str, cached_file_pairs: List[util.FASTQPair], ar
     starfusion_args += [
         '--rm',
         'trinityctat/ctatfusion',
-        os.path.join(args.starfusion_data_dir, local_starfusion_dir, '/STAR-Fusion'),
+        os.path.join(args.starfusion_data_dir, local_starfusion_dir, 'STAR-Fusion'),
         '--left_fq', cached_r1,
         '--right_fq', cached_r2,
         '--CPU', '56',
-        '--genome_lib_dir', os.path.join(args.starfusion_data_dir, local_plugnplay_dir, '/ctat_genome_lib_build_dir'),
+        '--genome_lib_dir', os.path.join(args.starfusion_data_dir, local_plugnplay_dir, 'ctat_genome_lib_build_dir'),
         '-O', result_dir,
         '--FusionInspector', 'validate']
     try:
@@ -65,9 +65,8 @@ def run_starfusion(sample_name: str, cached_file_pairs: List[util.FASTQPair], ar
         logging.error("Starfusion failed (ignoring): %s", e)
     logging.info('Finished starfusion benchmark: %s', result_dir)
 
-def run_af4(sample_name: str, cached_file_pairs: List[util.FASTQPair], args: Any):
+def run_af4(sample_name: str, cached_file_pairs: List[util.FASTQPair], cosmic_fusion_path: str, args: Any):
     ref_path = "s3://grail-publications/resources/gencode.v26.whole_genes.fa"
-    cosmic_fusion_path = "s3://grail-publications/resources/all_pair_art_lod_gpair_merged.txt"
     util.s3_cache_files([ref_path, cosmic_fusion_path], args.cache_dir)
 
     cached_r1 = ",".join([args.cache_dir + '/' + os.path.basename(fp.r1) for fp in cached_file_pairs])
@@ -87,7 +86,6 @@ def run_af4(sample_name: str, cached_file_pairs: List[util.FASTQPair], args: Any
                     f'-pprof=:12345',
                     f'-mutex-profile-rate=1000',
                     f'-block-profile-rate=1000',
-                    f'-umi-in-read',
                     f'-r1={cached_r1}',
                     f'-r2={cached_r2}',
                     f'-max-genes-per-kmer=2',
@@ -119,11 +117,36 @@ def main() -> None:
                    help='Tar.gz file of starfusion plug-n-play file. https://github.com/STAR-Fusion/STAR-Fusion/wiki#data-resources-required')
     p.add_argument('--starfusion_targz', default=os.environ['HOME'] + '/STAR-Fusion-v1.5.0.FULL.tar.gz',
                    help='Tar.gz file of starfusion source package. https://github.com/STAR-Fusion/STAR-Fusion/wiki#data-resources-required')
-
+    p.add_argument('--brca_data_dir', default='/scratch-nvme/xyang/brca_rnaseq_data', 
+                   help='BT474, KPL4, MCF7, SKBR3 Breast cancer data directory')
+                   
     args = p.parse_args()
     if not args.run:
         args.run = ['af4', 'starfusion']
 
+    ## brca rna-seq for af4
+    brca_samples = [os.path.join(args.brca_data_dir, s) for s in ['BT474', 'KPL4', 'MCF7', 'SKBR3']]
+    for s in brca_samples:
+        if not os.path.exists(os.path.join(args.brca_data_dir, s)): 
+           util.check_call(['download_brca_data.py', '--odir', '/scratch-nvme/xyang/brca_rnaseq_data'])  
+   
+    cosmic_fusion_path = "s3://grail-publications/2019-ISMB/references/all_art_lod_brca.txt"
+    for sample in brca_samples:
+        r1s: List[str] = []
+        for fq in os.listdir(sample): 
+            if "_1" in fq: 
+                r1s.append(os.path.join(sample, fq))
+        cached_file_pairs: List[util.FASTQPair] = []
+        for r1 in r1s:
+            assert os.path.exists(r1.replace("_1", "_2"))
+            cached_file_pairs.append(util.FASTQPair(r1=r1, r2=r1.replace("_1", "_2")))
+        print(os.path.basename(sample))
+        print(cached_file_pairs)
+         
+        run_af4(os.path.basename(sample), cached_file_pairs, cosmic_fusion_path, args) 
+
+    ## cfrna for af4 and starfusion
+    cosmic_fusion_path = "s3://grail-publications/2019-ISMB/references/all_pair_art_lod_gpair_merged.txt"
     for sample in util.RNA_SAMPLES:
         fastq_files: List[str] = []
         cached_file_pairs: List[util.FASTQPair] = []
@@ -135,8 +158,9 @@ def main() -> None:
         util.s3_cache_files(fastq_files, args.cache_dir)
 
         if 'af4' in args.run:
-            run_af4(sample.name, cached_file_pairs, args)
+            run_af4(sample.name, cached_file_pairs, cosmic_fusion_path, args)
         if 'starfusion' in args.run:
             run_starfusion(sample.name, cached_file_pairs, args)
 
-main()
+if __name__ == "__main__":
+    main()
