@@ -173,8 +173,7 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 		if shard.StartRef == nil {
 			continue
 		}
-		log.Debug.Printf("worker %d scanning shard (%s,%d,%d)",
-			worker, shard.StartRef.Name(), shard.Start, shard.End)
+		log.Debug.Printf("worker %d scanning shard %v", worker, shard)
 
 		iter := provider.NewIterator(shard)
 		totalInStartPadding := uint64(0)
@@ -196,7 +195,7 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 				processor.Process(record)
 			}
 
-			if record.Pos < shard.Start {
+			if shard.RecordInStartPadding(record) {
 				totalInStartPadding++
 			}
 			if shard.RecordInShard(record) {

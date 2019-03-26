@@ -127,6 +127,14 @@ func (s *Shard) RecordInPaddedShard(r *sam.Record) bool {
 	return s.CoordInShard(s.Padding, CoordFromSAMRecord(r, 0))
 }
 
+// RecordInStartPadding returns true if r is in the start padding of s.
+func (s *Shard) RecordInStartPadding(r *sam.Record) bool {
+	paddedStartCoord := NewCoord(s.StartRef, s.PaddedStart(), 0)
+	startCoord := NewCoord(s.StartRef, s.Start, 0)
+	coord := CoordFromSAMRecord(r, 0)
+	return coord.GE(paddedStartCoord) && coord.LT(startCoord)
+}
+
 // CoordInShard returns whether coord is within the shard plus the
 // supplied padding (this uses the padding parameter in place of
 // s.Padding).
@@ -613,12 +621,12 @@ func GetCoordAtOffset(bamReader *biogobam.Reader, off bgzf.Offset) (biopb.Coord,
 	}
 	c := bamReader.LastChunk()
 	if c.Begin.File != off.File || c.Begin.Block != off.Block {
-		err := fmt.Errorf("Corrupt BAM index %+v, bam reader offset: %+v", c, off)
+		err := fmt.Errorf("corrupt BAM index %+v, bam reader offset: %+v", c, off)
 		vlog.Error(err)
 		return biopb.Coord{}, err
 	}
 	if rec.Ref.ID() > math.MaxInt32 || rec.Pos > math.MaxInt32 {
-		return biopb.Coord{}, fmt.Errorf("Read coord does not fit in int32 for %v", rec)
+		return biopb.Coord{}, fmt.Errorf("read coord does not fit in int32 for %v", rec)
 	}
 	addr := biopb.Coord{RefId: int32(rec.Ref.ID()), Pos: int32(rec.Pos)}
 	if addr.RefId == infinityRefID {
