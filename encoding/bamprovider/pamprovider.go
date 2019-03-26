@@ -121,7 +121,11 @@ func (p *PAMProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, err
 		popts.Range = gbam.MappedRange
 	}
 	ctx := vcontext.Background()
-	pamShards, err := pamutil.GenerateReadShards(ctx, popts, p.Path, gbam.FieldNames)
+	pamShardIndexes, err := pamutil.ReadIndexes(ctx, p.Path, popts.Range, gbam.FieldNames)
+	if err != nil {
+		return nil, err
+	}
+	pamShards, err := pamutil.GenerateReadShards(popts, pamShardIndexes)
 	if err != nil {
 		return nil, err
 	}

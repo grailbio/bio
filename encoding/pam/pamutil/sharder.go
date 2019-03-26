@@ -16,10 +16,16 @@ import (
 	"github.com/grailbio/bio/biopb"
 )
 
-type readSubshard struct {
-	shardRange  biopb.CoordRange           // Rowshard range.
-	approxBytes int64                      // Approx #bytes in the range.
-	blocks      []biopb.PAMBlockIndexEntry // Sample of block indexes in the range.
+// ShardIndex is data derived from one PAM file index information used by the sharder.
+type ShardIndex struct {
+	// Range is the coordinate range that this object represents. Records and indexes from the
+	// source PAM that don't intersect this range were ignored.
+	Range biopb.CoordRange
+	// ApproxFileBytes is an estimate of the total file size of records in Range (in the
+	// underlying PAM)
+	ApproxFileBytes int64
+	// Blocks is a sequence of index entries from one PAM field that span Range.
+	Blocks []biopb.PAMBlockIndexEntry
 }
 
 func validateFieldIndex(index biopb.PAMFieldIndex) error {
@@ -65,10 +71,7 @@ func readFieldIndex(ctx context.Context, dir string, recRange biopb.CoordRange, 
 	return index, err
 }
 
-// Read *.index files listed in "files", then narrow their ShardIndex.Blocks so
-// that they only contains blocks that intersect recRange.
-
-func readAndSubsetIndexes(ctx context.Context, files []FileInfo, recRange biopb.CoordRange, fields []string) ([]readSubshard, error) {
+func readAndSubsetIndexes(ctx context.Context, files []FileInfo, recRange biopb.CoordRange, fields []string) ([]ShardIndex, error) {
 	// Extract a subset of "blocks" that intersect with
 	// requestedRange. shardLimit is the limit of the shard file.
 	intersectIndexBlocks := func(
@@ -85,10 +88,10 @@ func readAndSubsetIndexes(ctx context.Context, files []FileInfo, recRange biopb.
 		return result
 	}
 
-	indexes := make([]readSubshard, 0, len(files))
+	indexes := make([]ShardIndex, 0, len(files))
 	for _, indexFile := range files {
 		// Below, we pick an arbitrary field obtain a sample of record coordinates
-		// and corresponding file offsets. We pick the largeest field, which will
+		// and corresponding file offsets. We pick the largest field, which will
 		// have the largest # of coordinates and offsets to sample from.
 		fieldFileSizes := map[string]int64{}
 		sampledFieldSize := int64(-1)
@@ -131,10 +134,10 @@ func readAndSubsetIndexes(ctx context.Context, files []FileInfo, recRange biopb.
 			// This shouldn't happen, given that we managed to read an nonempty index.
 			return nil, fmt.Errorf("readandsubsetindexes %+v: seq file size is zero", indexFile)
 		}
-		rs := readSubshard{
-			shardRange:  indexFile.Range,
-			blocks:      blocks,
-			approxBytes: int64(float64(seqBytes) * (float64(totalFileBytes) / float64(sampledFieldSize))),
+		rs := ShardIndex{
+			Range:           indexFile.Range,
+			ApproxFileBytes: int64(float64(seqBytes) * (float64(totalFileBytes) / float64(sampledFieldSize))),
+			Blocks:          blocks,
 		}
 		indexes = append(indexes, rs)
 	}
@@ -153,13 +156,11 @@ type GenerateReadShardsOpts struct {
 	// this flag true will cause shard size to be more even, but the caller
 	// must be able to handle split reads.
 	SplitMappedCoords bool
-
 	// SplitUnmappedCoords allows GenerateReadShards to split unmapped
 	// reads into multiple shards. Setting this flag true will cause shard
 	// size to be more even, but the caller must be able to handle split
 	// unmapped reads.
 	SplitUnmappedCoords bool
-
 	// CombineMappedAndUnmappedCoords allows creating a shard that contains both
 	// mapped and unmapped reads. If this flag is false, shards are always split
 	// at the start of unmapped reads.
@@ -168,11 +169,36 @@ type GenerateReadShardsOpts struct {
 	// BytesPerShard is the target shard size, in bytes across all fields.  If
 	// this field is set, NumShards is ignored.
 	BytesPerShard int64
-
 	// NumShards specifies the number of shards to create. This field is ignored
 	// if BytePerShard>0. If neither BytesPerShard nor NumShards is set,
 	// runtime.NumCPU()*4 shards will be created.
 	NumShards int
+}
+
+// ReadIndexes reads the ShardIndexes for the PAM file at path, within rng. If the PAM contains no
+// records in rng, returns an empty slice.
+func ReadIndexes(ctx context.Context, path string, rng biopb.CoordRange, fields []string) ([]ShardIndex, error) {
+	if err := ValidateCoordRange(&rng); err != nil {
+		return nil, err
+	}
+
+	var indexFiles []FileInfo
+	var err error
+	if indexFiles, err = FindIndexFilesInRange(ctx, path, rng); err != nil {
+		return nil, err
+	}
+
+	var indexes []ShardIndex
+	if indexes, err = readAndSubsetIndexes(ctx, indexFiles, rng, fields); err != nil {
+		return nil, err
+	}
+	if len(indexes) == 0 {
+		log.Printf("ReadIndexes %s: no intersecting index found for %+v", path, rng)
+		// No data is found in the given range.
+		return nil, nil
+	}
+
+	return indexes, nil
 }
 
 // GenerateReadShards returns a list of biopb.CoordRanges. The biopb.CoordRanges can be passed
@@ -190,29 +216,18 @@ type GenerateReadShardsOpts struct {
 //
 // 4. The ranges are sorted in an increasing order of biopb.Coord.
 //
-// If nShards specifies the number of shards. It should be generally be zero, in
-// which case the function picks an appropriate default (currently, it uses
-// runtime.NumCPU()*4)..
+// opts.NumShards specifies the number of shards. It should be generally be zero, in
+// which case the function picks an appropriate default.
 func GenerateReadShards(
-	ctx context.Context,
 	opts GenerateReadShardsOpts,
-	path string,
-	fields []string) ([]biopb.CoordRange, error) {
+	indexes []ShardIndex) ([]biopb.CoordRange, error) {
+
 	if err := ValidateCoordRange(&opts.Range); err != nil {
 		return nil, err
 	}
 
-	var indexFiles []FileInfo
-	var err error
-	if indexFiles, err = FindIndexFilesInRange(ctx, path, opts.Range); err != nil {
-		return nil, err
-	}
-	var indexes []readSubshard
-	if indexes, err = readAndSubsetIndexes(ctx, indexFiles, opts.Range, fields); err != nil {
-		return nil, err
-	}
 	if len(indexes) == 0 {
-		log.Printf("GenerateReadShards %s: no intersecting index found for %+v", path, opts.Range)
+		log.Printf("GenerateReadShards: no intersecting index found for %+v", opts.Range)
 		// No data is found in the given range.
 		return []biopb.CoordRange{opts.Range}, nil
 	}
@@ -220,8 +235,8 @@ func GenerateReadShards(
 	totalBlocks := 0
 	totalBytes := int64(0)
 	for _, index := range indexes {
-		totalBlocks += len(index.blocks)
-		totalBytes += index.approxBytes
+		totalBlocks += len(index.Blocks)
+		totalBytes += index.ApproxFileBytes
 	}
 
 	nShards := runtime.NumCPU() * 4
@@ -230,7 +245,7 @@ func GenerateReadShards(
 	} else if opts.NumShards > 0 {
 		nShards = opts.NumShards
 	}
-	log.Debug.Printf("GenerateReadShads %s: creating %d shards; totalblocks=%d, totalbytes=%d, opts %+v", path, nShards, totalBlocks, totalBytes, opts)
+	log.Debug.Printf("GenerateReadShards: creating %d shards; totalblocks=%d, totalbytes=%d, opts %+v", nShards, totalBlocks, totalBytes, opts)
 	targetBlocksPerReadShard := float64(totalBlocks) / float64(nShards)
 
 	bounds := []biopb.CoordRange{}
@@ -261,8 +276,8 @@ func GenerateReadShards(
 
 	nBlocks := 0
 	for ii, index := range indexes {
-		log.Debug.Printf("Index %d: range %+v bytes %+v ", ii, index.shardRange, index.approxBytes)
-		for blockIndex, block := range index.blocks {
+		log.Debug.Printf("Index %d: range %+v bytes %+v ", ii, index.Range, index.ApproxFileBytes)
+		for blockIndex, block := range index.Blocks {
 			if blockIndex > 0 && nBlocks > int(float64(len(bounds)+1)*targetBlocksPerReadShard) {
 				// Add a shard boundary at block.StartAddr.
 				limitAddr := block.StartAddr
@@ -271,7 +286,7 @@ func GenerateReadShards(
 				// coordinate. This means the boundary is in the middle of a sequence of
 				// reads at the coordinate. We can't split shards at such place, unless
 				// opts.Split*Coords flags are set.
-				prevBlock := index.blocks[blockIndex-1].EndAddr
+				prevBlock := index.Blocks[blockIndex-1].EndAddr
 				if prevBlock.RefId == limitAddr.RefId && prevBlock.Pos == limitAddr.Pos {
 					if prevBlock.RefId != biopb.UnmappedRefID && !opts.SplitMappedCoords {
 						log.Debug.Printf("prev (%d): %+v %+v, new: %+v", len(bounds), prevLimit, prevBlock, block.StartAddr)
@@ -288,8 +303,8 @@ func GenerateReadShards(
 		}
 		// For performance, we don't want a readshard that crosses a rowshard
 		// boundary, so close the shard here.
-		log.Debug.Printf("Add (%d): %v", len(bounds), index.shardRange.Limit.Min(opts.Range.Limit))
-		appendShard(index.shardRange.Limit.Min(opts.Range.Limit))
+		log.Debug.Printf("Add (%d): %v", len(bounds), index.Range.Limit.Min(opts.Range.Limit))
+		appendShard(index.Range.Limit.Min(opts.Range.Limit))
 	}
 	return bounds, nil
 }

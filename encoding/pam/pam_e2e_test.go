@@ -300,7 +300,9 @@ func TestReadWriteLarge(t *testing.T) {
 }
 
 func mustGenerateReadShards(t *testing.T, opts pamutil.GenerateReadShardsOpts, pamPath string) []biopb.CoordRange {
-	shards, err := pamutil.GenerateReadShards(vcontext.Background(), opts, pamPath, gbam.FieldNames)
+	shardIndexes, err := pamutil.ReadIndexes(vcontext.Background(), pamPath, opts.Range, gbam.FieldNames)
+	assert.NoError(t, err)
+	shards, err := pamutil.GenerateReadShards(opts, shardIndexes)
 	assert.NoError(t, err)
 	return shards
 }
@@ -663,7 +665,9 @@ func BenchmarkReadPAM(b *testing.B) {
 			opts.Range = gbam.MappedRange
 		}
 		ctx := vcontext.Background()
-		bounds, err := pamutil.GenerateReadShards(ctx, pamutil.GenerateReadShardsOpts{Range: opts.Range}, pamPath, gbam.FieldNames)
+		shardIndexes, err := pamutil.ReadIndexes(ctx, pamPath, opts.Range, gbam.FieldNames)
+		assert.NoError(b, err)
+		bounds, err := pamutil.GenerateReadShards(pamutil.GenerateReadShardsOpts{Range: opts.Range}, shardIndexes)
 		assert.NoError(b, err)
 		boundCh := make(chan biopb.CoordRange, len(bounds))
 		for _, r := range bounds {
