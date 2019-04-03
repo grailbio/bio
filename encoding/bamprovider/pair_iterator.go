@@ -61,7 +61,11 @@ type PairIterator struct {
 func NewPairIterators(provider Provider, includeUnmapped bool) ([]*PairIterator, error) {
 	parallelism := runtime.NumCPU()
 	shards, err := provider.GenerateShards(GenerateShardsOpts{
-		Strategy:            ByteBased,
+		Strategy: ByteBased,
+		// Create more shards than parallelism. This will prevent a very large shard
+		// from delaying completion of the job toward the end (i.e., alleviate the
+		// straggler problem).
+		NumShards:           parallelism * 2,
 		Padding:             0,
 		IncludeUnmapped:     includeUnmapped,
 		SplitUnmappedCoords: true})
@@ -154,8 +158,10 @@ func (l *PairIterator) Scan() bool {
 					break
 				}
 			}
+			for k := range l.localNameToRecord {
+				delete(l.localNameToRecord, k)
+			}
 		}
-		l.localNameToRecord = make(map[string]*sam.Record, len(l.localNameToRecord))
 		if len(orphans) > 0 {
 			l.rec = Pair{Err: MissingMateError{fmt.Sprintf("shard %+v: didn't find expected mates for reads: %v", l.shard, strings.Join(orphans, "\n"))}}
 			return true

@@ -12,6 +12,7 @@ import (
 	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/expect"
+	"github.com/grailbio/testutil/h"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,13 +54,13 @@ func TestNewShardChannel(t *testing.T) {
 		shards = append(shards, s)
 	}
 
-	expect.EQ(t, len(shards), 6)
-	expect.EQ(t, Shard{ref1, ref1, 0, 50, 0, 0, 10, 0}, shards[0])
-	expect.EQ(t, Shard{ref1, ref1, 50, 100, 0, 0, 10, 1}, shards[1])
-	expect.EQ(t, Shard{ref2, ref2, 0, 50, 0, 0, 10, 2}, shards[2])
-	expect.EQ(t, Shard{ref2, ref2, 50, 100, 0, 0, 10, 3}, shards[3])
-	expect.EQ(t, Shard{ref2, ref2, 100, 101, 0, 0, 10, 4}, shards[4])
-	expect.EQ(t, Shard{ref3, ref3, 0, 1, 0, 0, 10, 5}, shards[5])
+	expect.That(t, shards, h.UnorderedElementsAre(
+		Shard{ref1, ref1, 0, 50, 0, 0, 10, 0},
+		Shard{ref1, ref1, 50, 100, 0, 0, 10, 1},
+		Shard{ref2, ref2, 0, 50, 0, 0, 10, 2},
+		Shard{ref2, ref2, 50, 100, 0, 0, 10, 3},
+		Shard{ref2, ref2, 100, 101, 0, 0, 10, 4},
+		Shard{ref3, ref3, 0, 1, 0, 0, 10, 5}))
 }
 
 func TestGetByteBasedShards(t *testing.T) {

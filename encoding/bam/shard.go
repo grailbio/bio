@@ -7,6 +7,7 @@ package bam
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"strings"
 
 	"github.com/grailbio/base/file"
@@ -275,8 +276,21 @@ func NewCoord(ref *sam.Reference, pos int, seq int32) biopb.Coord {
 
 // NewShardChannel returns a closed channel containing the shards.
 func NewShardChannel(shards []Shard) chan Shard {
+	shuffle := make([]Shard, 0, len(shards))
+	// Process shards for unmapped reads earlier since they tend to be large.
 	shardChan := make(chan Shard, len(shards))
 	for _, shard := range shards {
+		if shard.EndRef == nil {
+			shardChan <- shard
+			continue
+		}
+		shuffle = append(shuffle, shard)
+	}
+	// Shuffle the rest.
+	rand.Shuffle(len(shuffle), func(i, j int) {
+		shuffle[i], shuffle[j] = shuffle[j], shuffle[i]
+	})
+	for _, shard := range shuffle {
 		shardChan <- shard
 	}
 	close(shardChan)
