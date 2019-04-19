@@ -2,14 +2,19 @@ package bam
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/grailbio/hts/bam"
+	biogobam "github.com/grailbio/hts/bam"
 	"github.com/grailbio/hts/bgzf"
+	"github.com/grailbio/hts/sam"
 	"github.com/grailbio/testutil"
+	"github.com/grailbio/testutil/expect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -74,7 +79,7 @@ func TestWriteGIndex(t *testing.T) {
 	defer func() {
 		require.NoError(t, f2.Close())
 	}()
-	reader, err := bam.NewReader(f2, 1)
+	reader, err := biogobam.NewReader(f2, 1)
 	require.NoError(t, err)
 
 	bamPosCounts := make(map[string]int)
@@ -119,7 +124,7 @@ func TestWriteGIndex(t *testing.T) {
 	defer func() {
 		require.NoError(t, f3.Close())
 	}()
-	reader, err = bam.NewReader(f3, 1)
+	reader, err = biogobam.NewReader(f3, 1)
 	require.NoError(t, err)
 
 	for {
@@ -133,5 +138,264 @@ func TestWriteGIndex(t *testing.T) {
 
 	for k, v := range indexedPosCounts {
 		assert.Equal(t, bamPosCounts[k], v, "key: %s", k)
+	}
+}
+
+func TestGIndexShards(t *testing.T) {
+	ref1, err := sam.NewReference("chr1", "", "", 100, nil, nil)
+	expect.NoError(t, err)
+	ref2, err := sam.NewReference("chr2", "", "", 101, nil, nil)
+	expect.NoError(t, err)
+	ref3, err := sam.NewReference("chr3", "", "", 102, nil, nil)
+	expect.NoError(t, err)
+	header1, _ := sam.NewHeader(nil, []*sam.Reference{ref1})
+	header2, _ := sam.NewHeader(nil, []*sam.Reference{ref2, ref3})
+
+	tests := []struct {
+		header          *sam.Header
+		padding         int
+		includeUnmapped bool
+		indexEntries    []GIndexEntry
+		expectedShards  []Shard
+	}{
+		{ // Test case 0, one index entry per ref, one ref.  Excludes unmapped.
+			header:          header1,
+			padding:         44,
+			includeUnmapped: false,
+			indexEntries: []GIndexEntry{
+				GIndexEntry{
+					RefID:   0,
+					Pos:     0,
+					Seq:     0,
+					VOffset: 1<<16 | 2,
+				},
+			},
+			expectedShards: []Shard{
+				Shard{
+					StartRef: ref1,
+					EndRef:   ref1,
+					Start:    0,
+					End:      100,
+					Padding:  44,
+					ShardIdx: 0,
+				},
+			},
+		},
+		{ // Test case 1, one index entry per ref, two refs.  Excludes unmapped.
+			header:          header2,
+			padding:         44,
+			includeUnmapped: false,
+			indexEntries: []GIndexEntry{
+				GIndexEntry{
+					RefID:   0,
+					Pos:     0,
+					Seq:     0,
+					VOffset: 1<<16 | 2,
+				},
+				GIndexEntry{
+					RefID:   1,
+					Pos:     0,
+					Seq:     0,
+					VOffset: 1<<16 | 12345,
+				},
+			},
+			expectedShards: []Shard{
+				Shard{
+					StartRef: ref2,
+					EndRef:   ref3,
+					Start:    0,
+					End:      102,
+					Padding:  44,
+					ShardIdx: 0,
+				},
+			},
+		},
+		{ // Test case 2, one index entry per ref.  Includes unmapped
+			// even though there is no index entry for unmapped reads.
+			header:          header2,
+			padding:         44,
+			includeUnmapped: true,
+			indexEntries: []GIndexEntry{
+				GIndexEntry{
+					RefID:   0,
+					Pos:     0,
+					Seq:     0,
+					VOffset: 1<<16 | 2,
+				},
+				GIndexEntry{
+					RefID:   1,
+					Pos:     0,
+					Seq:     0,
+					VOffset: 1<<16 | 12345,
+				},
+			},
+			expectedShards: []Shard{
+				Shard{
+					StartRef: ref2,
+					EndRef:   ref3,
+					Start:    0,
+					End:      102,
+					Padding:  44,
+					ShardIdx: 0,
+				},
+				Shard{
+					StartRef: nil,
+					EndRef:   nil,
+					Start:    0,
+					End:      math.MaxInt32,
+					ShardIdx: 1,
+				},
+			},
+		},
+		{ // Test case 3, two index entries, far enough apart to
+			// create a new shard.
+			header:          header1,
+			padding:         44,
+			includeUnmapped: false,
+			indexEntries: []GIndexEntry{
+				GIndexEntry{
+					RefID:   0,
+					Pos:     0,
+					Seq:     0,
+					VOffset: 1<<16 | 2,
+				},
+				GIndexEntry{
+					RefID:   0,
+					Pos:     50,
+					Seq:     0,
+					VOffset: 1001<<16 | 12345,
+				},
+			},
+			expectedShards: []Shard{
+				Shard{
+					StartRef: ref1,
+					EndRef:   ref1,
+					Start:    0,
+					End:      50,
+					Padding:  44,
+					ShardIdx: 0,
+				},
+				Shard{
+					StartRef: ref1,
+					EndRef:   ref1,
+					Start:    50,
+					End:      100,
+					Padding:  44,
+					ShardIdx: 1,
+				},
+			},
+		},
+		{ // Test case 4, two index entries, too close to create a new
+			// shard.
+			header:          header1,
+			padding:         44,
+			includeUnmapped: false,
+			indexEntries: []GIndexEntry{
+				GIndexEntry{
+					RefID:   0,
+					Pos:     0,
+					Seq:     0,
+					VOffset: 1<<16 | 2,
+				},
+				GIndexEntry{
+					RefID:   0,
+					Pos:     50,
+					Seq:     0,
+					VOffset: 1000<<16 | 12345,
+				},
+			},
+			expectedShards: []Shard{
+				Shard{
+					StartRef: ref1,
+					EndRef:   ref1,
+					Start:    0,
+					End:      100,
+					Padding:  44,
+					ShardIdx: 0,
+				},
+			},
+		},
+		{ // Test case 5, two index entries, far enough apart to
+			// create a new shard, but the genomic positions are too
+			// close to exceed min_bases.
+			header:          header1,
+			padding:         44,
+			includeUnmapped: false,
+			indexEntries: []GIndexEntry{
+				GIndexEntry{
+					RefID:   0,
+					Pos:     0,
+					Seq:     0,
+					VOffset: 1<<16 | 2,
+				},
+				GIndexEntry{
+					RefID:   0,
+					Pos:     20,
+					Seq:     0,
+					VOffset: 1001<<16 | 12345,
+				},
+			},
+			expectedShards: []Shard{
+				Shard{
+					StartRef: ref1,
+					EndRef:   ref1,
+					Start:    0,
+					End:      100,
+					Padding:  44,
+					ShardIdx: 0,
+				},
+			},
+		},
+		{ // Test case 6, one index entry, that points to pos 1.
+			// Shard should start at position 0.
+			header:          header1,
+			padding:         44,
+			includeUnmapped: false,
+			indexEntries: []GIndexEntry{
+				GIndexEntry{
+					RefID:   0,
+					Pos:     1,
+					Seq:     0,
+					VOffset: 1<<16 | 2,
+				},
+			},
+			expectedShards: []Shard{
+				Shard{
+					StartRef: ref1,
+					EndRef:   ref1,
+					Start:    0,
+					End:      100,
+					Padding:  44,
+					ShardIdx: 0,
+				},
+			},
+		},
+	}
+
+	for testIdx, test := range tests {
+		t.Run(fmt.Sprint(testIdx), func(t *testing.T) {
+			tempDir, cleanup := testutil.TempDir(t, "", "")
+			defer cleanup()
+
+			// Write out a gindex file using indexEntries.
+			gbaiPath := filepath.Join(tempDir, "foo.gbai")
+			f, err := os.Create(gbaiPath)
+			require.NoError(t, err)
+			writer := newGIndexWriter(f)
+			writer.writeHeader()
+			for _, e := range test.indexEntries {
+				t.Logf("appending %v", e)
+				require.NoError(t, writer.append(&e))
+			}
+			require.NoError(t, writer.close())
+			require.NoError(t, f.Close())
+
+			// Calculate shards
+			actual, err := gbaiByteBasedShards(context.Background(), test.header, gbaiPath, 1000, 25,
+				test.padding, test.includeUnmapped)
+			require.NoError(t, err)
+			expect.EQ(t, actual, test.expectedShards, "%v --- %v",
+				actual, test.expectedShards)
+		})
 	}
 }

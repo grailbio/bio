@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"math/rand"
 	"os"
@@ -12,6 +13,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/grailbio/base/file"
+	"github.com/grailbio/base/file/s3file"
 	"github.com/grailbio/base/grail"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
@@ -24,11 +28,13 @@ import (
 	"github.com/grailbio/testutil/assert"
 	"github.com/grailbio/testutil/expect"
 	"github.com/grailbio/testutil/h"
-	"v.io/x/lib/vlog"
 )
 
 func TestMain(m *testing.M) {
 	shutdown := grail.Init()
+	file.RegisterImplementation("s3", func() file.Implementation {
+		return s3file.NewImplementation(s3file.NewDefaultProvider(session.Options{}), s3file.Options{})
+	})
 	status := m.Run()
 	shutdown()
 	os.Exit(status)
@@ -230,7 +236,7 @@ func (r *randomTester) testOnce(provider bamprovider.Provider, start, limit biop
 		return r.header.Refs()[refID]
 	}
 
-	vlog.Infof("Test: [%+v, %+v)", start, limit)
+	log.Printf("Test: [%+v, %+v)", start, limit)
 	shard := gbam.Shard{
 		StartRef: getRef(start.RefId),
 		Start:    int(start.Pos),
@@ -252,8 +258,8 @@ found:   %v`,
 		n++
 	}
 	if len(expected) != n {
-		vlog.Infof("Missed record, %v", expected[n])
-		vlog.Infof("Missed record(2), %v", expected[n+1])
+		log.Printf("Missed record, %v", expected[n])
+		log.Printf("Missed record(2), %v", expected[n+1])
 	}
 	assert.EQ(r.t, n, len(expected))
 	assert.NoError(r.t, iter.Close())
@@ -313,6 +319,19 @@ func BenchmarkSequentialRead(b *testing.B) {
 		assert.True(b, nRecs > 0)
 	}
 	assert.NoError(b, provider.Close())
+}
+
+// BenchmarkGenerateShards benchmarks the GenerateShards function.
+func BenchmarkGenerateShards(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		provider := bamprovider.NewProvider(*inputFlag)
+		_, err := provider.GenerateShards(bamprovider.GenerateShardsOpts{
+			NumShards: 16,
+			Strategy:  bamprovider.ByteBased,
+		})
+		assert.NoError(b, err)
+		assert.NoError(b, provider.Close())
+	}
 }
 
 // Example of reading a BAM file in parallel.

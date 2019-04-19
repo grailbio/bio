@@ -1,6 +1,7 @@
 package bam
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -44,9 +45,9 @@ type Metadata struct {
 }
 
 // ReadIndex parses the content of r and returns an Index or nil and an error.
-func ReadIndex(r io.Reader) (*Index, error) {
+func ReadIndex(rawr io.Reader) (*Index, error) {
+	r := bufio.NewReaderSize(rawr, 4<<20)
 	i := &Index{}
-
 	if _, err := io.ReadFull(r, i.Magic[0:]); err != nil {
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func ReadIndex(r io.Reader) (*Index, error) {
 			if binNum == 37450 {
 				// If we have a metadata chunk, put it in ref.Meta instead of ref.Bins.
 				if len(bin.Chunks) != 2 {
-					return nil, fmt.Errorf("Invalid metadata chunk has %d chunks, should have 2", len(bin.Chunks))
+					return nil, fmt.Errorf("invalid metadata: chunk has %d chunks, should have 2", len(bin.Chunks))
 				}
 				ref.Meta = Metadata{
 					UnmappedBegin: fromOffset(bin.Chunks[0].Begin),

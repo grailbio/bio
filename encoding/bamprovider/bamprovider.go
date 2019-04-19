@@ -270,10 +270,6 @@ func (b *BAMProvider) NewIterator(shard gbam.Shard) Iterator {
 	if iter.err != nil {
 		return iter
 	}
-	if shard.StartRef.ID() != shard.EndRef.ID() {
-		iter.err = fmt.Errorf("For BAMProvider, start and limit ref ID must be the same, but got %v, %v",
-			shard.StartRef, shard.EndRef)
-	}
 	iter.reset(shard.StartRef, shard.PaddedStart(), shard.EndRef, shard.PaddedEnd())
 	return iter
 }
@@ -290,9 +286,11 @@ func (i *bamIterator) reset(startRef *sam.Reference, startPos int, endRef *sam.R
 
 	// Read the index and find the file offset at which <startRef,startPos> is
 	// located.
-	var offset bgzf.Offset
-	var err error
-	ref := startRef
+	var (
+		offset bgzf.Offset
+		err    error
+		ref    = startRef
+	)
 	for {
 		var found bool
 		if ref == nil {
@@ -328,7 +326,11 @@ func (i *bamIterator) reset(startRef *sam.Reference, startPos int, endRef *sam.R
 			return
 		}
 		// No index is found for this ref. Try the next ref.
-		ref = header.Refs()[ref.ID()+1]
+		if ref.ID()+1 < len(header.Refs()) {
+			ref = header.Refs()[ref.ID()+1]
+		} else {
+			ref = nil // unmapped section
+		}
 	}
 	if err != nil {
 		i.err = err
@@ -356,6 +358,8 @@ func (i *bamIterator) Close() error {
 // stored. This function is conservative; it may return an offset that's smaller
 // than absolutely necessary.
 func (i *bamIterator) legacyFindUnmappedOffset() (bgzf.Offset, error) {
+	// TODO(saito) cache the result.
+	//
 	// Iterate through the endpoint of each reference to find the
 	// largest offset.
 	header := i.reader.Header()

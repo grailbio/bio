@@ -2,6 +2,7 @@ module github.com/grailbio/bio
 
 require (
 	blainsmith.com/go/seahash v1.1.2
+	github.com/aws/aws-sdk-go v1.16.15
 	github.com/biogo/store v0.0.0-20160505134755-913427a1d5e8
 	github.com/dgryski/go-farm v0.0.0-20190104051053-3adb47b1fb0f
 	github.com/gogo/protobuf v1.2.1
