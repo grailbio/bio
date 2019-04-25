@@ -459,7 +459,7 @@ func baiByteBasedShards(ctx context.Context, bamr *bam.Reader, baiPath string, b
 		for i := 1; i < len(boundaries2); i++ {
 			b := boundaries2[i]
 			last := boundaries3[len(boundaries3)-1]
-			if b.ref == last.ref && (b.pos-last.pos >= minBases || i == len(boundaries2)-1) {
+			if b.ref != last.ref || b.pos-last.pos >= minBases || i == len(boundaries2)-1 {
 				boundaries3 = append(boundaries3, b)
 			} else {
 				log.Debug.Printf("dropping boundary %v (min bases %d)", b, int32(minBases))

@@ -324,13 +324,14 @@ func BenchmarkSequentialRead(b *testing.B) {
 // BenchmarkGenerateShards benchmarks the GenerateShards function.
 func BenchmarkGenerateShards(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		provider := bamprovider.NewProvider(*inputFlag)
-		_, err := provider.GenerateShards(bamprovider.GenerateShardsOpts{
+		provider := bamprovider.NewProvider(*inputFlag, bamprovider.ProviderOpts{Index: *inputFlag + ".bai"})
+		shards, err := provider.GenerateShards(bamprovider.GenerateShardsOpts{
 			NumShards: 16,
 			Strategy:  bamprovider.ByteBased,
 		})
 		assert.NoError(b, err)
 		assert.NoError(b, provider.Close())
+		b.Logf("Created %d shards: %+v", len(shards), shards)
 	}
 }
 

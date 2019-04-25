@@ -119,7 +119,7 @@ func TestGenerateShards(t *testing.T) {
 		BytesPerShard:    50000,
 		MinBasesPerShard: 5000,
 	}, func(t *testing.T, shardList []bam.Shard) {
-		assert.EQ(t, len(shardList), 5)
+		assert.EQ(t, len(shardList), 51)
 		validateShards(t, p, shardList, true)
 	})
 
