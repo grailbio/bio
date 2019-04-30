@@ -8,6 +8,7 @@ package biosimd
 
 import (
 	"fmt"
+	"math/bits"
 	"reflect"
 	"unsafe"
 
@@ -38,9 +39,6 @@ var bytesPerVec int
 
 // log2BytesPerVec supports efficient division by bytesPerVec.
 var log2BytesPerVec uint
-
-//go:linkname hasSSE42Asm github.com/grailbio/base/simd.hasSSE42Asm
-func hasSSE42Asm() bool
 
 // *** the following functions are defined in biosimd_amd64.s
 
@@ -80,11 +78,8 @@ func asciiTo2bitSSE41Asm(dst, src unsafe.Pointer, nByte int)
 // *** end assembly function signatures
 
 func init() {
-	if !hasSSE42Asm() {
-		panic("SSE4.2 required.")
-	}
-	bytesPerVec = 16
-	log2BytesPerVec = 4
+	bytesPerVec = simd.BytesPerVec()
+	log2BytesPerVec = uint(bits.TrailingZeros(uint(bytesPerVec)))
 }
 
 // UnpackSeqUnsafe sets the bytes in dst[] as follows:
