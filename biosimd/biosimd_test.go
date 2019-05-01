@@ -377,18 +377,18 @@ func TestPackSeq(t *testing.T) {
 
 // No need to benchmark this separately since it's isomorphic to
 // simd.PackedNibbleLookup.
-func unpackAndReplaceSeqSlow(dst, src []byte, tablePtr *[16]byte) {
+func unpackAndReplaceSeqSlow(dst, src []byte, tablePtr *simd.NibbleLookupTable) {
 	dstLen := len(dst)
 	nSrcFullByte := dstLen / 2
 	srcOdd := dstLen & 1
 	for srcPos := 0; srcPos < nSrcFullByte; srcPos++ {
 		srcByte := src[srcPos]
-		dst[2*srcPos] = tablePtr[srcByte>>4]
-		dst[2*srcPos+1] = tablePtr[srcByte&15]
+		dst[2*srcPos] = tablePtr.Get(srcByte >> 4)
+		dst[2*srcPos+1] = tablePtr.Get(srcByte & 15)
 	}
 	if srcOdd == 1 {
 		srcByte := src[nSrcFullByte]
-		dst[2*nSrcFullByte] = tablePtr[srcByte>>4]
+		dst[2*nSrcFullByte] = tablePtr.Get(srcByte >> 4)
 	}
 }
 
@@ -428,7 +428,7 @@ func TestUnpackAndReplaceSeq(t *testing.T) {
 	}
 }
 
-func unpackAndReplaceSeqSubsetSlow(dst, src []byte, tablePtr *[16]byte, startPos, endPos int) {
+func unpackAndReplaceSeqSubsetSlow(dst, src []byte, tablePtr *simd.NibbleLookupTable, startPos, endPos int) {
 	for srcPos := startPos; srcPos != endPos; srcPos++ {
 		srcByte := src[srcPos>>1]
 		if srcPos&1 == 0 {
@@ -436,7 +436,7 @@ func unpackAndReplaceSeqSubsetSlow(dst, src []byte, tablePtr *[16]byte, startPos
 		} else {
 			srcByte = srcByte & 15
 		}
-		dst[srcPos-startPos] = tablePtr[srcByte]
+		dst[srcPos-startPos] = tablePtr.Get(srcByte)
 	}
 }
 

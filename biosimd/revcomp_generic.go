@@ -28,9 +28,6 @@ var revComp8Table = [...]byte{
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
 
-var revComp8Table16 = [16]byte{
-	'N', 'T', 'N', 'G', 'A', 'N', 'N', 'C', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
-
 // ReverseComp8InplaceNoValidate reverse-complements ascii8[], assuming that
 // it's using ASCII encoding, and all values are in {0, '0', 'A', 'C', 'G',
 // 'T', 'N', 'a', 'c', 'g', 't', 'n'}.
@@ -84,7 +81,7 @@ func ReverseComp8NoValidate(dst, src []byte) {
 	}
 }
 
-var revComp4Table = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
+var revComp4Table = MakeNibbleLookupTable([16]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15})
 
 // ReverseComp4UnsafeInplace reverse-complements seq8[], assuming that it's
 // using .bam seq-field encoding with one 4-bit byte per base.
@@ -106,10 +103,10 @@ func ReverseComp4UnsafeInplace(seq8 []byte) {
 	nByte := len(seq8)
 	nByteDiv2 := nByte >> 1
 	for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
-		seq8[idx], seq8[invIdx] = revComp4Table[seq8[invIdx]], revComp4Table[seq8[idx]]
+		seq8[idx], seq8[invIdx] = revComp4Table.Get(seq8[invIdx]), revComp4Table.Get(seq8[idx])
 	}
 	if nByte&1 == 1 {
-		seq8[nByteDiv2] = revComp4Table[seq8[nByteDiv2]]
+		seq8[nByteDiv2] = revComp4Table.Get(seq8[nByteDiv2])
 	}
 }
 
@@ -123,10 +120,10 @@ func ReverseComp4Inplace(seq8 []byte) {
 	nByte := len(seq8)
 	nByteDiv2 := nByte >> 1
 	for idx, invIdx := 0, nByte-1; idx != nByteDiv2; idx, invIdx = idx+1, invIdx-1 {
-		seq8[idx], seq8[invIdx] = revComp4Table[seq8[invIdx]], revComp4Table[seq8[idx]]
+		seq8[idx], seq8[invIdx] = revComp4Table.Get(seq8[invIdx]), revComp4Table.Get(seq8[idx])
 	}
 	if nByte&1 == 1 {
-		seq8[nByteDiv2] = revComp4Table[seq8[nByteDiv2]]
+		seq8[nByteDiv2] = revComp4Table.Get(seq8[nByteDiv2])
 	}
 }
 
@@ -152,7 +149,7 @@ func ReverseComp4Inplace(seq8 []byte) {
 func ReverseComp4Unsafe(dst, src []byte) {
 	nByte := len(src)
 	for idx, invIdx := 0, nByte-1; idx != nByte; idx, invIdx = idx+1, invIdx-1 {
-		dst[idx] = revComp4Table[src[invIdx]]
+		dst[idx] = revComp4Table.Get(src[invIdx])
 	}
 }
 
@@ -169,11 +166,9 @@ func ReverseComp4(dst, src []byte) {
 		panic("ReverseComp4() requires len(dst) == len(src).")
 	}
 	for idx, invIdx := 0, nByte-1; idx != nByte; idx, invIdx = idx+1, invIdx-1 {
-		dst[idx] = revComp4Table[src[invIdx]]
+		dst[idx] = revComp4Table.Get(src[invIdx])
 	}
 }
-
-var revComp2Table = [...]byte{3, 2, 1, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 
 // ReverseComp2UnsafeInplace reverse-complements acgt8[], assuming that it's
 // encoded with one byte per base, ACGT=0123.

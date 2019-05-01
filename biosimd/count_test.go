@@ -43,8 +43,8 @@ func init() {
 	}
 }
 
-var countCGTable = [16]byte{
-	0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+var countCGTable = simd.MakeNibbleLookupTable([16]byte{
+	0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 
 func countCGSubtask(src []byte, nIter int) int {
 	tot := 0
@@ -164,9 +164,10 @@ func TestCountTwo(t *testing.T) {
 		baseCode2 := baseCode1 + 1 + byte(rand.Intn(int(15-baseCode1)))
 		table[baseCode1] = 1
 		table[baseCode2] = 1
+		nlt := simd.MakeNibbleLookupTable(table)
 
 		result1 := packedSeqCountTwoSlow(srcSlice, startPos, endPos, baseCode1, baseCode2)
-		result2 := biosimd.PackedSeqCount(srcSlice, &table, startPos, endPos)
+		result2 := biosimd.PackedSeqCount(srcSlice, &nlt, startPos, endPos)
 		if result1 != result2 {
 			t.Fatal("Mismatched PackedSeqCount result.")
 		}
@@ -175,7 +176,7 @@ func TestCountTwo(t *testing.T) {
 	}
 }
 
-func packedSeqCountTwoSets(seq4 []byte, table1Ptr, table2Ptr *[16]byte, startPos, endPos int) (int, int) {
+func packedSeqCountTwoSets(seq4 []byte, table1Ptr, table2Ptr *simd.NibbleLookupTable, startPos, endPos int) (int, int) {
 	cnt1 := 0
 	cnt2 := 0
 	for idx := startPos; idx != endPos; idx++ {
@@ -186,8 +187,8 @@ func packedSeqCountTwoSets(seq4 []byte, table1Ptr, table2Ptr *[16]byte, startPos
 		} else {
 			curBits = seqByte & 15
 		}
-		cnt1 += int(table1Ptr[curBits])
-		cnt2 += int(table2Ptr[curBits])
+		cnt1 += int(table1Ptr.Get(curBits))
+		cnt2 += int(table2Ptr.Get(curBits))
 	}
 	return cnt1, cnt2
 }
@@ -216,9 +217,11 @@ func TestCountTwoSets(t *testing.T) {
 		for ii := 0; ii != 5; ii++ {
 			table2[rand.Intn(16)] = 1
 		}
+		nlt1 := simd.MakeNibbleLookupTable(table1)
+		nlt2 := simd.MakeNibbleLookupTable(table2)
 
-		result1a, result1b := packedSeqCountTwoSets(srcSlice, &table1, &table2, startPos, endPos)
-		result2a, result2b := biosimd.PackedSeqCountTwo(srcSlice, &table1, &table2, startPos, endPos)
+		result1a, result1b := packedSeqCountTwoSets(srcSlice, &nlt1, &nlt2, startPos, endPos)
+		result2a, result2b := biosimd.PackedSeqCountTwo(srcSlice, &nlt1, &nlt2, startPos, endPos)
 		if (result1a != result2a) || (result1b != result2b) {
 			t.Fatal("Mismatched PackedSeqCountTwo result.")
 		}

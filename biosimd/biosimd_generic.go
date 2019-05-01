@@ -23,6 +23,9 @@ const BytesPerWord = simd.BytesPerWord
 // not (e.g. dividend is of signed int type).
 const Log2BytesPerWord = simd.Log2BytesPerWord
 
+// NibbleLookupTable is re-exported here to reduce base/simd import clutter.
+type NibbleLookupTable = simd.NibbleLookupTable
+
 // bytesPerVec is the size of the maximum-width vector that may be used.  It is
 // currently always 16, but it will be set to larger values at runtime in the
 // future when AVX2/AVX-512/etc. is detected.
@@ -35,6 +38,12 @@ var log2BytesPerVec uint
 func init() {
 	bytesPerVec = 16
 	log2BytesPerVec = 4
+}
+
+// MakeNibbleLookupTable is re-exported here to reduce base/simd import
+// clutter.
+func MakeNibbleLookupTable(table [16]byte) (t NibbleLookupTable) {
+	return simd.MakeNibbleLookupTable(table)
 }
 
 // UnpackSeqUnsafe sets the bytes in dst[] as follows:
@@ -175,25 +184,25 @@ func PackSeq(dst, src []byte) {
 //
 // 3. The caller does not care if a few bytes past the end of dst[] are
 // changed.
-func UnpackAndReplaceSeqUnsafe(dst, src []byte, tablePtr *[16]byte) {
+func UnpackAndReplaceSeqUnsafe(dst, src []byte, tablePtr *NibbleLookupTable) {
 	dstLen := len(dst)
 	nSrcFullByte := dstLen >> 1
 	srcOdd := dstLen & 1
 	for srcPos := 0; srcPos != nSrcFullByte; srcPos++ {
 		srcByte := src[srcPos]
-		dst[2*srcPos] = tablePtr[srcByte>>4]
-		dst[2*srcPos+1] = tablePtr[srcByte&15]
+		dst[2*srcPos] = tablePtr[0][srcByte>>4]
+		dst[2*srcPos+1] = tablePtr[0][srcByte&15]
 	}
 	if srcOdd == 1 {
 		srcByte := src[nSrcFullByte]
-		dst[2*nSrcFullByte] = tablePtr[srcByte>>4]
+		dst[2*nSrcFullByte] = tablePtr[0][srcByte>>4]
 	}
 }
 
 var (
 	// SeqASCIITable maps 4-bit seq[] values to their ASCII representations.
 	// It's a common argument for UnpackAndReplaceSeq().
-	SeqASCIITable = [16]byte{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'}
+	SeqASCIITable = MakeNibbleLookupTable([16]byte{'=', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', 'N'})
 )
 
 // UnpackAndReplaceSeq sets the bytes in dst[] as follows:
@@ -204,7 +213,7 @@ var (
 // Nothing bad happens if len(dst) is odd and some low bits in the last src[]
 // byte are set, though it's generally good practice to ensure that case
 // doesn't come up.
-func UnpackAndReplaceSeq(dst, src []byte, tablePtr *[16]byte) {
+func UnpackAndReplaceSeq(dst, src []byte, tablePtr *NibbleLookupTable) {
 	// Minor variant of simd.PackedNibbleLookup().
 	dstLen := len(dst)
 	nSrcFullByte := dstLen >> 1
@@ -214,12 +223,12 @@ func UnpackAndReplaceSeq(dst, src []byte, tablePtr *[16]byte) {
 	}
 	for srcPos := 0; srcPos != nSrcFullByte; srcPos++ {
 		srcByte := src[srcPos]
-		dst[2*srcPos] = tablePtr[srcByte>>4]
-		dst[2*srcPos+1] = tablePtr[srcByte&15]
+		dst[2*srcPos] = tablePtr.Get(srcByte >> 4)
+		dst[2*srcPos+1] = tablePtr.Get(srcByte & 15)
 	}
 	if srcOdd == 1 {
 		srcByte := src[nSrcFullByte]
-		dst[2*nSrcFullByte] = tablePtr[srcByte>>4]
+		dst[2*nSrcFullByte] = tablePtr.Get(srcByte >> 4)
 	}
 }
 
@@ -228,7 +237,7 @@ func UnpackAndReplaceSeq(dst, src []byte, tablePtr *[16]byte) {
 //   if srcPos is odd, dst[srcPos-startPos] := table[src[srcPos / 2] & 15]
 // It panics if len(dst) != endPos - startPos, startPos < 0, or
 // len(src) * 2 < endPos.
-func UnpackAndReplaceSeqSubset(dst, src []byte, tablePtr *[16]byte, startPos, endPos int) {
+func UnpackAndReplaceSeqSubset(dst, src []byte, tablePtr *NibbleLookupTable, startPos, endPos int) {
 	if (startPos < 0) || (len(src)*2 < endPos) {
 		errstr := fmt.Sprintf("UnpackAndReplaceSeqSubset() requires 0 <= startPos <= endPos <= 2 * len(src).\n  len(src) = %d\n  src = %v\n  startPos = %d\n  endPos = %d\n", len(src), src, startPos, endPos)
 		panic(errstr)
@@ -244,18 +253,18 @@ func UnpackAndReplaceSeqSubset(dst, src []byte, tablePtr *[16]byte, startPos, en
 	startOffset := startPos >> 1
 	startPosOdd := startPos & 1
 	if startPosOdd == 1 {
-		dst[0] = tablePtr[src[startOffset]&15]
+		dst[0] = tablePtr.Get(src[startOffset] & 15)
 		startOffset++
 	}
 	nSrcFullByte := (dstLen - startPosOdd) >> 1
 	for srcPos := 0; srcPos != nSrcFullByte; srcPos++ {
 		srcByte := src[srcPos+startOffset]
-		dst[2*srcPos+startPosOdd] = tablePtr[srcByte>>4]
-		dst[2*srcPos+1+startPosOdd] = tablePtr[srcByte&15]
+		dst[2*srcPos+startPosOdd] = tablePtr.Get(srcByte >> 4)
+		dst[2*srcPos+1+startPosOdd] = tablePtr.Get(srcByte & 15)
 	}
 	if endPos&1 == 1 {
 		srcByte := src[nSrcFullByte+startOffset]
-		dst[dstLen-1] = tablePtr[srcByte>>4]
+		dst[dstLen-1] = tablePtr.Get(srcByte >> 4)
 	}
 }
 
@@ -328,9 +337,6 @@ var isNotCapitalACGTTable = [...]bool{
 	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
 	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true}
 
-var acgTable16 = [...]byte{
-	0xff, 0, 0xff, 0, 0xff, 0xff, 0xff, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
-
 // IsNonACGTPresent returns true iff there is a non-capital-ACGT character in
 // the slice.
 func IsNonACGTPresent(ascii8 []byte) bool {
@@ -359,9 +365,6 @@ var isNotCapitalACGTNTable = [...]bool{
 	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
 	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
 	true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true}
-
-var acgnTable16 = [...]byte{
-	0xff, 0, 0xff, 0, 0xff, 0xff, 0xff, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 0xff}
 
 // IsNonACGTNPresent returns true iff there is a non-capital-ACGTN character in
 // the slice.
