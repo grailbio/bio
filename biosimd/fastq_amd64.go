@@ -6,29 +6,41 @@
 
 package biosimd
 
+import (
+	"unsafe"
+)
+
+//go:noescape
+func fillFastqRecordBodyFromNibblesSSSE3Asm(dst, src, baseTablePtr, qualTablePtr unsafe.Pointer, nBase int)
+
 // FillFastqRecordBodyFromNibbles fills the body (defined as the last three
 // lines) of a 4-line FASTQ record, given a packed 4-bit representation of the
-// base+qual information and the decoding tables.
-// - dst must be a byte slice of exactly the right size to fit the three lines;
-//   the raw read-length is inferred as (len(dst)-4) >> 1.  (Windows
-//   line-breaks are not supported.)
-// - Length of src is validated
+// base+qual information and the decoding tables.  (Windows line-breaks are not
+// supported.)
+// - len(dst) must be at least 2 * nBase + 4, but it's allowed to be larger.
+// - len(src) must be at least (nBase + 1) >> 1, but it's allowed to be larger.
 // - This is designed for read-length >= 32.  It still produces the correct
 //   result for smaller lengths, but there is a fairly simple faster algorithm
 //   (using a pair of 256-element uint16 lookup tables and encoding/binary's
 //   binary.LittleEndian.PutUint16() function) for that case, which is being
 //   omitted for now due to irrelevance for our current use cases.
-func FillFastqRecordBodyFromNibbles(dst, src []byte, baseTablePtr, qualTablePtr *NibbleLookupTable) {
-	readLen := (len(dst) - 4) >> 1
-	nSrcFullByte := readLen >> 1
-	srcOdd := readLen & 1
-	if len(src) != nSrcFullByte+srcOdd {
+func FillFastqRecordBodyFromNibbles(dst, src []byte, nBase int, baseTablePtr, qualTablePtr *NibbleLookupTable) {
+	if len(dst) < 2*nBase+4 {
 		// 2x is due to each base appearing on both the base and qual lines.
 		// +4 is due to three line-feeds and one '+' character.
-		panic("FillFastqRecordBodyFromNibbles() requires len(src) = (<# of bases> + 1) / 2, and len(dst) = 2 * <# of bases> + 4.")
+		panic("FillFastqRecordBodyFromNibbles() requires len(dst) >= 2 * nBase + 4.")
 	}
-	// TODO: fast path for readLen >= 32
-	quals := dst[readLen+3 : 2*readLen+3]
+	nSrcFullByte := nBase >> 1
+	srcOdd := nBase & 1
+	if len(src) < nSrcFullByte+srcOdd {
+		panic("FillFastqRecordBodyFromNibbles() requires len(src) >= (nBase + 1) / 2.")
+	}
+	if nBase >= 32 {
+		// Note that unsafe.Pointer(&dst[0]) breaks when len(dst) == 0.
+		fillFastqRecordBodyFromNibblesSSSE3Asm(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), unsafe.Pointer(baseTablePtr), unsafe.Pointer(qualTablePtr), nBase)
+		return
+	}
+	quals := dst[nBase+3 : 2*nBase+3]
 	for srcPos := 0; srcPos != nSrcFullByte; srcPos++ {
 		srcByte := src[srcPos]
 		srcLowBits := srcByte & 15
@@ -43,6 +55,6 @@ func FillFastqRecordBodyFromNibbles(dst, src []byte, baseTablePtr, qualTablePtr 
 		dst[2*nSrcFullByte] = baseTablePtr.Get(srcLowBits)
 		quals[2*nSrcFullByte] = qualTablePtr.Get(srcLowBits)
 	}
-	copy(dst[readLen:readLen+3], "\n+\n")
-	dst[2*readLen+3] = '\n'
+	copy(dst[nBase:nBase+3], "\n+\n")
+	dst[2*nBase+3] = '\n'
 }
