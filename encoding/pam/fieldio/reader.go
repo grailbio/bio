@@ -45,13 +45,13 @@ type Reader struct {
 // coordinate. Setting setting coordField=true enables the codepath that
 // computes biopb.Coord.Seq values. If no file is found for this field, return
 // value is nil, nil.
-func NewReader(ctx context.Context, path, label string, coordField bool, errp *errors.Once) (*Reader, error) {
+func NewReader(ctx context.Context, path, label string, coordField bool, fileOpts file.Opts, errp *errors.Once) (*Reader, error) {
 	fr := &Reader{
 		coordField: coordField,
 		label:      label,
 		err:        errp,
 	}
-	in, err := file.Open(ctx, path)
+	in, err := file.Open(ctx, path, fileOpts)
 	if err != nil {
 		if e, ok := err.(*errors.Error); ok && e.Kind == errors.NotExist {
 			return nil, nil

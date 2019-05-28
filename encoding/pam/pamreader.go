@@ -36,6 +36,11 @@ type ReadOpts struct {
 	//   RecRange{{0,0},{LimitValidRefID, InfinityPos}} : covers all mapped sequences.
 	//   RecRange{{UnmappedRefID,0},{UnmappedRefID, InfinityPos}} : covers all unmapped sequences.
 	Range biopb.CoordRange
+
+	// When set, it causes the file package to keep retrying when the file is
+	// reported as not found.  This flag is passed to file.Opts. See file.Opts for
+	// more details.
+	RetryWhenNotFound bool
 }
 
 // ShardReader is for reading one PAM rowshard. This class is generally hidden
@@ -306,22 +311,21 @@ func (r *ShardReader) seek(requestedRange biopb.CoordRange) {
 // REQUIRES: requestedRange ∩ pamIndex.Range != ∅
 func NewShardReader(
 	ctx context.Context,
-	requestedRange biopb.CoordRange,
-	dropFields []gbam.FieldType,
+	opts ReadOpts,
 	pamIndex pamutil.FileInfo,
 	errp *errors.Once) *ShardReader {
 	r := &ShardReader{
-		label:          fmt.Sprintf("%s:s%s:u%s", file.Base(pamIndex.Dir), pamutil.CoordRangePathString(pamIndex.Range), pamutil.CoordRangePathString(requestedRange)),
+		label:          fmt.Sprintf("%s:s%s:u%s", file.Base(pamIndex.Dir), pamutil.CoordRangePathString(pamIndex.Range), pamutil.CoordRangePathString(opts.Range)),
 		path:           pamIndex.Dir,
 		shardRange:     pamIndex.Range,
-		requestedRange: requestedRange,
+		requestedRange: opts.Range,
 		err:            errp,
 	}
 	vlog.VI(1).Infof("%v: NewShardReader", r.label)
 	for i := range r.needField {
 		r.needField[i] = true
 	}
-	for _, f := range dropFields {
+	for _, f := range opts.DropFields {
 		r.needField[f] = false
 	}
 	var err error
@@ -348,7 +352,8 @@ func NewShardReader(
 				pamutil.CoordRangePathString(pamIndex.Range),
 				pamutil.CoordRangePathString(r.requestedRange),
 				gbam.FieldType(f))
-			r.fieldReaders[f], err = fieldio.NewReader(ctx, path, label, f == int(gbam.FieldCoord), errp)
+			fileOpts := file.Opts{opts.RetryWhenNotFound}
+			r.fieldReaders[f], err = fieldio.NewReader(ctx, path, label, f == int(gbam.FieldCoord), fileOpts, errp)
 			if err != nil {
 				r.err.Set(err)
 				return r
@@ -413,7 +418,7 @@ func NewReader(opts ReadOpts, dir string) *Reader {
 		return r
 	}
 	vlog.VI(1).Infof("Found index files in range %+v: %+v", r.opts.Range, r.indexFiles)
-	r.r = NewShardReader(r.ctx, r.opts.Range, r.opts.DropFields, r.indexFiles[0], &r.err)
+	r.r = NewShardReader(r.ctx, r.opts, r.indexFiles[0], &r.err)
 	r.indexFiles = r.indexFiles[1:]
 	return r
 }
@@ -458,7 +463,7 @@ func (r *Reader) Scan() bool {
 			return false
 		}
 		r.r.Close(r.ctx)
-		r.r = NewShardReader(r.ctx, r.opts.Range, r.opts.DropFields, r.indexFiles[0], &r.err)
+		r.r = NewShardReader(r.ctx, r.opts, r.indexFiles[0], &r.err)
 		r.indexFiles = r.indexFiles[1:]
 	}
 }
