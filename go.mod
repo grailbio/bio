@@ -16,7 +16,7 @@ require (
 	github.com/stretchr/testify v1.3.0
 	github.com/yasushi-saito/zlibng v0.0.0-20190128191412-2ee128fff508
 	golang.org/x/sys v0.0.0-20190302025703-b6889370fb10
-	v.io/x/lib v0.1.2
+	v.io/x/lib v0.1.3
 )
 
 
