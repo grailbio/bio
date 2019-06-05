@@ -30,7 +30,7 @@ type Opts struct {
 // Process() on all the records in the shard, including the padding,
 // the shard will invoke Close().
 type RecordProcessor interface {
-	Process(r *sam.Record)
+	Process(r *sam.Record) error
 	Close()
 }
 
@@ -192,7 +192,9 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 			lastCoord = coord
 
 			if processor != nil {
-				processor.Process(record)
+				if err := processor.Process(record); err != nil {
+					return err
+				}
 			}
 
 			if shard.RecordInStartPadding(record) {
