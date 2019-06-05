@@ -7,122 +7,11 @@ package biosimd_test
 import (
 	"bytes"
 	"math/rand"
-	"runtime"
 	"testing"
 
 	"github.com/grailbio/base/simd"
 	"github.com/grailbio/bio/biosimd"
 )
-
-/*
-Initial benchmark results:
-  MacBook Pro (15-inch, 2016)
-  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
-
-Benchmark_ReverseComp8Short1-8                10         102511556 ns/op
-Benchmark_ReverseComp8Short4-8                50          28367465 ns/op
-Benchmark_ReverseComp8ShortMax-8              50          26605330 ns/op
-Benchmark_ReverseComp8Long1-8                  1        1652044508 ns/op
-Benchmark_ReverseComp8Long4-8                  1        2036898677 ns/op
-Benchmark_ReverseComp8LongMax-8                1        2861959800 ns/op
-
-Benchmark_ReverseComp4Short1-8                20          67100763 ns/op
-Benchmark_ReverseComp4Short4-8               100          18280864 ns/op
-Benchmark_ReverseComp4ShortMax-8             100          17809492 ns/op
-Benchmark_ReverseComp4Long1-8                  1        1347194884 ns/op
-Benchmark_ReverseComp4Long4-8                  1        1977003084 ns/op
-Benchmark_ReverseComp4LongMax-8                1        2772038087 ns/op
-
-For comparison, reverseComp8Slow:
-Benchmark_ReverseComp8Short1-8                 3         454187379 ns/op
-Benchmark_ReverseComp8Short4-8                10         133079347 ns/op
-Benchmark_ReverseComp8ShortMax-8               5         226770101 ns/op
-Benchmark_ReverseComp8Long1-8                  1        6430295372 ns/op
-Benchmark_ReverseComp8Long4-8                  1        2680017758 ns/op
-Benchmark_ReverseComp8LongMax-8                1        3464161375 ns/op
-
-reverseComp4Slow:
-Benchmark_ReverseComp4Short1-8                 3         487496815 ns/op
-Benchmark_ReverseComp4Short4-8                 5         220447034 ns/op
-Benchmark_ReverseComp4ShortMax-8               5         283437486 ns/op
-Benchmark_ReverseComp4Long1-8                  1        7214422123 ns/op
-Benchmark_ReverseComp4Long4-8                  1        4453820099 ns/op
-Benchmark_ReverseComp4LongMax-8                1        3593169766 ns/op
-*/
-
-func reverseComp8Subtask(ascii8 []byte, nIter int) int {
-	for iter := 0; iter < nIter; iter++ {
-		biosimd.ReverseComp8Inplace(ascii8)
-	}
-	return int(ascii8[0])
-}
-
-func reverseComp8SubtaskFuture(main []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- reverseComp8Subtask(main, nIter) }()
-	return future
-}
-
-func multiReverseComp8(mains [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = reverseComp8SubtaskFuture(mains[taskIdx], shardSizeP1)
-	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = reverseComp8SubtaskFuture(mains[taskIdx], shardSizeBase)
-	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
-	}
-}
-
-func benchmarkReverseComp8(cpus int, nByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
-	}
-
-	mainSlices := make([][]byte, cpus)
-	for ii := range mainSlices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nByte + 63)
-		for jj := 0; jj < nByte; jj++ {
-			newArr[jj] = byte(jj*3) & 15
-		}
-		mainSlices[ii] = newArr[:nByte]
-	}
-	for i := 0; i < b.N; i++ {
-		multiReverseComp8(mainSlices, cpus, nJob)
-	}
-}
-
-func Benchmark_ReverseComp8Short1(b *testing.B) {
-	benchmarkReverseComp8(1, 75, 9999999, b)
-}
-
-func Benchmark_ReverseComp8Short4(b *testing.B) {
-	benchmarkReverseComp8(4, 75, 9999999, b)
-}
-
-func Benchmark_ReverseComp8ShortMax(b *testing.B) {
-	benchmarkReverseComp8(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_ReverseComp8Long1(b *testing.B) {
-	benchmarkReverseComp8(1, 249250621, 50, b)
-}
-
-func Benchmark_ReverseComp8Long4(b *testing.B) {
-	benchmarkReverseComp8(4, 249250621, 50, b)
-}
-
-func Benchmark_ReverseComp8LongMax(b *testing.B) {
-	benchmarkReverseComp8(runtime.NumCPU(), 249250621, 50, b)
-}
 
 var revComp8Table = [...]byte{
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
@@ -213,78 +102,54 @@ func TestReverseComp8(t *testing.T) {
 	}
 }
 
-func reverseComp4Subtask(seq8 []byte, nIter int) int {
+/*
+Benchmark results:
+  MacBook Pro (15-inch, 2016)
+  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
+
+Benchmark_ReverseComp8/SIMDShort1Cpu-8                10         181445752 ns/op
+Benchmark_ReverseComp8/SIMDShortHalfCpu-8             30          56466662 ns/op
+Benchmark_ReverseComp8/SIMDShortAllCpu-8              20          65764240 ns/op
+Benchmark_ReverseComp8/SIMDLong1Cpu-8                  1        1471211448 ns/op
+Benchmark_ReverseComp8/SIMDLongHalfCpu-8               2         981752259 ns/op
+Benchmark_ReverseComp8/SIMDLongAllCpu-8                1        1012784124 ns/op
+Benchmark_ReverseComp8/SlowShort1Cpu-8                 2         764930526 ns/op
+Benchmark_ReverseComp8/SlowShortHalfCpu-8              5         212006209 ns/op
+Benchmark_ReverseComp8/SlowShortAllCpu-8               5         251716898 ns/op
+Benchmark_ReverseComp8/SlowLong1Cpu-8                  1        5852695613 ns/op
+Benchmark_ReverseComp8/SlowLongHalfCpu-8               1        1717930116 ns/op
+Benchmark_ReverseComp8/SlowLongAllCpu-8                1        1693872482 ns/op
+*/
+
+func reverseComp8SimdSubtask(dst, src []byte, nIter int) int {
 	for iter := 0; iter < nIter; iter++ {
-		biosimd.ReverseComp4UnsafeInplace(seq8)
+		biosimd.ReverseComp8Inplace(src)
 	}
-	return int(seq8[0])
+	return int(src[0])
 }
 
-func reverseComp4SubtaskFuture(main []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- reverseComp4Subtask(main, nIter) }()
-	return future
-}
-
-func multiReverseComp4(mains [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = reverseComp4SubtaskFuture(mains[taskIdx], shardSizeP1)
+func reverseComp8SlowSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		reverseComp8Slow(src)
 	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = reverseComp4SubtaskFuture(mains[taskIdx], shardSizeBase)
+	return int(src[0])
+}
+
+func Benchmark_ReverseComp8(b *testing.B) {
+	funcs := []taggedMultiBenchFunc{
+		{
+			f:   reverseComp8SimdSubtask,
+			tag: "SIMD",
+		},
+		{
+			f:   reverseComp8SlowSubtask,
+			tag: "Slow",
+		},
 	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
+	for _, f := range funcs {
+		multiBenchmark(f.f, f.tag+"Short", 0, 150, 9999999, b)
+		multiBenchmark(f.f, f.tag+"Long", 0, 249250621, 50, b)
 	}
-}
-
-func benchmarkReverseComp4(cpus int, nByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
-	}
-
-	mainSlices := make([][]byte, cpus)
-	for ii := range mainSlices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nByte + 63)
-		for jj := 0; jj < nByte; jj++ {
-			newArr[jj] = byte(jj*3) & 15
-		}
-		mainSlices[ii] = newArr[:nByte]
-	}
-	for i := 0; i < b.N; i++ {
-		multiReverseComp4(mainSlices, cpus, nJob)
-	}
-}
-
-func Benchmark_ReverseComp4Short1(b *testing.B) {
-	benchmarkReverseComp4(1, 75, 9999999, b)
-}
-
-func Benchmark_ReverseComp4Short4(b *testing.B) {
-	benchmarkReverseComp4(4, 75, 9999999, b)
-}
-
-func Benchmark_ReverseComp4ShortMax(b *testing.B) {
-	benchmarkReverseComp4(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_ReverseComp4Long1(b *testing.B) {
-	benchmarkReverseComp4(1, 249250621, 50, b)
-}
-
-func Benchmark_ReverseComp4Long4(b *testing.B) {
-	benchmarkReverseComp4(4, 249250621, 50, b)
-}
-
-func Benchmark_ReverseComp4LongMax(b *testing.B) {
-	benchmarkReverseComp4(runtime.NumCPU(), 249250621, 50, b)
 }
 
 var revComp4Table = [...]byte{0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15}
@@ -351,6 +216,59 @@ func TestReverseComp4(t *testing.T) {
 		if main5Arr[sliceEnd] != sentinel {
 			t.Fatal("ReverseComp4 clobbered an extra byte.")
 		}
+	}
+}
+
+/*
+Benchmark results:
+  MacBook Pro (15-inch, 2016)
+  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
+
+Benchmark_ReverseComp4/SIMDShort1Cpu-8                20         109340337 ns/op
+Benchmark_ReverseComp4/SIMDShortHalfCpu-8             50          38704560 ns/op
+Benchmark_ReverseComp4/SIMDShortAllCpu-8              30          45579667 ns/op
+Benchmark_ReverseComp4/SIMDLong1Cpu-8                  1        1140730896 ns/op
+Benchmark_ReverseComp4/SIMDLongHalfCpu-8               2         974729035 ns/op
+Benchmark_ReverseComp4/SIMDLongAllCpu-8                1        1010230155 ns/op
+Benchmark_ReverseComp4/SlowShort1Cpu-8                 2         877184805 ns/op
+Benchmark_ReverseComp4/SlowShortHalfCpu-8              5         246037663 ns/op
+Benchmark_ReverseComp4/SlowShortAllCpu-8               3         370323771 ns/op
+Benchmark_ReverseComp4/SlowLong1Cpu-8                  1        6525568174 ns/op
+Benchmark_ReverseComp4/SlowLongHalfCpu-8               1        1847395360 ns/op
+Benchmark_ReverseComp4/SlowLongAllCpu-8                1        1893590854 ns/op
+*/
+
+func reverseComp4SimdSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.ReverseComp4Inplace(src)
+	}
+	return int(src[0])
+}
+
+func reverseComp4SlowSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		reverseComp4Slow(src)
+	}
+	return int(src[0])
+}
+
+func Benchmark_ReverseComp4(b *testing.B) {
+	funcs := []taggedMultiBenchFunc{
+		{
+			f:   reverseComp4SimdSubtask,
+			tag: "SIMD",
+		},
+		{
+			f:   reverseComp4SlowSubtask,
+			tag: "Slow",
+		},
+	}
+	opts := multiBenchmarkOpts{
+		srcInit: bytesInitMax15,
+	}
+	for _, f := range funcs {
+		multiBenchmark(f.f, f.tag+"Short", 0, 150, 9999999, b, opts)
+		multiBenchmark(f.f, f.tag+"Long", 0, 249250621, 50, b, opts)
 	}
 }
 

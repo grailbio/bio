@@ -7,186 +7,11 @@ package biosimd_test
 import (
 	"bytes"
 	"math/rand"
-	"runtime"
 	"testing"
 
 	"github.com/grailbio/base/simd"
 	"github.com/grailbio/bio/biosimd"
 )
-
-/*
-Initial benchmark results:
-  MacBook Pro (15-inch, 2016)
-  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
-
-Benchmark_UnpackSeqShort1-8                   20          70897086 ns/op
-Benchmark_UnpackSeqShort4-8                  100          21312704 ns/op
-Benchmark_UnpackSeqShortMax-8                100          18395262 ns/op
-Benchmark_UnpackSeqLong1-8                     1        1538266286 ns/op
-Benchmark_UnpackSeqLong4-8                     1        2140915576 ns/op
-Benchmark_UnpackSeqLongMax-8                   1        2730406285 ns/op
-
-Benchmark_PackSeqShort1-8             20          87414175 ns/op
-Benchmark_PackSeqShort4-8             50          24514465 ns/op
-Benchmark_PackSeqShortMax-8          100          23399695 ns/op
-Benchmark_PackSeqLong1-8               1        1471399081 ns/op
-Benchmark_PackSeqLong4-8               1        2160393376 ns/op
-Benchmark_PackSeqLongMax-8             1        2973043492 ns/op
-
-Benchmark_CleanASCIISeqShort1-8               20          95413137 ns/op
-Benchmark_CleanASCIISeqShort4-8               50          26567655 ns/op
-Benchmark_CleanASCIISeqShortMax-8            100          24327826 ns/op
-Benchmark_CleanASCIISeqLong1-8                 1        1533053583 ns/op
-Benchmark_CleanASCIISeqLong4-8                 1        1982245778 ns/op
-Benchmark_CleanASCIISeqLongMax-8               1        2781139905 ns/op
-
-Benchmark_ASCIIToSeq8Short1-8                 10         108897260 ns/op
-Benchmark_ASCIIToSeq8Short4-8                 50          30240106 ns/op
-Benchmark_ASCIIToSeq8ShortMax-8               50          28269450 ns/op
-Benchmark_ASCIIToSeq8Long1-8                   1        2042849647 ns/op
-Benchmark_ASCIIToSeq8Long4-8                   1        2866563421 ns/op
-Benchmark_ASCIIToSeq8LongMax-8                 1        4069479778 ns/op
-
-Benchmark_IsNonACGTSeqShort1-8                20          68965449 ns/op
-Benchmark_IsNonACGTSeqShort4-8               100          19292183 ns/op
-Benchmark_IsNonACGTSeqShortMax-8             100          19445680 ns/op
-Benchmark_IsNonACGTSeqLong1-8                  2         570726956 ns/op
-Benchmark_IsNonACGTSeqLong4-8                  1        1011456304 ns/op
-Benchmark_IsNonACGTSeqLongMax-8                1        1498684970 ns/op
-
-Benchmark_ASCIITo2bitShort1-8                 10         141109698 ns/op
-Benchmark_ASCIITo2bitShort4-8                 30          44586065 ns/op
-Benchmark_ASCIITo2bitShortMax-8               50          34226516 ns/op
-Benchmark_ASCIITo2bitLong1-8                   1        1412872064 ns/op
-Benchmark_ASCIITo2bitLong4-8                   1        1857122215 ns/op
-Benchmark_ASCIITo2bitLongMax-8                 1        2684606937 ns/op
-
-For comparison, unpackSeqSlow:
-Benchmark_UnpackSeqShort1-8                    3         473023326 ns/op
-Benchmark_UnpackSeqShort4-8                   10         129047060 ns/op
-Benchmark_UnpackSeqShortMax-8                 10         125980303 ns/op
-Benchmark_UnpackSeqLong1-8                     1        7138005653 ns/op
-Benchmark_UnpackSeqLong4-8                     1        2893149098 ns/op
-Benchmark_UnpackSeqLongMax-8                   1        3700028341 ns/op
-
-packSeqSlow:
-Benchmark_PackSeqShort1-8              3         480596640 ns/op
-Benchmark_PackSeqShort4-8             10         129111468 ns/op
-Benchmark_PackSeqShortMax-8           10         118149764 ns/op
-Benchmark_PackSeqLong1-8               1        6663558987 ns/op
-Benchmark_PackSeqLong4-8               1        2954068774 ns/op
-Benchmark_PackSeqLongMax-8             1        4180531216 ns/op
-
-cleanASCIISeqSlow:
-Benchmark_CleanASCIISeqShort1-8                3         450481328 ns/op
-Benchmark_CleanASCIISeqShort4-8               10         122691751 ns/op
-Benchmark_CleanASCIISeqShortMax-8             10         158868958 ns/op
-Benchmark_CleanASCIISeqLong1-8                 1        6094399462 ns/op
-Benchmark_CleanASCIISeqLong4-8                 1        4005568728 ns/op
-Benchmark_CleanASCIISeqLongMax-8               1        3286359547 ns/op
-
-asciiToSeq8Slow:
-Benchmark_ASCIIToSeq8Short1-8                  2         534821999 ns/op
-Benchmark_ASCIIToSeq8Short4-8                 10         145672279 ns/op
-Benchmark_ASCIIToSeq8ShortMax-8               10         133403902 ns/op
-Benchmark_ASCIIToSeq8Long1-8                   1        8159363086 ns/op
-Benchmark_ASCIIToSeq8Long4-8                   1        3625222422 ns/op
-Benchmark_ASCIIToSeq8LongMax-8                 1        4613796268 ns/op
-
-isNonACGTPresentSlow:
-Benchmark_IsNonACGTSeqShort1-8                 5         311237808 ns/op
-Benchmark_IsNonACGTSeqShort4-8                20          87487932 ns/op
-Benchmark_IsNonACGTSeqShortMax-8              20          68635003 ns/op
-Benchmark_IsNonACGTSeqLong1-8                  1        3158281885 ns/op
-Benchmark_IsNonACGTSeqLong4-8                  1        2215643228 ns/op
-Benchmark_IsNonACGTSeqLongMax-8                1        2045172556 ns/op
-
-asciiTo2bitSlow:
-Benchmark_ASCIITo2bitShort1-8                  3         445481375 ns/op
-Benchmark_ASCIITo2bitShort4-8                 10         115023132 ns/op
-Benchmark_ASCIITo2bitShortMax-8               10         114890810 ns/op
-Benchmark_ASCIITo2bitLong1-8                   1        7284632010 ns/op
-Benchmark_ASCIITo2bitLong4-8                   1        3001575126 ns/op
-Benchmark_ASCIITo2bitLongMax-8                 1        4445145537 ns/op
-*/
-
-func unpackSeqSubtask(dst, src []byte, nIter int) int {
-	for iter := 0; iter < nIter; iter++ {
-		biosimd.UnpackSeqUnsafe(dst, src)
-	}
-	return int(dst[0])
-}
-
-func unpackSeqSubtaskFuture(dst, src []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- unpackSeqSubtask(dst, src, nIter) }()
-	return future
-}
-
-func multiUnpackSeq(dsts, srcs [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = unpackSeqSubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeP1)
-	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = unpackSeqSubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeBase)
-	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
-	}
-}
-
-func benchmarkUnpackSeq(cpus int, nDstByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
-	}
-
-	srcSlices := make([][]byte, cpus)
-	dstSlices := make([][]byte, cpus)
-	nSrcByte := (nDstByte + 1) >> 1
-	for ii := range srcSlices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nSrcByte + 63)
-		for jj := 0; jj < nSrcByte; jj++ {
-			newArr[jj] = byte(jj * 3)
-		}
-		srcSlices[ii] = newArr[:nSrcByte]
-		newArr = simd.MakeUnsafe(nDstByte + 63)
-		dstSlices[ii] = newArr[:nDstByte]
-	}
-	for i := 0; i < b.N; i++ {
-		multiUnpackSeq(dstSlices, srcSlices, cpus, nJob)
-	}
-}
-
-func Benchmark_UnpackSeqShort1(b *testing.B) {
-	benchmarkUnpackSeq(1, 75, 9999999, b)
-}
-
-func Benchmark_UnpackSeqShort4(b *testing.B) {
-	benchmarkUnpackSeq(4, 75, 9999999, b)
-}
-
-func Benchmark_UnpackSeqShortMax(b *testing.B) {
-	benchmarkUnpackSeq(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_UnpackSeqLong1(b *testing.B) {
-	benchmarkUnpackSeq(1, 249250621, 50, b)
-}
-
-func Benchmark_UnpackSeqLong4(b *testing.B) {
-	benchmarkUnpackSeq(4, 249250621, 50, b)
-}
-
-func Benchmark_UnpackSeqLongMax(b *testing.B) {
-	benchmarkUnpackSeq(runtime.NumCPU(), 249250621, 50, b)
-}
 
 func unpackSeqSlow(dst, src []byte) {
 	dstLen := len(dst)
@@ -241,82 +66,54 @@ func TestUnpackSeq(t *testing.T) {
 	}
 }
 
-func packSeqSubtask(dst, src []byte, nIter int) int {
+/*
+Benchmark results:
+  MacBook Pro (15-inch, 2016)
+  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
+
+Benchmark_UnpackSeq/SIMDShort1Cpu-8                   10         114488272 ns/op
+Benchmark_UnpackSeq/SIMDShortHalfCpu-8                50          33101140 ns/op
+Benchmark_UnpackSeq/SIMDShortAllCpu-8                 50          29595972 ns/op
+Benchmark_UnpackSeq/SIMDLong1Cpu-8                     1        1422335485 ns/op
+Benchmark_UnpackSeq/SIMDLongHalfCpu-8                  1        1259798679 ns/op
+Benchmark_UnpackSeq/SIMDLongAllCpu-8                   1        1225190627 ns/op
+Benchmark_UnpackSeq/SlowShort1Cpu-8                    1        1015049353 ns/op
+Benchmark_UnpackSeq/SlowShortHalfCpu-8                 5         261288559 ns/op
+Benchmark_UnpackSeq/SlowShortAllCpu-8                  5         264394570 ns/op
+Benchmark_UnpackSeq/SlowLong1Cpu-8                     1        7125495274 ns/op
+Benchmark_UnpackSeq/SlowLongHalfCpu-8                  1        2041117525 ns/op
+Benchmark_UnpackSeq/SlowLongAllCpu-8                   1        2022058870 ns/op
+*/
+
+func unpackSeqSimdSubtask(dst, src []byte, nIter int) int {
 	for iter := 0; iter < nIter; iter++ {
-		biosimd.PackSeqUnsafe(dst, src)
+		biosimd.UnpackSeq(dst, src)
 	}
 	return int(dst[0])
 }
 
-func packSeqSubtaskFuture(dst, src []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- packSeqSubtask(dst, src, nIter) }()
-	return future
-}
-
-func multiPackSeq(dsts, srcs [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = packSeqSubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeP1)
+func unpackSeqSlowSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		unpackSeqSlow(dst, src)
 	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = packSeqSubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeBase)
+	return int(dst[0])
+}
+
+func Benchmark_UnpackSeq(b *testing.B) {
+	funcs := []taggedMultiBenchFunc{
+		{
+			f:   unpackSeqSimdSubtask,
+			tag: "SIMD",
+		},
+		{
+			f:   unpackSeqSlowSubtask,
+			tag: "Slow",
+		},
 	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
+	for _, f := range funcs {
+		multiBenchmark(f.f, f.tag+"Short", 150, 75, 9999999, b)
+		multiBenchmark(f.f, f.tag+"Long", 249250621, 249250622/2, 50, b)
 	}
-}
-
-func benchmarkPackSeq(cpus int, nSrcByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
-	}
-
-	srcSlices := make([][]byte, cpus)
-	dstSlices := make([][]byte, cpus)
-	nDstByte := (nSrcByte + 1) >> 1
-	for ii := range srcSlices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nSrcByte + 63)
-		for jj := 0; jj < nSrcByte; jj++ {
-			newArr[jj] = byte(jj*3) & 15
-		}
-		srcSlices[ii] = newArr[:nSrcByte]
-		newArr = simd.MakeUnsafe(nDstByte + 63)
-		dstSlices[ii] = newArr[:nDstByte]
-	}
-	for i := 0; i < b.N; i++ {
-		multiPackSeq(dstSlices, srcSlices, cpus, nJob)
-	}
-}
-
-func Benchmark_PackSeqShort1(b *testing.B) {
-	benchmarkPackSeq(1, 75, 9999999, b)
-}
-
-func Benchmark_PackSeqShort4(b *testing.B) {
-	benchmarkPackSeq(4, 75, 9999999, b)
-}
-
-func Benchmark_PackSeqShortMax(b *testing.B) {
-	benchmarkPackSeq(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_PackSeqLong1(b *testing.B) {
-	benchmarkPackSeq(1, 249250621, 50, b)
-}
-
-func Benchmark_PackSeqLong4(b *testing.B) {
-	benchmarkPackSeq(4, 249250621, 50, b)
-}
-
-func Benchmark_PackSeqLongMax(b *testing.B) {
-	benchmarkPackSeq(runtime.NumCPU(), 249250621, 50, b)
 }
 
 func packSeqSlow(dst, src []byte) {
@@ -372,6 +169,59 @@ func TestPackSeq(t *testing.T) {
 		if !bytes.Equal(srcSlice, src2Slice) {
 			t.Fatal("UnpackSeq didn't invert PackSeq.")
 		}
+	}
+}
+
+/*
+Benchmark results:
+  MacBook Pro (15-inch, 2016)
+  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
+
+Benchmark_PackSeq/SIMDShort1Cpu-8                     10         129231849 ns/op
+Benchmark_PackSeq/SIMDShortHalfCpu-8                  30          35308881 ns/op
+Benchmark_PackSeq/SIMDShortAllCpu-8                   50          29446951 ns/op
+Benchmark_PackSeq/SIMDLong1Cpu-8                       1        1269761380 ns/op
+Benchmark_PackSeq/SIMDLongHalfCpu-8                    2         943575752 ns/op
+Benchmark_PackSeq/SIMDLongAllCpu-8                     2         978903937 ns/op
+Benchmark_PackSeq/SlowShort1Cpu-8                      2         884202854 ns/op
+Benchmark_PackSeq/SlowShortHalfCpu-8                   5         238293524 ns/op
+Benchmark_PackSeq/SlowShortAllCpu-8                    5         249022709 ns/op
+Benchmark_PackSeq/SlowLong1Cpu-8                       1        6614932340 ns/op
+Benchmark_PackSeq/SlowLongHalfCpu-8                    1        1959242488 ns/op
+Benchmark_PackSeq/SlowLongAllCpu-8                     1        1906831458 ns/op
+*/
+
+func packSeqSimdSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.PackSeq(dst, src)
+	}
+	return int(dst[0])
+}
+
+func packSeqSlowSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		packSeqSlow(dst, src)
+	}
+	return int(dst[0])
+}
+
+func Benchmark_PackSeq(b *testing.B) {
+	funcs := []taggedMultiBenchFunc{
+		{
+			f:   packSeqSimdSubtask,
+			tag: "SIMD",
+		},
+		{
+			f:   packSeqSlowSubtask,
+			tag: "Slow",
+		},
+	}
+	opts := multiBenchmarkOpts{
+		srcInit: bytesInitMax15,
+	}
+	for _, f := range funcs {
+		multiBenchmark(f.f, f.tag+"Short", 75, 150, 9999999, b, opts)
+		multiBenchmark(f.f, f.tag+"Long", 249250622/2, 249250621, 50, b, opts)
 	}
 }
 
@@ -473,80 +323,6 @@ func TestUnpackAndReplaceSeqSubset(t *testing.T) {
 	}
 }
 
-func cleanASCIISeqSubtask(ascii8 []byte, nIter int) int {
-	for iter := 0; iter < nIter; iter++ {
-		biosimd.CleanASCIISeqInplace(ascii8)
-	}
-	return int(ascii8[0])
-}
-
-func cleanASCIISeqSubtaskFuture(ascii8 []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- cleanASCIISeqSubtask(ascii8, nIter) }()
-	return future
-}
-
-func multiCleanASCIISeq(ascii8s [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = cleanASCIISeqSubtaskFuture(ascii8s[taskIdx], shardSizeP1)
-	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = cleanASCIISeqSubtaskFuture(ascii8s[taskIdx], shardSizeBase)
-	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
-	}
-}
-
-func benchmarkCleanASCIISeq(cpus int, nByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
-	}
-
-	ascii8Slices := make([][]byte, cpus)
-	for ii := range ascii8Slices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nByte + 63)
-		for jj := 0; jj < nByte; jj++ {
-			newArr[jj] = byte(jj * 3)
-		}
-		ascii8Slices[ii] = newArr[:nByte]
-	}
-	for i := 0; i < b.N; i++ {
-		multiCleanASCIISeq(ascii8Slices, cpus, nJob)
-	}
-}
-
-func Benchmark_CleanASCIISeqShort1(b *testing.B) {
-	benchmarkCleanASCIISeq(1, 75, 9999999, b)
-}
-
-func Benchmark_CleanASCIISeqShort4(b *testing.B) {
-	benchmarkCleanASCIISeq(4, 75, 9999999, b)
-}
-
-func Benchmark_CleanASCIISeqShortMax(b *testing.B) {
-	benchmarkCleanASCIISeq(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_CleanASCIISeqLong1(b *testing.B) {
-	benchmarkCleanASCIISeq(1, 249250621, 50, b)
-}
-
-func Benchmark_CleanASCIISeqLong4(b *testing.B) {
-	benchmarkCleanASCIISeq(4, 249250621, 50, b)
-}
-
-func Benchmark_CleanASCIISeqLongMax(b *testing.B) {
-	benchmarkCleanASCIISeq(runtime.NumCPU(), 249250621, 50, b)
-}
-
 var cleanASCIISeqTable = [...]byte{
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
@@ -595,6 +371,56 @@ func TestCleanASCIISeq(t *testing.T) {
 		if main2Arr[sliceEnd] != sentinel {
 			t.Fatal("CleanASCIISeqInplace clobbered an extra byte.")
 		}
+	}
+}
+
+/*
+Benchmark results:
+  MacBook Pro (15-inch, 2016)
+  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
+
+Benchmark_CleanASCIISeq/SIMDShort1Cpu-8                       10         160858434 ns/op
+Benchmark_CleanASCIISeq/SIMDShortHalfCpu-8                    30          46693005 ns/op
+Benchmark_CleanASCIISeq/SIMDShortAllCpu-8                     30          54947652 ns/op
+Benchmark_CleanASCIISeq/SIMDLong1Cpu-8                         1        1253789279 ns/op
+Benchmark_CleanASCIISeq/SIMDLongHalfCpu-8                      2         956054465 ns/op
+Benchmark_CleanASCIISeq/SIMDLongAllCpu-8                       2         966463331 ns/op
+Benchmark_CleanASCIISeq/SlowShort1Cpu-8                        2         786219782 ns/op
+Benchmark_CleanASCIISeq/SlowShortHalfCpu-8                     5         216001911 ns/op
+Benchmark_CleanASCIISeq/SlowShortAllCpu-8                      5         284746643 ns/op
+Benchmark_CleanASCIISeq/SlowLong1Cpu-8                         1        5772484661 ns/op
+Benchmark_CleanASCIISeq/SlowLongHalfCpu-8                      1        1661768283 ns/op
+Benchmark_CleanASCIISeq/SlowLongAllCpu-8                       1        1655490487 ns/op
+*/
+
+func cleanASCIISeqSimdSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.CleanASCIISeqInplace(src)
+	}
+	return int(src[0])
+}
+
+func cleanASCIISeqSlowSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		cleanASCIISeqSlow(src)
+	}
+	return int(src[0])
+}
+
+func Benchmark_CleanASCIISeq(b *testing.B) {
+	funcs := []taggedMultiBenchFunc{
+		{
+			f:   cleanASCIISeqSimdSubtask,
+			tag: "SIMD",
+		},
+		{
+			f:   cleanASCIISeqSlowSubtask,
+			tag: "Slow",
+		},
+	}
+	for _, f := range funcs {
+		multiBenchmark(f.f, f.tag+"Short", 0, 150, 9999999, b)
+		multiBenchmark(f.f, f.tag+"Long", 0, 249250621, 50, b)
 	}
 }
 
@@ -649,83 +475,6 @@ func TestCleanASCIISeqNoCapitalize(t *testing.T) {
 	}
 }
 
-func asciiToSeq8Subtask(dst, src []byte, nIter int) int {
-	for iter := 0; iter < nIter; iter++ {
-		biosimd.ASCIIToSeq8(dst, src)
-	}
-	return int(dst[0])
-}
-
-func asciiToSeq8SubtaskFuture(dst, src []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- asciiToSeq8Subtask(dst, src, nIter) }()
-	return future
-}
-
-func multiASCIIToSeq8(dsts, srcs [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = asciiToSeq8SubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeP1)
-	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = asciiToSeq8SubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeBase)
-	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
-	}
-}
-
-func benchmarkASCIIToSeq8(cpus int, nByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
-	}
-
-	srcSlices := make([][]byte, cpus)
-	dstSlices := make([][]byte, cpus)
-	for ii := range srcSlices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nByte + 63)
-		for jj := 0; jj < nByte; jj++ {
-			newArr[jj] = byte(jj * 3)
-		}
-		srcSlices[ii] = newArr[:nByte]
-		newArr = simd.MakeUnsafe(nByte + 63)
-		dstSlices[ii] = newArr[:nByte]
-	}
-	for i := 0; i < b.N; i++ {
-		multiASCIIToSeq8(dstSlices, srcSlices, cpus, nJob)
-	}
-}
-
-func Benchmark_ASCIIToSeq8Short1(b *testing.B) {
-	benchmarkASCIIToSeq8(1, 75, 9999999, b)
-}
-
-func Benchmark_ASCIIToSeq8Short4(b *testing.B) {
-	benchmarkASCIIToSeq8(4, 75, 9999999, b)
-}
-
-func Benchmark_ASCIIToSeq8ShortMax(b *testing.B) {
-	benchmarkASCIIToSeq8(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_ASCIIToSeq8Long1(b *testing.B) {
-	benchmarkASCIIToSeq8(1, 249250621, 50, b)
-}
-
-func Benchmark_ASCIIToSeq8Long4(b *testing.B) {
-	benchmarkASCIIToSeq8(4, 249250621, 50, b)
-}
-
-func Benchmark_ASCIIToSeq8LongMax(b *testing.B) {
-	benchmarkASCIIToSeq8(runtime.NumCPU(), 249250621, 50, b)
-}
-
 var asciiToSeq8Table = [...]byte{
 	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
 	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
@@ -778,83 +527,54 @@ func TestASCIIToSeq8(t *testing.T) {
 	}
 }
 
-func isNonACGTSubtask(ascii8 []byte, nIter int) int {
-	result := true
+/*
+Benchmark results:
+  MacBook Pro (15-inch, 2016)
+  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
+
+Benchmark_ASCIIToSeq8/SIMDShort1Cpu-8                 10         174509334 ns/op
+Benchmark_ASCIIToSeq8/SIMDShortHalfCpu-8              30          50186046 ns/op
+Benchmark_ASCIIToSeq8/SIMDShortAllCpu-8               30          43507043 ns/op
+Benchmark_ASCIIToSeq8/SIMDLong1Cpu-8                   1        1776279803 ns/op
+Benchmark_ASCIIToSeq8/SIMDLongHalfCpu-8                1        1460196089 ns/op
+Benchmark_ASCIIToSeq8/SIMDLongAllCpu-8                 1        1558179066 ns/op
+Benchmark_ASCIIToSeq8/SlowShort1Cpu-8                  1        1045087004 ns/op
+Benchmark_ASCIIToSeq8/SlowShortHalfCpu-8               5         290375515 ns/op
+Benchmark_ASCIIToSeq8/SlowShortAllCpu-8                5         264632378 ns/op
+Benchmark_ASCIIToSeq8/SlowLong1Cpu-8                   1        7548472579 ns/op
+Benchmark_ASCIIToSeq8/SlowLongHalfCpu-8                1        2205978878 ns/op
+Benchmark_ASCIIToSeq8/SlowLongAllCpu-8                 1        2205048275 ns/op
+*/
+
+func asciiToSeq8SimdSubtask(dst, src []byte, nIter int) int {
 	for iter := 0; iter < nIter; iter++ {
-		result = result && biosimd.IsNonACGTPresent(ascii8)
+		biosimd.ASCIIToSeq8(dst, src)
 	}
-	if result {
-		return int(ascii8[0])
+	return int(dst[0])
+}
+
+func asciiToSeq8SlowSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		asciiToSeq8Slow(dst, src)
 	}
-	return int(ascii8[1])
+	return int(dst[0])
 }
 
-func isNonACGTSubtaskFuture(ascii8 []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- isNonACGTSubtask(ascii8, nIter) }()
-	return future
-}
-
-func multiIsNonACGTSeq(ascii8s [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = isNonACGTSubtaskFuture(ascii8s[taskIdx], shardSizeP1)
+func Benchmark_ASCIIToSeq8(b *testing.B) {
+	funcs := []taggedMultiBenchFunc{
+		{
+			f:   asciiToSeq8SimdSubtask,
+			tag: "SIMD",
+		},
+		{
+			f:   asciiToSeq8SlowSubtask,
+			tag: "Slow",
+		},
 	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = isNonACGTSubtaskFuture(ascii8s[taskIdx], shardSizeBase)
+	for _, f := range funcs {
+		multiBenchmark(f.f, f.tag+"Short", 150, 150, 9999999, b)
+		multiBenchmark(f.f, f.tag+"Long", 249250621, 249250621, 50, b)
 	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
-	}
-}
-
-func benchmarkIsNonACGTSeq(cpus int, nByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
-	}
-
-	ascii8Slices := make([][]byte, cpus)
-	for ii := range ascii8Slices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nByte + 63)
-		for jj := 0; jj < nByte; jj++ {
-			newArr[jj] = 'T'
-		}
-		newArr[nByte/2] = 'N'
-		ascii8Slices[ii] = newArr[:nByte]
-	}
-	for i := 0; i < b.N; i++ {
-		multiIsNonACGTSeq(ascii8Slices, cpus, nJob)
-	}
-}
-
-func Benchmark_IsNonACGTSeqShort1(b *testing.B) {
-	benchmarkIsNonACGTSeq(1, 75, 9999999, b)
-}
-
-func Benchmark_IsNonACGTSeqShort4(b *testing.B) {
-	benchmarkIsNonACGTSeq(4, 75, 9999999, b)
-}
-
-func Benchmark_IsNonACGTSeqShortMax(b *testing.B) {
-	benchmarkIsNonACGTSeq(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_IsNonACGTSeqLong1(b *testing.B) {
-	benchmarkIsNonACGTSeq(1, 249250621, 50, b)
-}
-
-func Benchmark_IsNonACGTSeqLong4(b *testing.B) {
-	benchmarkIsNonACGTSeq(4, 249250621, 50, b)
-}
-
-func Benchmark_IsNonACGTSeqLongMax(b *testing.B) {
-	benchmarkIsNonACGTSeq(runtime.NumCPU(), 249250621, 50, b)
 }
 
 var isNotCapitalACGTTable = [...]bool{
@@ -944,82 +664,72 @@ func TestIsNonACGTPresent(t *testing.T) {
 	}
 }
 
-func asciiTo2bitSubtask(dst, src []byte, nIter int) int {
+/*
+Benchmark results:
+  MacBook Pro (15-inch, 2016)
+  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
+
+Benchmark_IsNonACGT/SIMDShort1Cpu-8                   10         119109843 ns/op
+Benchmark_IsNonACGT/SIMDShortHalfCpu-8                50          32582132 ns/op
+Benchmark_IsNonACGT/SIMDShortAllCpu-8                 50          31520017 ns/op
+Benchmark_IsNonACGT/SIMDLong1Cpu-8                     2         523407296 ns/op
+Benchmark_IsNonACGT/SIMDLongHalfCpu-8                  5         246869590 ns/op
+Benchmark_IsNonACGT/SIMDLongAllCpu-8                   5         242370257 ns/op
+Benchmark_IsNonACGT/SlowShort1Cpu-8                    2         859943960 ns/op
+Benchmark_IsNonACGT/SlowShortHalfCpu-8                 5         231780298 ns/op
+Benchmark_IsNonACGT/SlowShortAllCpu-8                 10         192068918 ns/op
+Benchmark_IsNonACGT/SlowLong1Cpu-8                     1        4354582419 ns/op
+Benchmark_IsNonACGT/SlowLongHalfCpu-8                  1        1213058951 ns/op
+Benchmark_IsNonACGT/SlowLongAllCpu-8                   1        1068068278 ns/op
+*/
+
+func isNonACGTSimdSubtask(dst, src []byte, nIter int) int {
+	result := true
 	for iter := 0; iter < nIter; iter++ {
-		biosimd.ASCIITo2bit(dst, src)
+		result = result && biosimd.IsNonACGTPresent(src)
 	}
-	return int(dst[0])
-}
-
-func asciiTo2bitSubtaskFuture(dst, src []byte, nIter int) chan int {
-	future := make(chan int)
-	go func() { future <- asciiTo2bitSubtask(dst, src, nIter) }()
-	return future
-}
-
-func multiASCIITo2bit(dsts, srcs [][]byte, cpus int, nJob int) {
-	sumFutures := make([]chan int, cpus)
-	shardSizeBase := nJob / cpus
-	shardRemainder := nJob - shardSizeBase*cpus
-	shardSizeP1 := shardSizeBase + 1
-	var taskIdx int
-	for ; taskIdx < shardRemainder; taskIdx++ {
-		sumFutures[taskIdx] = asciiTo2bitSubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeP1)
+	if result {
+		return int(src[0])
 	}
-	for ; taskIdx < cpus; taskIdx++ {
-		sumFutures[taskIdx] = asciiTo2bitSubtaskFuture(dsts[taskIdx], srcs[taskIdx], shardSizeBase)
+	return int(src[1])
+}
+
+func isNonACGTSlowSubtask(dst, src []byte, nIter int) int {
+	result := true
+	for iter := 0; iter < nIter; iter++ {
+		result = result && isNonACGTPresentSlow(src)
 	}
-	var sum int
-	for taskIdx = 0; taskIdx < cpus; taskIdx++ {
-		sum += <-sumFutures[taskIdx]
+	if result {
+		return int(src[0])
 	}
+	return int(src[1])
 }
 
-func benchmarkASCIITo2bit(cpus int, nSrcByte int, nJob int, b *testing.B) {
-	if cpus > runtime.NumCPU() {
-		b.Skipf("only have %v cpus", runtime.NumCPU())
+func bytesInitIsNonACGT(src []byte) {
+	for i := 0; i < len(src); i++ {
+		src[i] = 'T'
 	}
+	src[len(src)/2] = 'N'
+}
 
-	srcSlices := make([][]byte, cpus)
-	dstSlices := make([][]byte, cpus)
-	nDstByte := (nSrcByte + 3) >> 2
-	for ii := range srcSlices {
-		// Add 63 to prevent false sharing.
-		newArr := simd.MakeUnsafe(nSrcByte + 63)
-		for jj := 0; jj < nSrcByte; jj++ {
-			newArr[jj] = byte(jj*3) & 15
-		}
-		srcSlices[ii] = newArr[:nSrcByte]
-		newArr = simd.MakeUnsafe(nDstByte + 63)
-		dstSlices[ii] = newArr[:nDstByte]
+func Benchmark_IsNonACGT(b *testing.B) {
+	funcs := []taggedMultiBenchFunc{
+		{
+			f:   isNonACGTSimdSubtask,
+			tag: "SIMD",
+		},
+		{
+			f:   isNonACGTSlowSubtask,
+			tag: "Slow",
+		},
 	}
-	for i := 0; i < b.N; i++ {
-		multiASCIITo2bit(dstSlices, srcSlices, cpus, nJob)
+	opts := multiBenchmarkOpts{
+		srcInit: bytesInitIsNonACGT,
 	}
-}
-
-func Benchmark_ASCIITo2bitShort1(b *testing.B) {
-	benchmarkASCIITo2bit(1, 75, 9999999, b)
-}
-
-func Benchmark_ASCIITo2bitShort4(b *testing.B) {
-	benchmarkASCIITo2bit(4, 75, 9999999, b)
-}
-
-func Benchmark_ASCIITo2bitShortMax(b *testing.B) {
-	benchmarkASCIITo2bit(runtime.NumCPU(), 75, 9999999, b)
-}
-
-func Benchmark_ASCIITo2bitLong1(b *testing.B) {
-	benchmarkASCIITo2bit(1, 249250621, 50, b)
-}
-
-func Benchmark_ASCIITo2bitLong4(b *testing.B) {
-	benchmarkASCIITo2bit(4, 249250621, 50, b)
-}
-
-func Benchmark_ASCIITo2bitLongMax(b *testing.B) {
-	benchmarkASCIITo2bit(runtime.NumCPU(), 249250621, 50, b)
+	for _, f := range funcs {
+		multiBenchmark(f.f, f.tag+"Short", 0, 150, 9999999, b, opts)
+		multiBenchmark(f.f, f.tag+"Long", 0, 249250621, 50, b, opts)
+	}
 }
 
 var asciiTo2bitTable = [...]byte{
@@ -1094,5 +804,57 @@ func TestASCIITo2bit(t *testing.T) {
 		if dst2Arr[dstSliceEnd] != sentinel {
 			t.Fatal("ASCIITo2bit clobbered an extra byte.")
 		}
+	}
+}
+
+/*
+Benchmark results:
+  MacBook Pro (15-inch, 2016)
+  2.7 GHz Intel Core i7, 16 GB 2133 MHz LPDDR3
+
+Benchmark_ASCIITo2bit/SIMDShort1Cpu-8                 10         167372585 ns/op
+Benchmark_ASCIITo2bit/SIMDShortHalfCpu-8              30          47711367 ns/op
+Benchmark_ASCIITo2bit/SIMDShortAllCpu-8               50          40750863 ns/op
+Benchmark_ASCIITo2bit/SIMDLong1Cpu-8                   1        1100332706 ns/op
+Benchmark_ASCIITo2bit/SIMDLongHalfCpu-8                2         745580110 ns/op
+Benchmark_ASCIITo2bit/SIMDLongAllCpu-8                 2         733930687 ns/op
+Benchmark_ASCIITo2bit/SlowShort1Cpu-8                  2         861736085 ns/op
+Benchmark_ASCIITo2bit/SlowShortHalfCpu-8               5         236399713 ns/op
+Benchmark_ASCIITo2bit/SlowShortAllCpu-8                5         237820232 ns/op
+Benchmark_ASCIITo2bit/SlowLong1Cpu-8                   1        6900630152 ns/op
+Benchmark_ASCIITo2bit/SlowLongHalfCpu-8                1        1946458627 ns/op
+Benchmark_ASCIITo2bit/SlowLongAllCpu-8                 1        1953776199 ns/op
+*/
+
+func asciiTo2bitSimdSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		biosimd.ASCIITo2bit(dst, src)
+	}
+	return int(dst[0])
+}
+
+func asciiTo2bitSlowSubtask(dst, src []byte, nIter int) int {
+	for iter := 0; iter < nIter; iter++ {
+		asciiTo2bitSlow(dst, src)
+	}
+	return int(dst[0])
+}
+
+func Benchmark_ASCIITo2bit(b *testing.B) {
+	funcs := []taggedMultiBenchFunc{
+		{
+			f:   asciiTo2bitSimdSubtask,
+			tag: "SIMD",
+		},
+		{
+			f:   asciiTo2bitSlowSubtask,
+			tag: "Slow",
+		},
+	}
+	for _, f := range funcs {
+		// Most of the src characters here aren't in {A,C,G,T}, but that doesn't
+		// affect the benchmark results.
+		multiBenchmark(f.f, f.tag+"Short", 38, 150, 9999999, b)
+		multiBenchmark(f.f, f.tag+"Long", 249250624/4, 249250621, 50, b)
 	}
 }
