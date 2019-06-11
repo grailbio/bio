@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"math"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -17,48 +15,6 @@ import (
 	"github.com/grailbio/hts/sam"
 	"github.com/klauspost/compress/gzip"
 )
-
-// getTokens identifies up to the first len(tokens) tokens from curLine,
-// returning the number of tokens saved.  Any (group of) characters <= ' ' is
-// treated as a delimiter.
-//
-// A variant of this function which scrapes an arbitrary subset of the columns
-// will probably be added to base/simd; that's useful for processing VCF-like
-// files (but too heavyweight for the first three columns of a BED).
-func getTokens(tokens [][]byte, curLine []byte) int {
-	posEnd := 0
-	lineLen := len(curLine)
-	for tokenIdx := range tokens {
-		// These simple loops are better than simd.FirstGreater(src, ' ', startPos)
-		// and simd.FirstLeq(src, ' ', startPos) when length <20 tokens are
-		// expected.  They are also better than any of the standard library
-		// string-split functions.
-		// Unfortunately, the compiler currently does not inline any function with
-		// a loop no matter how trivial, so we can't justify making these 5-line
-		// for loops functions of their own.
-		//
-		// We may want to tweak this a bit to minimize the number of unnecessary
-		// bounds-checks, but wait for Go 1.11 since that contains its own BCE
-		// optimizations.
-		pos := posEnd
-		for ; pos != lineLen; pos++ {
-			if curLine[pos] > ' ' {
-				break
-			}
-		}
-		if pos == lineLen {
-			return tokenIdx
-		}
-		posEnd = pos
-		for ; posEnd != lineLen; posEnd++ {
-			if curLine[posEnd] <= ' ' {
-				break
-			}
-		}
-		tokens[tokenIdx] = curLine[pos:posEnd]
-	}
-	return len(tokens)
-}
 
 // NewBEDOpts defines behavior of this package's BED-loading function(s).
 type NewBEDOpts struct {
@@ -78,72 +34,54 @@ type NewBEDOpts struct {
 	OneBasedInput bool
 }
 
-// PosType is BEDUnion's coordinate type.
-type PosType int32
-
-// PosTypeMax is the maximum value that can be represented by a PosType.
-const PosTypeMax = math.MaxInt32
-
-// SearchPosType returns the index of x in a[], or the position where x would
-// be inserted if x isn't in a (this could be len(a)).  It's exactly the same
-// as sort.SearchInt(), except for PosType.
-func SearchPosType(a []PosType, x PosType) int {
-	return sort.Search(len(a), func(i int) bool { return a[i] >= x })
-}
-
-// FwdsearchPosType checks a[idx], then a[idx + 1], then a[idx + 3], then
-// a[idx + 7], etc., and then uses binary search to finish the job.  It's
-// usually a better choice than SearchPosType when iterating.
-// (However, an inlined simple linear search may be better in practice.  Can
-// benchmark later if it matters.)
-func FwdsearchPosType(a []PosType, x PosType, idx int) int {
-	nextIncr := 1
-	startIdx := idx
-	endIdx := len(a)
-	for idx < endIdx {
-		if a[idx] >= x {
-			endIdx = idx
-			break
-		}
-		startIdx = idx + 1
-		idx += nextIncr
-		nextIncr *= 2
-	}
-	// This is really just an inlined sort.Search call.  We spell it out since
-	// startIdx is usually equal to endIdx, and the compiler doesn't inline
-	// anything with a loop for now.
-	for startIdx < endIdx {
-		midIdx := int(uint(startIdx+endIdx) >> 1)
-		if a[midIdx] >= x {
-			endIdx = midIdx
-		} else {
-			startIdx = midIdx + 1
-		}
-	}
-	return startIdx
-}
-
-// BEDUnion is currently implemented as a collection of length-2N sequences,
-// where N is the number of intervals, the (0-based) start position of the
-// interval #k (numbering from zero) is in element [2k] and the end position is
-// in element [2k+1], and the intervals are stored in increasing order.
+// intervalUnion is the internal representation of an interval-union on a
+// single chromosome.
+//
+// As of this writing, it's a sorted slice of interval-endpoints.  More
+// precisely, if there are N disjoint intervals on a chromosome, the
+// corresponding slice has length 2N, the (0-based) start position of interval
+// #k (numbering from zero) is element [2k] in the slice, and the end position
+// of that interval is element [2k+1].
+//
 // Advantages of this representation over a length-N sequence of {start, end}
 // structs include simpler inversion code, and reuse of standard []int32 binary
 // and similar search algorithms (which the compiler is more likely to optimize
-// well).
+// well).  Since it's a broadly useful data structure, we expose it with the
+// EndpointIndex type and the BEDUnion.OverlapByID() and
+// BEDUnion.EndpointsByID() methods below.
+//
+// However, we define this type to leave open the possibility of changing the
+// internal representation in the future.  In the rest of this file, []PosType
+// is used in code that's specific to the current interval-endpoints
+// representation, while intervalUnion is used at a higher level of
+// abstraction.
+type intervalUnion []PosType
+
+// newIntervalUnionFromEndpoints initializes an intervalUnion from a sorted
+// slice of interval-endpoints.  (This function doesn't actually do anything
+// for now, but it's defined so that tests will continue to work if we change
+// intervalUnion.)
+func newIntervalUnionFromEndpoints(endpoints []PosType) intervalUnion {
+	return endpoints
+}
+
+// BEDUnion represents the set of positions covered by the intervals in a BED
+// file, in a manner that supports efficient iteration and intersection
+// queries.  (It does not keep track of interval names, etc.; just the final
+// position set.)
 type BEDUnion struct {
-	// nameMap is a reference-name-keyed map with disjoint-interval-set values.
-	// Always initialized.
-	nameMap map[string]([]PosType)
-	// idMap is an optional slice of disjoint-interval-sets, indexed by biogo
-	// sam.Header reference ID.  It is only initialized if NewBEDUnion{FromPath}
-	// was called with SAMHeader initialized.
-	idMap [][]PosType
+	// nameMap is a reference-name-keyed map with interval-union values.  Always
+	// initialized.
+	nameMap map[string](intervalUnion)
+	// idMap is an optional slice of interval-unions, indexed by biogo sam.Header
+	// reference ID.  It is only initialized if NewBEDUnion{FromPath} was called
+	// with SAMHeader initialized.
+	idMap []intervalUnion
 	// RefNames maps reference IDs to names, when idMap is initialized.
 	RefNames []string
-	// lastRefIntervals points to the disjoint-interval-set for the most recently
+	// lastRefIntervals points to the interval-union for the most recently
 	// queried reference.  This is a minor performance optimization.
-	lastRefIntervals []PosType
+	lastRefIntervals intervalUnion
 	// lastRefName is the name of the last queried-by-name reference.  If it's
 	// nonempty, it must be in sync with lastRefIntervals.
 	lastRefName string
@@ -152,9 +90,9 @@ type BEDUnion struct {
 	lastRefID int
 	// lastPosPlus1 is 1 plus the last spot-queried position.
 	lastPosPlus1 PosType
-	// lastIdx is SearchPosType(lastRefIntervals, lastPosPlus1).  Cached to
-	// accelerate sequential queries.
-	lastIdx int
+	// lastEndpointIndex is SearchPosTypes(lastRefIntervals, lastPosPlus1).
+	// Cached to accelerate sequential queries.
+	lastEndpointIdx EndpointIndex
 	// isSequential is true if all queries since the last reference change have
 	// been in order of nondecreasing position.
 	isSequential bool
@@ -174,27 +112,27 @@ func (u *BEDUnion) ContainsByID(refID int, pos PosType) bool {
 		// just let this error out the usual way if the BEDUnion was not
 		// initialized with ID info.
 		u.lastRefIntervals = u.idMap[refID]
-		// Force use of SearchPosType() on the first query for a contig.
+		// Force use of SearchPosTypes() on the first query for a contig.
 		if u.lastRefIntervals == nil {
 			return false
 		}
-		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
+		u.lastEndpointIdx = SearchPosTypes(u.lastRefIntervals, posPlus1)
 		u.lastPosPlus1 = posPlus1
 		u.isSequential = true
-		return u.lastIdx&1 == 1
+		return u.lastEndpointIdx.Contained()
 	}
 	if u.lastRefIntervals == nil {
 		return false
 	}
 	if u.isSequential {
 		if posPlus1 >= u.lastPosPlus1 {
-			u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
+			u.lastEndpointIdx = ExpsearchPosType(u.lastRefIntervals, posPlus1, u.lastEndpointIdx)
 			u.lastPosPlus1 = posPlus1
-			return u.lastIdx&1 == 1
+			return u.lastEndpointIdx.Contained()
 		}
 		u.isSequential = false
 	}
-	return SearchPosType(u.lastRefIntervals, posPlus1)&1 == 1
+	return SearchPosTypes(u.lastRefIntervals, posPlus1).Contained()
 }
 
 // ContainsByName checks whether the (0-based) interval [pos, pos+1) is
@@ -205,27 +143,27 @@ func (u *BEDUnion) ContainsByName(refName string, pos PosType) bool {
 		u.lastRefName = refName
 		u.lastRefID = -1
 		u.lastRefIntervals = u.nameMap[refName]
-		// Force use of SearchPosType() on the first query for a contig.
+		// Force use of SearchPosTypes() on the first query for a contig.
 		if u.lastRefIntervals == nil {
 			return false
 		}
-		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
+		u.lastEndpointIdx = SearchPosTypes(u.lastRefIntervals, posPlus1)
 		u.lastPosPlus1 = posPlus1
 		u.isSequential = true
-		return u.lastIdx&1 == 1
+		return u.lastEndpointIdx.Contained()
 	}
 	if u.lastRefIntervals == nil {
 		return false
 	}
 	if u.isSequential {
 		if posPlus1 >= u.lastPosPlus1 {
-			u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
+			u.lastEndpointIdx = ExpsearchPosType(u.lastRefIntervals, posPlus1, u.lastEndpointIdx)
 			u.lastPosPlus1 = posPlus1
-			return u.lastIdx&1 == 1
+			return u.lastEndpointIdx.Contained()
 		}
 		u.isSequential = false
 	}
-	return SearchPosType(u.lastRefIntervals, posPlus1)&1 == 1
+	return SearchPosTypes(u.lastRefIntervals, posPlus1).Contained()
 }
 
 // Intersects checks whether the given contiguous possibly-multi-reference
@@ -236,19 +174,19 @@ func (u *BEDUnion) Intersects(startRefID int, startPos PosType, limitRefID int, 
 		panic("BEDUnion.Intersects: startRefID <= limitRefID required")
 	}
 	if startRefIntervals := u.idMap[startRefID]; startRefIntervals != nil {
-		idxStart := SearchPosType(startRefIntervals, startPos+1)
+		idxStart := SearchPosTypes(startRefIntervals, startPos+1)
 		if startRefID < limitRefID {
-			if idxStart < len(startRefIntervals) {
+			if !idxStart.Finished(startRefIntervals) {
 				return true
 			}
 		} else {
 			if limitPos <= startPos {
 				panic("BEDUnion.Intersects: limitPos > startPos required when startRefID == limitRefID")
 			}
-			if idxStart&1 == 1 {
+			if idxStart.Contained() {
 				return true
 			}
-			return (idxStart != len(startRefIntervals)) && (limitPos > startRefIntervals[idxStart])
+			return (!idxStart.Finished(startRefIntervals)) && (limitPos > startRefIntervals[idxStart])
 		}
 	}
 	if startRefID == limitRefID {
@@ -280,7 +218,7 @@ func (u *BEDUnion) IntersectsByID(refID int, startPos PosType, limitPos PosType)
 		if u.lastRefIntervals == nil {
 			return false
 		}
-		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
+		u.lastEndpointIdx = SearchPosTypes(u.lastRefIntervals, posPlus1)
 		u.isSequential = true
 	} else {
 		if u.lastRefIntervals == nil {
@@ -290,19 +228,19 @@ func (u *BEDUnion) IntersectsByID(refID int, startPos PosType, limitPos PosType)
 			u.isSequential = false
 		}
 		if !u.isSequential {
-			startIdx := SearchPosType(u.lastRefIntervals, posPlus1)
-			if (startIdx & 1) == 1 {
+			startIdx := SearchPosTypes(u.lastRefIntervals, posPlus1)
+			if startIdx.Contained() {
 				return true
 			}
-			return (len(u.lastRefIntervals) > startIdx) && (u.lastRefIntervals[startIdx] < limitPos)
+			return (!startIdx.Finished(u.lastRefIntervals)) && (u.lastRefIntervals[startIdx] < limitPos)
 		}
-		u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
+		u.lastEndpointIdx = ExpsearchPosType(u.lastRefIntervals, posPlus1, u.lastEndpointIdx)
 	}
 	u.lastPosPlus1 = posPlus1
-	if (u.lastIdx & 1) == 1 {
+	if u.lastEndpointIdx.Contained() {
 		return true
 	}
-	return (len(u.lastRefIntervals) > u.lastIdx) && (u.lastRefIntervals[u.lastIdx] < limitPos)
+	return (!u.lastEndpointIdx.Finished(u.lastRefIntervals)) && (u.lastRefIntervals[u.lastEndpointIdx] < limitPos)
 }
 
 // OverlapByID is a low-level function which returns a []PosType describing all
@@ -324,7 +262,7 @@ func (u *BEDUnion) OverlapByID(refID int, startPos, limitPos PosType) []PosType 
 		if u.lastRefIntervals == nil {
 			return nil
 		}
-		u.lastIdx = SearchPosType(u.lastRefIntervals, posPlus1)
+		u.lastEndpointIdx = SearchPosTypes(u.lastRefIntervals, posPlus1)
 		u.isSequential = true
 	} else {
 		if u.lastRefIntervals == nil {
@@ -334,32 +272,32 @@ func (u *BEDUnion) OverlapByID(refID int, startPos, limitPos PosType) []PosType 
 			u.isSequential = false
 		}
 		if !u.isSequential {
-			startIdx := SearchPosType(u.lastRefIntervals, posPlus1)
+			startIdx := SearchPosTypes(u.lastRefIntervals, posPlus1)
 			// If start of query is inside an interval, get the beginning of that
 			// interval by rounding down to the next even index.
-			resultStart := startIdx & (^1)
+			resultStart := startIdx.Begin()
 			// If end of query is inside an interval, get the end of that interval by
 			// rounding up to the next even index.
-			resultEnd := (SearchPosType(u.lastRefIntervals, limitPos) + 1) & (^1)
+			resultEnd := (SearchPosTypes(u.lastRefIntervals, limitPos) + 1).Begin()
 			return u.lastRefIntervals[resultStart:resultEnd]
 		}
-		u.lastIdx = FwdsearchPosType(u.lastRefIntervals, posPlus1, u.lastIdx)
+		u.lastEndpointIdx = ExpsearchPosType(u.lastRefIntervals, posPlus1, u.lastEndpointIdx)
 	}
 	u.lastPosPlus1 = posPlus1
-	resultStart := u.lastIdx & (^1)
-	resultEnd := (FwdsearchPosType(u.lastRefIntervals, limitPos, u.lastIdx) + 1) & (^1)
+	resultStart := u.lastEndpointIdx.Begin()
+	resultEnd := (ExpsearchPosType(u.lastRefIntervals, limitPos, u.lastEndpointIdx) + 1).Begin()
 	return u.lastRefIntervals[resultStart:resultEnd]
 }
 
-// RefByID gets the raw length-2n []PosType for the given reference.  (If
-// the internal representation changes in the future, this will allocate and
-// fill a new slice of that form.)
-func (u *BEDUnion) RefByID(refID int) []PosType {
+// EndpointsByID returns the sorted interval-endpoint slice for the reference
+// with the given ID.  This must be treated as read-only; it may alias an
+// internal data structure.
+func (u *BEDUnion) EndpointsByID(refID int) []PosType {
 	return u.idMap[refID]
 }
 
 func initBEDUnion() (bedUnion BEDUnion) {
-	bedUnion.nameMap = make(map[string]([]PosType))
+	bedUnion.nameMap = make(map[string](intervalUnion))
 	bedUnion.lastRefName = ""
 	bedUnion.lastRefID = -1
 	return
@@ -368,7 +306,7 @@ func initBEDUnion() (bedUnion BEDUnion) {
 func (u *BEDUnion) nameToIDData(header *sam.Header, invert bool) {
 	samRefs := header.Refs()
 	nRef := len(samRefs)
-	u.idMap = make([][]PosType, nRef)
+	u.idMap = make([]intervalUnion, nRef)
 	u.RefNames = make([]string, nRef)
 	for refID, ref := range samRefs {
 		// Validate ID property.  (Replace this with a comment if this is
@@ -383,9 +321,54 @@ func (u *BEDUnion) nameToIDData(header *sam.Header, invert bool) {
 		if refIntervals != nil {
 			u.idMap[refID] = refIntervals
 		} else if invert {
-			u.idMap[refID] = []PosType{-1, PosTypeMax}
+			u.idMap[refID] = newIntervalUnionFromEndpoints([]PosType{-1, PosTypeMax})
 		}
 	}
+}
+
+// getTokens identifies up to the first len(tokens) tokens from curLine,
+// returning the number of tokens saved.  Any (group of) characters <= ' ' is
+// treated as a delimiter.
+//
+// (This is too low-level to make sense alongside the base/tsv reader
+// interface, but it comes up often enough that I think we should move it to a
+// more central location at some point.)
+func getTokens(tokens [][]byte, curLine []byte) int {
+	// Make this unsigned to help the bounds-check-eliminator.
+	// (As of Go 1.12, if this is signed, the compiler fails to prove that pos
+	// and posEnd are never negative, so the signed pos >= lineLen check is
+	// followed by an unsigned pos >= len(curLine) bounds-check when accessing
+	// curLine[pos].  But if it's unsigned, the checks are identical and the
+	// second one is removed.)
+	posEnd := uint(0)
+	lineLen := uint(len(curLine))
+	for tokenIdx := range tokens {
+		// These simple loops are better than simd.FirstGreater(src, ' ', startPos)
+		// and simd.FirstLeq(src, ' ', startPos) when length <20 tokens are
+		// expected.  They are also better than any of the standard library
+		// string-split functions.
+		// Unfortunately, the compiler currently does not inline any function with
+		// a loop no matter how trivial, so we can't justify making these 5-line
+		// for loops functions of their own.
+		pos := posEnd
+		for ; ; pos++ {
+			if pos >= lineLen {
+				return tokenIdx
+			}
+			if curLine[pos] > ' ' {
+				break
+			}
+		}
+		for posEnd = pos; posEnd < lineLen; posEnd++ {
+			if curLine[posEnd] <= ' ' {
+				break
+			}
+		}
+		// 3 spurious bounds-checks remain here, but that's a much smaller deal
+		// than bounds-checks in the two loops above.
+		tokens[tokenIdx] = curLine[pos:posEnd]
+	}
+	return len(tokens)
 }
 
 func scanBEDUnion(scanner *bufio.Scanner, opts NewBEDOpts) (bedUnion BEDUnion, err error) {
@@ -404,7 +387,7 @@ func scanBEDUnion(scanner *bufio.Scanner, opts NewBEDOpts) (bedUnion BEDUnion, e
 	prevRef := ""
 	totBases := 0
 	var prevStart, prevEnd PosType
-	var refIntervals []PosType
+	var refIntervals intervalUnion
 	for scanner.Scan() {
 		lineIdx++
 		// Originally had a scanner.Text() call, since I'll take immutability
@@ -467,7 +450,7 @@ func scanBEDUnion(scanner *bufio.Scanner, opts NewBEDOpts) (bedUnion BEDUnion, e
 				err = fmt.Errorf("interval.scanBEDUnion: unsorted input (split reference %v)", curRef)
 				return
 			}
-			refIntervals = []PosType{}
+			refIntervals = intervalUnion{}
 			if opts.Invert {
 				refIntervals = append(refIntervals, -1)
 			}
@@ -636,7 +619,7 @@ func NewBEDUnionFromEntries(entries []Entry, opts NewBEDOpts) (bedUnion BEDUnion
 	bedUnion = initBEDUnion()
 	prevRef := ""
 	var prevStart, prevEnd PosType
-	var refIntervals []PosType
+	var refIntervals intervalUnion
 	for _, entry := range entries {
 		curRef := entry.RefName
 		if entry.Start0 < 0 {
@@ -664,7 +647,7 @@ func NewBEDUnionFromEntries(entries []Entry, opts NewBEDOpts) (bedUnion BEDUnion
 				err = fmt.Errorf("interval.NewBEDUnionFromEntry: unsorted input (split reference %v)", curRef)
 				return
 			}
-			refIntervals = []PosType{}
+			refIntervals = intervalUnion{}
 			if opts.Invert {
 				refIntervals = append(refIntervals, -1)
 			}
@@ -731,9 +714,9 @@ func (u *BEDUnion) Clone() (bedUnion BEDUnion) {
 // The original BEDUnion must support ID-based lookup.  Parameters are handled
 // in the same way as Intersects().
 func (u *BEDUnion) Subset(startRefID int, startPos PosType, limitRefID int, limitPos PosType) (bedUnion BEDUnion) {
-	bedUnion.nameMap = make(map[string]([]PosType))
+	bedUnion.nameMap = make(map[string](intervalUnion))
 	nRef := len(u.idMap)
-	bedUnion.idMap = make([][]PosType, nRef)
+	bedUnion.idMap = make([]intervalUnion, nRef)
 	bedUnion.RefNames = u.RefNames
 	bedUnion.lastRefIntervals = nil
 	bedUnion.lastRefName = ""
@@ -744,7 +727,7 @@ func (u *BEDUnion) Subset(startRefID int, startPos PosType, limitRefID int, limi
 		panic("BEDUnion.Subset: startRefID <= limitRefID required")
 	}
 	if startRefIntervals := u.idMap[startRefID]; startRefIntervals != nil {
-		idxStart := SearchPosType(startRefIntervals, startPos+1)
+		idxStart := NewEndpointIndex(startPos, startRefIntervals)
 		// Two cases:
 		// 1. startPos is strictly contained in an interval.  Then, we currently
 		//    need to make a copy of part of startRefIntervals and change the first
@@ -752,26 +735,26 @@ func (u *BEDUnion) Subset(startRefID int, startPos PosType, limitRefID int, limi
 		// 2. Otherwise, we can point the new idMap/nameMap entries at a subslice
 		//    of startRefIntervals (unless startRefID == limitRefID and limitPos
 		//    is in the middle of an interval).
-		newAllocNeeded := ((idxStart & 1) == 1) && (startRefIntervals[idxStart-1] != startPos)
+		newAllocNeeded := idxStart.Contained() && (startRefIntervals[idxStart-1] != startPos)
 		var refIntervalsSubset []PosType
 		if startRefID < limitRefID {
-			if idxStart < len(startRefIntervals) {
+			if !idxStart.Finished(startRefIntervals) {
 				if newAllocNeeded {
-					nElem := len(startRefIntervals) - idxStart + 1
+					nElem := EndpointIndex(len(startRefIntervals)) - idxStart + 1
 					refIntervalsSubset = make([]PosType, nElem)
 					refIntervalsSubset[0] = startPos
 					copy(refIntervalsSubset[1:], startRefIntervals[idxStart:])
 				} else {
 					// idxStart must be rounded down to next even integer in edge case.
-					refIntervalsSubset = startRefIntervals[idxStart&(^1):]
+					refIntervalsSubset = startRefIntervals[idxStart.Begin():]
 				}
 			}
 		} else {
 			if limitPos <= startPos {
 				panic("BEDUnion.Subset: limitPos > startPos required when startRefID == limitRefID")
 			}
-			idxEnd := SearchPosType(startRefIntervals, limitPos+1)
-			if (idxEnd&1 == 1) && (startRefIntervals[idxEnd-1] != limitPos) {
+			idxEnd := SearchPosTypes(startRefIntervals, limitPos+1)
+			if idxEnd.Contained() && (startRefIntervals[idxEnd-1] != limitPos) {
 				newAllocNeeded = true
 			}
 			if newAllocNeeded {
@@ -779,20 +762,20 @@ func (u *BEDUnion) Subset(startRefID int, startPos PosType, limitRefID int, limi
 				idxEndCopy := (idxEnd - 1) | 1
 				nElem := idxEndCopy - idxStartCopy + 2
 				refIntervalsSubset = make([]PosType, nElem)
-				if idxStart&1 == 1 {
+				if idxStart.Contained() {
 					refIntervalsSubset[0] = startPos
 				} else {
 					refIntervalsSubset[0] = startRefIntervals[idxStart]
 				}
 				copy(refIntervalsSubset[1:nElem-1], startRefIntervals[idxStartCopy:idxEndCopy])
-				if idxEnd&1 == 1 {
+				if idxEnd.Contained() {
 					refIntervalsSubset[nElem-1] = limitPos
 				} else {
 					refIntervalsSubset[nElem-1] = startRefIntervals[idxEndCopy]
 				}
 			} else {
-				idxStartFinal := idxStart & (^1)
-				idxEndFinal := idxEnd & (^1)
+				idxStartFinal := idxStart.Begin()
+				idxEndFinal := idxEnd.Begin()
 				if idxStartFinal == idxEndFinal {
 					return
 				}
@@ -813,17 +796,17 @@ func (u *BEDUnion) Subset(startRefID int, startPos PosType, limitRefID int, limi
 		bedUnion.nameMap[u.RefNames[refID]] = refIntervals
 	}
 	if limitRefIntervals := u.idMap[limitRefID]; limitRefIntervals != nil {
-		idxEnd := SearchPosType(limitRefIntervals, limitPos+1)
+		idxEnd := NewEndpointIndex(limitPos, limitRefIntervals)
 		if idxEnd == 0 {
 			return
 		}
 		var refIntervalsSubset []PosType
-		if ((idxEnd & 1) == 1) && (limitRefIntervals[idxEnd-1] != limitPos) {
+		if idxEnd.Contained() && (limitRefIntervals[idxEnd-1] != limitPos) {
 			refIntervalsSubset = make([]PosType, idxEnd+1)
 			copy(refIntervalsSubset[:idxEnd], limitRefIntervals[:idxEnd])
 			refIntervalsSubset[idxEnd] = limitPos
 		} else {
-			refIntervalsSubset = limitRefIntervals[:idxEnd&(^1)]
+			refIntervalsSubset = limitRefIntervals[:idxEnd.Begin()]
 		}
 		bedUnion.idMap[limitRefID] = refIntervalsSubset
 		bedUnion.nameMap[u.RefNames[limitRefID]] = refIntervalsSubset

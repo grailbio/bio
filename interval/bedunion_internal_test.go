@@ -19,8 +19,8 @@ func TestLoadSortedBEDIntervals(t *testing.T) {
 			false,
 			false,
 			BEDUnion{
-				nameMap: map[string]([]PosType){
-					"chr1": []PosType{
+				nameMap: map[string](intervalUnion){
+					"chr1": newIntervalUnionFromEndpoints([]PosType{
 						2488104, 2488172,
 						2489165, 2489273,
 						2489782, 2489907,
@@ -29,7 +29,7 @@ func TestLoadSortedBEDIntervals(t *testing.T) {
 						2492063, 2492157,
 						2493112, 2493254,
 						2494304, 2494335,
-						2494587, 2494712},
+						2494587, 2494712}),
 				},
 				lastRefName: "",
 				lastRefID:   -1,
@@ -39,19 +39,19 @@ func TestLoadSortedBEDIntervals(t *testing.T) {
 			true,
 			true,
 			BEDUnion{
-				nameMap: map[string]([]PosType){
-					"chr1": []PosType{
+				nameMap: map[string](intervalUnion){
+					"chr1": newIntervalUnionFromEndpoints([]PosType{
 						-1,
 						2488103, 2488172,
 						2489164, 2489273,
 						2489781, 2489907,
-						math.MaxInt32},
-					"chr2": []PosType{
+						math.MaxInt32}),
+					"chr2": newIntervalUnionFromEndpoints([]PosType{
 						-1,
 						2490319, 2492157,
 						2493111, 2494254,
 						2494586, 2494712,
-						math.MaxInt32},
+						math.MaxInt32}),
 				},
 				lastRefName: "",
 				lastRefID:   -1,
@@ -244,8 +244,8 @@ func TestSubset(t *testing.T) {
 				{
 					limitPos: 2488104,
 					want: BEDUnion{
-						nameMap:   make(map[string]([]PosType)),
-						idMap:     make([][]PosType, 2),
+						nameMap:   make(map[string](intervalUnion)),
+						idMap:     make([]intervalUnion, 2),
 						RefNames:  []string{"chr1", "chr2"},
 						lastRefID: -1,
 					},
@@ -253,13 +253,13 @@ func TestSubset(t *testing.T) {
 				{
 					limitPos: 2488105,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
-								2488104, 2488105},
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
+								2488104, 2488105}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
-								2488104, 2488105},
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
+								2488104, 2488105}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -269,13 +269,13 @@ func TestSubset(t *testing.T) {
 				{
 					limitPos: 2488172,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
-								2488104, 2488172},
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
+								2488104, 2488172}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
-								2488104, 2488172},
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
+								2488104, 2488172}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -285,13 +285,13 @@ func TestSubset(t *testing.T) {
 				{
 					limitPos: 2489165,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
-								2488104, 2488172},
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
+								2488104, 2488172}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
-								2488104, 2488172},
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
+								2488104, 2488172}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -301,17 +301,17 @@ func TestSubset(t *testing.T) {
 				{
 					limitPos: 2489166,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
 								2488104, 2488172,
 								2489165, 2489166,
-							},
+							}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
 								2488104, 2488172,
 								2489165, 2489166,
-							},
+							}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -322,17 +322,17 @@ func TestSubset(t *testing.T) {
 					startPos: 2488104,
 					limitPos: 2489166,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
 								2488104, 2488172,
 								2489165, 2489166,
-							},
+							}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
 								2488104, 2488172,
 								2489165, 2489166,
-							},
+							}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -343,17 +343,17 @@ func TestSubset(t *testing.T) {
 					startPos: 2488105,
 					limitPos: 2489166,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
 								2488105, 2488172,
 								2489165, 2489166,
-							},
+							}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
 								2488105, 2488172,
 								2489165, 2489166,
-							},
+							}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -363,8 +363,8 @@ func TestSubset(t *testing.T) {
 				{
 					limitPos: 3000000,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
 								2488104, 2488172,
 								2489165, 2489273,
 								2489782, 2489907,
@@ -374,10 +374,10 @@ func TestSubset(t *testing.T) {
 								2493112, 2493254,
 								2494304, 2494335,
 								2494587, 2494712,
-							},
+							}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
 								2488104, 2488172,
 								2489165, 2489273,
 								2489782, 2489907,
@@ -387,7 +387,7 @@ func TestSubset(t *testing.T) {
 								2493112, 2493254,
 								2494304, 2494335,
 								2494587, 2494712,
-							},
+							}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -398,17 +398,17 @@ func TestSubset(t *testing.T) {
 					startPos: 2494303,
 					limitPos: 3000000,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
 								2494304, 2494335,
 								2494587, 2494712,
-							},
+							}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
 								2494304, 2494335,
 								2494587, 2494712,
-							},
+							}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -419,17 +419,17 @@ func TestSubset(t *testing.T) {
 					startPos: 2494304,
 					limitPos: 3000000,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
 								2494304, 2494335,
 								2494587, 2494712,
-							},
+							}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
 								2494304, 2494335,
 								2494587, 2494712,
-							},
+							}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -440,17 +440,17 @@ func TestSubset(t *testing.T) {
 					startPos: 2494305,
 					limitPos: 3000000,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
 								2494305, 2494335,
 								2494587, 2494712,
-							},
+							}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
 								2494305, 2494335,
 								2494587, 2494712,
-							},
+							}),
 							nil,
 						},
 						RefNames:  []string{"chr1", "chr2"},
@@ -467,23 +467,23 @@ func TestSubset(t *testing.T) {
 					limitRefID: 1,
 					limitPos:   2490439,
 					want: BEDUnion{
-						nameMap: map[string]([]PosType){
-							"chr1": []PosType{
+						nameMap: map[string](intervalUnion){
+							"chr1": newIntervalUnionFromEndpoints([]PosType{
 								2489166, 2489273,
 								2489782, 2489907,
-							},
-							"chr2": []PosType{
+							}),
+							"chr2": newIntervalUnionFromEndpoints([]PosType{
 								2490320, 2490439,
-							},
+							}),
 						},
-						idMap: [][]PosType{
-							[]PosType{
+						idMap: []intervalUnion{
+							newIntervalUnionFromEndpoints([]PosType{
 								2489166, 2489273,
 								2489782, 2489907,
-							},
-							[]PosType{
+							}),
+							newIntervalUnionFromEndpoints([]PosType{
 								2490320, 2490439,
-							},
+							}),
 						},
 						RefNames:  []string{"chr1", "chr2"},
 						lastRefID: -1,
