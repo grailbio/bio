@@ -42,7 +42,7 @@ func fieldFileSize(ctx context.Context, dir string, recRange biopb.CoordRange, f
 	path := FieldDataPath(dir, recRange, field)
 	stat, err := file.Stat(ctx, path)
 	if err != nil {
-		log.Printf("stat %v: %v", path, err)
+		log.Debug.Printf("stat %v: %v", path, err)
 		return 0
 	}
 	return stat.Size()
