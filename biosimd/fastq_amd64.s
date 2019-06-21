@@ -156,10 +156,10 @@ fillFastqRecordBodyFromNibblesSSSE3Loop:
         MOVOU   X7, 16(BX)
 
         // Write "\n+\n" to end of bases[].
-        MOVW    $0x2b0a, DI
+        MOVW    $0x2b0a, (DI)
         ADDQ    $2, DI
-        MOVB    $0x0a, DI
+        MOVB    $0x0a, (DI)
 
         // Write \n to end of quals[].
-        MOVB    $0x0a, R8
+        MOVB    $0x0a, (R8)
         RET

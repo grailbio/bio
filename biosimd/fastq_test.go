@@ -120,7 +120,11 @@ func TestFillFastqRecordBody(t *testing.T) {
 		dst := make([]byte, 2*readLen+4)
 		biosimd.FillFastqRecordBodyFromNibbles(dst, b16, readLen, &baseTable, &qualTable)
 		assert.EQ(t, dst[:readLen], []byte(tc.baseAscii))
+		assert.EQ(t, dst[readLen], byte('\n'))
+		assert.EQ(t, dst[readLen+1], byte('+'))
+		assert.EQ(t, dst[readLen+2], byte('\n'))
 		assert.EQ(t, dst[readLen+3:2*readLen+3], []byte(tc.qualAscii))
+		assert.EQ(t, dst[2*readLen+3], byte('\n'))
 	}
 	// Random test cases.
 	maxReadLen := 151
@@ -146,7 +150,11 @@ func TestFillFastqRecordBody(t *testing.T) {
 		dst := make([]byte, 2*readLen+4)
 		biosimd.FillFastqRecordBodyFromNibbles(dst, b16, readLen, &baseTable, &qualTable)
 		assert.EQ(t, dst[:readLen], baseAscii)
+		assert.EQ(t, dst[readLen], byte('\n'))
+		assert.EQ(t, dst[readLen+1], byte('+'))
+		assert.EQ(t, dst[readLen+2], byte('\n'))
 		assert.EQ(t, dst[readLen+3:2*readLen+3], qualAscii)
+		assert.EQ(t, dst[2*readLen+3], byte('\n'))
 	}
 }
 
