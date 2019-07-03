@@ -244,7 +244,7 @@ func (fr *Reader) readBlock(fileOff int64) error {
 	if !fr.rio.Scan() {
 		err := fr.rio.Err()
 		if err == nil {
-			err = fmt.Errorf("read block (offset %d)", fileOff)
+			err = fmt.Errorf("%s: read block (offset %d)", fr.label, fileOff)
 		}
 		return err
 	}
@@ -662,7 +662,7 @@ func SeekReaders(requestedRange biopb.CoordRange, coordReader *Reader, columns [
 	fr := coordReader
 	if _, ok := fr.Seek(coordRange); !ok {
 		// This shouldn't happen, unless is the file is corrupt
-		return fmt.Errorf("no block for coords in range %+v", coordRange)
+		return fmt.Errorf("%s: no block for coords in range %+v", coordReader.label, coordRange)
 	}
 
 	// readingField is for eliding calls to addr.GE() below in the fast path.
