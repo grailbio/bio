@@ -9,15 +9,14 @@ require (
 	github.com/gogo/protobuf v1.2.1
 	github.com/golang/snappy v0.0.0-20170215233205-553a64147049
 	github.com/grailbio/base v0.0.0-20190706083030-a4fd972101e2
-	github.com/grailbio/hts v1.0.2-0.20190706084809-bf19d2c5433e
+	github.com/grailbio/hts v1.0.2-0.20190706085210-19e4c811606e
 	github.com/grailbio/testutil v0.0.0-20190706081934-3a0f7ba48ec9
 	github.com/klauspost/compress v1.7.1
+	github.com/klauspost/cpuid v1.2.1 // indirect
 	github.com/minio/highwayhash v0.0.0-20190112144901-fc990dfafa15
 	github.com/pkg/errors v0.8.1
-	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
 	github.com/stretchr/testify v1.3.0
 	github.com/yasushi-saito/zlibng v0.0.0-20190131163602-2bcf20dde99d
 	golang.org/x/sys v0.0.0-20190626221950-04f50cda93cb
-	gopkg.in/square/go-jose.v2 v2.3.1 // indirect
 	v.io/x/lib v0.1.3
 )
