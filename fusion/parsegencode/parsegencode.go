@@ -199,10 +199,7 @@ func readRawGTF(ctx context.Context, path string) (genes []gtfRecord, transcript
 	if err != nil {
 		log.Fatal(err)
 	}
-	var inr io.Reader = in.Reader(ctx)
-	if u := compress.NewReaderPath(inr, in.Name()); u != nil {
-		inr = u
-	}
+	inr, _ := compress.NewReaderPath(in.Reader(ctx), in.Name())
 	scanner := tsv.NewReader(bufio.NewReaderSize(inr, 64<<10))
 	scanner.Comment = '#'
 	scanner.LazyQuotes = true
@@ -222,6 +219,9 @@ func readRawGTF(ctx context.Context, path string) (genes []gtfRecord, transcript
 		case "exon":
 			exons = append(exons, line)
 		}
+	}
+	if err := inr.Close(); err != nil {
+		log.Panic(err)
 	}
 	if err := in.Close(ctx); err != nil {
 		log.Panic(err)
