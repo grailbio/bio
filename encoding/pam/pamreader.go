@@ -352,7 +352,7 @@ func NewShardReader(
 				pamutil.CoordRangePathString(pamIndex.Range),
 				pamutil.CoordRangePathString(r.requestedRange),
 				gbam.FieldType(f))
-			fileOpts := file.Opts{opts.RetryWhenNotFound}
+			fileOpts := file.Opts{RetryWhenNotFound: opts.RetryWhenNotFound}
 			r.fieldReaders[f], err = fieldio.NewReader(ctx, path, label, f == int(gbam.FieldCoord), fileOpts, errp)
 			if err != nil {
 				r.err.Set(err)
