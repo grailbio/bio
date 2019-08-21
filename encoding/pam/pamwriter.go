@@ -54,6 +54,12 @@ type WriteOpts struct {
 	//
 	// The range bound is closed at the start, open at the limit.
 	Range biopb.CoordRange
+
+	// Ignore possible errors due to concurrent writes to the same file.  This
+	// flag is copied to file.Opts defined in package
+	// github.com/grailbio/base/file.  The flag is safe to set if possible
+	// concurrent writers are using exactly the same inputs and options.
+	IgnoreNoSuchUpload bool
 }
 
 // Check that "r" has valid contents, and that its positiion is in range
@@ -212,7 +218,7 @@ func NewWriter(wo WriteOpts, samHeader *sam.Header, dir string) *Writer {
 
 		path := pamutil.FieldDataPath(dir, w.opts.Range, gbam.FieldType(f).String())
 		label := fmt.Sprintf("%s:%s:%v", file.Base(dir), pamutil.CoordRangePathString(w.opts.Range), gbam.FieldType(f))
-		fw := fieldio.NewWriter(path, label, w.opts.Transformers, w.bufPool, &w.err)
+		fw := fieldio.NewWriter(path, label, w.opts.Transformers, w.bufPool, file.Opts{IgnoreNoSuchUpload: wo.IgnoreNoSuchUpload}, &w.err)
 		w.fieldWriters[f] = fw
 	}
 	return w

@@ -380,7 +380,7 @@ func (fw *Writer) Close() {
 
 // NewWriter creates a new field writer that writes to the given path. Label is
 // used for logging. Transformers is set as the recordio transformers.
-func NewWriter(path, label string, transformers []string, bufFreePool *WriteBufPool, errReporter *errors.Once) *Writer {
+func NewWriter(path, label string, transformers []string, bufFreePool *WriteBufPool, opts file.Opts, errp *errors.Once) *Writer {
 	mu := &sync.Mutex{}
 	fw := &Writer{
 		label:            label,
@@ -388,12 +388,12 @@ func NewWriter(path, label string, transformers []string, bufFreePool *WriteBufP
 		mu:               mu,
 		cond:             sync.NewCond(mu),
 		lastBlockFlushed: -1,
-		err:              errReporter,
+		err:              errp,
 	}
 	fw.NewBuf()
 	// Create a recordio file
 	ctx := vcontext.Background()
-	out, err := file.Create(ctx, path)
+	out, err := file.Create(ctx, path, opts)
 	if err != nil {
 		fw.err.Set(errors.E(err, fmt.Sprintf("fieldio newwriter %s", path)))
 		return fw
