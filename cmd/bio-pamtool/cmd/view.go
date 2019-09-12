@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/syncqueue"
@@ -28,9 +29,9 @@ type viewRegion struct {
 func parseRegionsFlag(flag string) ([]viewRegion, error) {
 	regions := []viewRegion{}
 	// samtools-compatible format
-	re0 := regexp.MustCompile("([^:]*):(\\d+)-(\\d+)")
+	re0 := regexp.MustCompile(`([^:]*):(\d+)-(\d+)`)
 	// ref:pos:seq-ref:pos:seq
-	re1 := regexp.MustCompile("([^:]*):(\\d+)(:\\d+)?-([^:]*):(\\d+)(:\\d+)?")
+	re1 := regexp.MustCompile(`([^:]*):(\d+)(:\d+)?-([^:]*):(\d+)(:\d+)?`)
 	for _, val := range strings.Split(flag, ",") {
 		var r viewRegion
 		if matches := re0.FindStringSubmatch(val); matches != nil {
@@ -85,7 +86,12 @@ func parseRegionsFlag(flag string) ([]viewRegion, error) {
 //
 // REQUIRES: ShardIdx field of shards[] must have values 0, 1, 2, ...
 func viewShards(provider bamprovider.Provider, filter *filterExpr, shards []gbam.Shard) error {
-	shardCh := gbam.NewShardChannel(shards)
+	// traverse.Each() would technically work, but its current implementation
+	// interacts poorly with the ordered output queue: the first reader goroutine
+	// must finish before any records produced by the second reader goroutine can
+	// be flushed, etc.  This iteration pattern is more effective.
+	shardIdx := int64(-1)
+
 	wgW := sync.WaitGroup{}
 	wgR := sync.WaitGroup{}
 	e := errors.Once{}
@@ -96,9 +102,17 @@ func viewShards(provider bamprovider.Provider, filter *filterExpr, shards []gbam
 		wgW.Add(1)
 		go func() {
 			defer wgW.Done()
-			for shard := range shardCh {
+			for {
+				curShardIdx := atomic.AddInt64(&shardIdx, 1)
+				if curShardIdx >= int64(len(shards)) {
+					break
+				}
+				shard := shards[curShardIdx]
+				if int(curShardIdx) != shard.ShardIdx {
+					panic("viewShards: shards[] is not ordered")
+				}
 				recCh := make(chan *sam.Record, 16<<10)
-				if err := oq.Insert(shard.ShardIdx, recCh); err != nil {
+				if err := oq.Insert(int(curShardIdx), recCh); err != nil {
 					panic(err)
 				}
 				iter := provider.NewIterator(shard)
