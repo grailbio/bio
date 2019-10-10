@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/grail"
@@ -14,7 +15,7 @@ import (
 	"github.com/grailbio/bio/fusion"
 	"github.com/grailbio/testutil"
 	"github.com/grailbio/testutil/assert"
-	"github.com/grailbio/testutil/benchmark"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -42,8 +43,7 @@ func TestEndToEndSmall(t *testing.T) {
 	ctx := vcontext.Background()
 
 	const s3Dir = "s3://grail-go-testing/bio-target-rna-fusion/small"
-	cacheDir, err := benchmark.CacheDir(ctx, s3Dir, *cacheDirFlag)
-	if err != nil {
+	if err := cacheDir(ctx, s3Dir, *cacheDirFlag); err != nil {
 		t.Fatal(err)
 	}
 	tmpDir := "/tmp/bio-target-rna-fusion-test"
@@ -57,11 +57,11 @@ func TestEndToEndSmall(t *testing.T) {
 		fastaOutputPath:    tmpDir + "/all.fa",
 		rioOutputPath:      tmpDir + "/all.rio",
 		filteredOutputPath: tmpDir + "/filtered.fa",
-		r1:                 cacheDir + "/smallr1.fastq.gz",
-		r2:                 cacheDir + "/smallr2.fastq.gz",
-		transcriptPath:     cacheDir + "/transcriptome.fa",
-		cosmicFusionPath:   cacheDir + "/small_pairs.txt",
-		geneListInputPath:  cacheDir + "/gene_names.txt"},
+		r1:                 *cacheDirFlag + "/smallr1.fastq.gz",
+		r2:                 *cacheDirFlag + "/smallr2.fastq.gz",
+		transcriptPath:     *cacheDirFlag + "/transcriptome.fa",
+		cosmicFusionPath:   *cacheDirFlag + "/small_pairs.txt",
+		geneListInputPath:  *cacheDirFlag + "/gene_names.txt"},
 		opts)
 
 	const (
@@ -73,8 +73,8 @@ func TestEndToEndSmall(t *testing.T) {
 		copyFile(ctx, t, s3Dir+goldenAll, tmpDir+"/all.fa")
 		copyFile(ctx, t, s3Dir+goldenFiltered, tmpDir+"/filtered.fa")
 	} else {
-		testutil.CompareFiles(t, tmpDir+"/all.fa", cacheDir+goldenAll, nil)
-		testutil.CompareFiles(t, tmpDir+"/filtered.fa", cacheDir+goldenFiltered, nil)
+		testutil.CompareFiles(t, tmpDir+"/all.fa", *cacheDirFlag+goldenAll, nil)
+		testutil.CompareFiles(t, tmpDir+"/filtered.fa", *cacheDirFlag+goldenFiltered, nil)
 	}
 }
 
@@ -83,4 +83,50 @@ func TestMain(m *testing.M) {
 	status := m.Run()
 	shutdown()
 	os.Exit(status)
+}
+
+func cacheDir(ctx context.Context, srcDir, dstDir string) error {
+	eg := errgroup.Group{}
+	lister := file.List(ctx, srcDir, true /*recursive*/)
+	for lister.Scan() {
+		path := lister.Path()
+		eg.Go(func() error {
+			return cacheFile(ctx, path, dstDir+path[len(srcDir):])
+		})
+	}
+	err := eg.Wait()
+	if e := lister.Err(); e != nil && err == nil {
+		err = e
+	}
+	return err
+}
+
+func cacheFile(ctx context.Context, srcPath string, dstPath string) (err error) {
+	in, err := file.Open(ctx, srcPath)
+	if err != nil {
+		return err
+	}
+	defer file.CloseAndReport(ctx, in, &err)
+	srcInfo, err := in.Stat(ctx)
+	if err != nil {
+		return err
+	}
+	dstInfo, err := file.Stat(ctx, dstPath)
+	if err == nil {
+		diff := dstInfo.ModTime().Sub(srcInfo.ModTime())
+		if (diff >= -5*time.Second) && (diff <= 5*time.Second) {
+			return nil
+		}
+	}
+
+	out, err := file.Create(ctx, dstPath)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out.Writer(ctx), in.Reader(ctx)); err != nil {
+		file.CloseAndReport(ctx, out, &err)
+		return err
+	}
+	file.CloseAndReport(ctx, out, &err)
+	return os.Chtimes(dstPath, srcInfo.ModTime(), srcInfo.ModTime())
 }
