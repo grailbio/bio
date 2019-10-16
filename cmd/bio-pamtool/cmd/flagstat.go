@@ -87,8 +87,9 @@ func percent(a int, b int) string {
 	return fmt.Sprintf("%.2f%%", float64(a)*100/float64(b))
 }
 
-func flagstat(path string) error {
+func flagstat(path, index string) error {
 	provider := bamprovider.NewProvider(path, bamprovider.ProviderOpts{
+		Index: index,
 		DropFields: []gbam.FieldType{
 			gbam.FieldCigar,
 			gbam.FieldMatePos,

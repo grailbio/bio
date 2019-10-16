@@ -51,11 +51,12 @@ func newCmdFlagstat() *cmdline.Command {
 		Short:    "Show stats of either a PAM or a BAM file. This command is a clone of 'samtools flagstat'.",
 		ArgsName: "path",
 	}
+	bamIndex := cmd.Flags.String("index", "", "Input BAM index filename. By default set to input bampath + .bai")
 	cmd.Runner = cmdutil.RunnerFunc(func(env *cmdline.Env, argv []string) error {
 		if len(argv) != 1 {
 			return fmt.Errorf("flagstat takes one pathname argument, but got %v", argv)
 		}
-		return flagstat(argv[0])
+		return flagstat(argv[0], *bamIndex)
 	})
 	return cmd
 }
@@ -147,6 +148,7 @@ The checksum is a JSON string describing the summary of various attributes of th
 	return cmd
 }
 
+// Run is the entrypoint for the bio-pamtool library.
 func Run() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
 	cmdline.HideGlobalFlagsExcept()
