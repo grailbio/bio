@@ -61,6 +61,15 @@ func IsDuplicate(record *sam.Record) bool {
 	return record.Flags&sam.Duplicate != 0
 }
 
+// IsLinearDuplicate returns true if record is a linear duplicate.
+func IsLinearDuplicate(record *sam.Record) bool {
+	dupType, err := record.LinearDup()
+	if err != nil {
+		panic(err)
+	}
+	return dupType == sam.LinearDuplicate
+}
+
 // IsSupplementary returns true if record is a supplementary alignment.
 func IsSupplementary(record *sam.Record) bool {
 	return record.Flags&sam.Supplementary != 0
