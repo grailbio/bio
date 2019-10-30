@@ -41,14 +41,18 @@ type shardInfoUpdate struct {
 }
 
 // GetDistantMates scans the BAM/PAM file given by provider, and then
-// returns a DistantMateTable.  The caller must call
-// DistantMateTable.Close() to release the resources used by the
-// DistantMateTable.  GetDistantMates also returns a ShardInfo object
-// that includes information like number of records in each shard.
-// For an example of how to use GetDistantMates, see
-// ExampleResolvePairs() in distant_mates_test.go.
+// returns a DistantMateTable. When finished with the
+// DistantMateTable, the caller must call DistantMateTable.Close() to
+// release the resources used by the DistantMateTable.
+// GetDistantMates also returns a ShardInfo object that includes
+// information like number of records in each shard. While scanning
+// through the input file, GetDistantMates also feeds each record to a
+// set of RecordProcessors. createProcessors is a slice of functions
+// that return the RecordProcessesors to be used. For an example of
+// how to use GetDistantMates, see ExampleResolvePairs() in
+// distant_mates_test.go.
 func GetDistantMates(provider bamprovider.Provider, shardList []bam.Shard, opts *Opts,
-	createProcessor func() RecordProcessor) (distantMates *DistantMateTable, shardInfo *ShardInfo, returnErr error) {
+	createProcessors []func() RecordProcessor) (distantMates *DistantMateTable, shardInfo *ShardInfo, returnErr error) {
 	log.Debug.Printf("scanning %d shards", len(shardList))
 	shardChannel := bam.NewShardChannel(shardList)
 
@@ -86,11 +90,11 @@ func GetDistantMates(provider bamprovider.Provider, shardList []bam.Shard, opts 
 		log.Debug.Printf("Creating scanner %d", i)
 		go func(worker int) {
 			defer workerGroup.Done()
-			var recordProcessor RecordProcessor
-			if createProcessor != nil {
-				recordProcessor = createProcessor()
+			var recordProcessors []RecordProcessor
+			for _, createProcessor := range createProcessors {
+				recordProcessors = append(recordProcessors, createProcessor())
 			}
-			errs.Add(findDistantMates(provider, worker, shardInfo, opts, recordProcessor,
+			errs.Add(findDistantMates(provider, worker, shardInfo, opts, recordProcessors,
 				shardChannel, distantMates, collectionChannel))
 		}(i)
 	}
@@ -167,7 +171,7 @@ func isDistantMate(shardInfo *ShardInfo, r *sam.Record) []int {
 }
 
 func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *ShardInfo,
-	opts *Opts, processor RecordProcessor, channel chan bam.Shard,
+	opts *Opts, processors []RecordProcessor, channel chan bam.Shard,
 	distantMates *DistantMateTable, collectionChannel chan interface{}) error {
 	for shard := range channel {
 		if shard.StartRef == nil {
@@ -191,7 +195,7 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 			}
 			lastCoord = coord
 
-			if processor != nil {
+			for _, processor := range processors {
 				if err := processor.Process(record); err != nil {
 					return err
 				}
@@ -238,7 +242,7 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 			return fmt.Errorf("Close: %v", err)
 		}
 		collectionChannel <- shardInfoUpdate{shard, totalInStartPadding, fileIdx}
-		if processor != nil {
+		for _, processor := range processors {
 			processor.Close()
 		}
 
