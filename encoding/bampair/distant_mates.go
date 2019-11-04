@@ -92,7 +92,9 @@ func GetDistantMates(provider bamprovider.Provider, shardList []bam.Shard, opts 
 			defer workerGroup.Done()
 			var recordProcessors []RecordProcessor
 			for _, createProcessor := range createProcessors {
-				recordProcessors = append(recordProcessors, createProcessor())
+				if p := createProcessor(); p != nil {
+					recordProcessors = append(recordProcessors, p)
+				}
 			}
 			errs.Add(findDistantMates(provider, worker, shardInfo, opts, recordProcessors,
 				shardChannel, distantMates, collectionChannel))
