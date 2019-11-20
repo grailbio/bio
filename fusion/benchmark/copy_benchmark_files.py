@@ -10,6 +10,7 @@ from typing import Set, List
 
 import util
 
+
 def copy_files(src_files: List[str], dest_dir: str) -> None:
     basenames: Set[str] = set()
     for path in src_files:
@@ -17,8 +18,9 @@ def copy_files(src_files: List[str], dest_dir: str) -> None:
         if basename in basenames:
             raise Exception("Duplicate filename: " + path)
         basenames.add(basename)
-    logging.info('%s -> %s', src_files, dest_dir)
-    util.check_call([str(util.grail_file_path()), 'cp', '-v'] + src_files + [dest_dir])
+    logging.info("%s -> %s", src_files, dest_dir)
+    util.check_call([str(util.grail_file_path()), "cp", "-v"] + src_files + [dest_dir])
+
 
 def main() -> None:
     logging.basicConfig(level=logging.DEBUG)
@@ -37,5 +39,6 @@ def main() -> None:
     for rna_sample in util.ORG_RNA_SAMPLES:
         src_paths += util.expand_fastq_files(rna_sample.paths)
     copy_files(src_paths, util.RNA_BENCHMARK_DIR)
+
 
 main()
