@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/grailbio/hts/sam"
+	"github.com/grailbio/testutil/assert"
 	"github.com/grailbio/testutil/expect"
 )
 
@@ -67,7 +68,7 @@ func TestLoadSortedBEDIntervals(t *testing.T) {
 				OneBasedInput: tt.oneBasedInput,
 			},
 		)
-		expect.NoError(t, err)
+		assert.NoError(t, err)
 		if !reflect.DeepEqual(result, tt.want) {
 			t.Errorf("Wanted: %v  Got: %v", tt.want, result)
 		}
@@ -103,7 +104,7 @@ func TestParseRegionString(t *testing.T) {
 
 	for _, tt := range tests {
 		result, err := ParseRegionString(tt.region)
-		expect.NoError(t, err)
+		assert.NoError(t, err)
 		expect.EQ(t, tt.refName, result.RefName)
 		expect.EQ(t, tt.start0, result.Start0)
 		expect.EQ(t, tt.end, result.End)
@@ -215,7 +216,7 @@ func TestIntersectsByID(t *testing.T) {
 			tt.pathname,
 			opts,
 		)
-		expect.NoError(t, err)
+		assert.NoError(t, err)
 		for _, ii := range tt.insts {
 			result := bedUnion.IntersectsByID(ii.refID, ii.startPos, ii.limitPos)
 			if result != ii.want {
@@ -505,12 +506,42 @@ func TestSubset(t *testing.T) {
 			tt.pathname,
 			opts,
 		)
-		expect.NoError(t, err)
+		assert.NoError(t, err)
 		for _, ii := range tt.insts {
 			result := bedUnion.Subset(ii.startRefID, ii.startPos, ii.limitRefID, ii.limitPos)
 			if !reflect.DeepEqual(result, ii.want) {
 				t.Errorf("Wanted: %v  Got: %v", ii.want, result)
 			}
 		}
+	}
+}
+
+func TestRefNameSet(t *testing.T) {
+	tests := []struct {
+		pathname string
+		refNames []string
+	}{
+		{
+			pathname: "testdata/test1.bed",
+			refNames: []string{"chr1"},
+		},
+		{
+			pathname: "testdata/test2.bed",
+			refNames: []string{"chr1", "chr2"},
+		},
+	}
+	// Don't mock a *sam.Header, this function needs to work without it.
+	opts := NewBEDOpts{}
+	for _, tt := range tests {
+		bedUnion, err := NewBEDUnionFromPath(
+			tt.pathname,
+			opts,
+		)
+		assert.NoError(t, err)
+		refNameSet := bedUnion.RefNameSet()
+		for _, n := range tt.refNames {
+			expect.True(t, refNameSet[n])
+		}
+		expect.EQ(t, len(refNameSet), len(tt.refNames))
 	}
 }

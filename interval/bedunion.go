@@ -98,6 +98,16 @@ type BEDUnion struct {
 	isSequential bool
 }
 
+// RefNameSet returns the set of reference names.  This works even when the
+// BEDUnion was constructed without a *sam.Header.
+func (u *BEDUnion) RefNameSet() map[string]bool {
+	names := make(map[string]bool)
+	for k := range u.nameMap {
+		names[k] = true
+	}
+	return names
+}
+
 // ContainsByID checks whether the (0-based) interval [pos, pos+1) is contained
 // within the BEDUnion, where reference is specified by sam.Header ID.
 func (u *BEDUnion) ContainsByID(refID int, pos PosType) bool {
