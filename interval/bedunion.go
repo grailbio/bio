@@ -306,6 +306,12 @@ func (u *BEDUnion) EndpointsByID(refID int) []PosType {
 	return u.idMap[refID]
 }
 
+// EndpointsByName has the same functionality as EndpointsByID, without
+// requiring a *sam.Header at BEDUnion construction time.
+func (u *BEDUnion) EndpointsByName(refName string) []PosType {
+	return u.nameMap[refName]
+}
+
 func initBEDUnion() (bedUnion BEDUnion) {
 	bedUnion.nameMap = make(map[string](intervalUnion))
 	bedUnion.lastRefName = ""

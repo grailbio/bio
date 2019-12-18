@@ -541,7 +541,9 @@ func TestRefNameSet(t *testing.T) {
 		refNameSet := bedUnion.RefNameSet()
 		for _, n := range tt.refNames {
 			expect.True(t, refNameSet[n])
+			expect.NEQ(t, len(bedUnion.EndpointsByName(n)), 0)
 		}
 		expect.EQ(t, len(refNameSet), len(tt.refNames))
+		expect.EQ(t, len(bedUnion.EndpointsByName("thisReferenceDoesntExist")), 0)
 	}
 }
