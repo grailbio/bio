@@ -78,14 +78,22 @@ func (i *ShardInfo) GetInfoByIdx(shardIdx int) *ShardInfoEntry {
 	return i.byIndex[shardIdx]
 }
 
-func (i *ShardInfo) getMateShard(r *sam.Record) bam.Shard {
+func (i *ShardInfo) GetMateShard(r *sam.Record) bam.Shard {
 	k := key{r.MateRef.ID(), r.MatePos, nil}
 	c := i.byKey.Floor(k)
-	info := c.(key).info
-	if !info.Shard.CoordInShard(0, bam.NewCoord(r.MateRef, r.MatePos, 0)) {
-		panic(fmt.Sprintf("Could not find shard for mate of %v; found %+v instead", r, info.Shard))
+	if c != nil {
+		info := c.(key).info
+		if !info.Shard.CoordInShard(0, bam.NewCoord(r.MateRef, r.MatePos, 0)) {
+			panic(fmt.Sprintf("Could not find shard for mate of %v; found %+v instead", r, info.Shard))
+		}
+		return info.Shard
 	}
-	return info.Shard
+	return bam.Shard{
+		StartRef: nil,
+		EndRef:   nil,
+		Start:    0,
+		End:      0,
+	}
 }
 
 func (i *ShardInfo) updateInfoByShard(shard *bam.Shard, numStartPadding, numReads uint64) {

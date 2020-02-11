@@ -42,7 +42,7 @@ func TestShardInfo(t *testing.T) {
 	checkInfoByShard(newShard(chr1, 100, 200, 10, 2), chr1, 100)
 
 	checkMateShard := func(r *sam.Record, expectedRef *sam.Reference, expectedShardStart int) {
-		shard := shardInfo.getMateShard(r)
+		shard := shardInfo.GetMateShard(r)
 		assert.Equal(t, expectedRef.ID(), shard.StartRef.ID())
 		assert.Equal(t, expectedShardStart, shard.Start)
 	}
@@ -51,4 +51,5 @@ func TestShardInfo(t *testing.T) {
 	checkMateShard(newRecord("foo", nil, 0, 0, 100, chr1, nil), chr1, 100)
 	checkMateShard(newRecord("foo", nil, 0, 0, 101, chr1, nil), chr1, 100)
 	checkMateShard(newRecord("foo", nil, 0, 0, 0, chr2, nil), chr2, 0)
+	checkMateShard(newRecord("foo", nil, 0, 0, 0, nil, nil), nil, 0)
 }
