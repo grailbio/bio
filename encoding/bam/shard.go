@@ -124,6 +124,11 @@ func (s *Shard) RecordInShard(r *sam.Record) bool {
 	return s.CoordInShard(0, CoordFromSAMRecord(r, 0))
 }
 
+// MateInShard returns true if mate of r is in s.
+func (s *Shard) MateInShard(r *sam.Record) bool {
+	return s.CoordInShard(0, MateCoordFromSAMRecord(r, 0))
+}
+
 // RecordInPaddedShard returns true if r is in s+padding.
 func (s *Shard) RecordInPaddedShard(r *sam.Record) bool {
 	return s.CoordInShard(s.Padding, CoordFromSAMRecord(r, 0))
@@ -261,6 +266,10 @@ func (g *CoordGenerator) GenerateFromRecord(rec *sam.Record) biopb.Coord {
 // shorthand for biopb.CoordFromCoord(rec.Ref, rec.Pos, seq).
 func CoordFromSAMRecord(rec *sam.Record, seq int32) biopb.Coord {
 	return NewCoord(rec.Ref, rec.Pos, seq)
+}
+
+func MateCoordFromSAMRecord(rec *sam.Record, seq int32) biopb.Coord {
+	return NewCoord(rec.MateRef, rec.MatePos, seq)
 }
 
 // NewCoord generates biopb.Coord from the given parameters.
