@@ -30,8 +30,8 @@ type Opts struct {
 // Process() on all the records in the shard, including the padding,
 // the shard will invoke Close().
 type RecordProcessor interface {
-	Process(shardIdx int, recordInShard bool, r *sam.Record) error
-	Close(shardIdx int)
+	Process(shard bam.Shard, r *sam.Record) error
+	Close(shard bam.Shard)
 }
 
 type shardInfoUpdate struct {
@@ -196,9 +196,8 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 				return fmt.Errorf("record were out of order last position %v, read %v", lastCoord, record)
 			}
 			lastCoord = coord
-			recordInShard := shard.RecordInShard(record)
 			for _, processor := range processors {
-				if err := processor.Process(shard.ShardIdx, recordInShard, record); err != nil {
+				if err := processor.Process(shard, record); err != nil {
 					return err
 				}
 			}
@@ -206,7 +205,7 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 			if shard.RecordInStartPadding(record) {
 				totalInStartPadding++
 			}
-			if recordInShard {
+			if shard.RecordInShard(record) {
 				if (record.Flags & sam.Secondary) != 0 {
 					log.Debug.Printf("Ignoring secondary read %s", record.Name)
 				} else if (record.Flags & sam.Supplementary) != 0 {
@@ -245,7 +244,7 @@ func findDistantMates(provider bamprovider.Provider, worker int, shardInfo *Shar
 		}
 		collectionChannel <- shardInfoUpdate{shard, totalInStartPadding, fileIdx}
 		for _, processor := range processors {
-			processor.Close(shard.ShardIdx)
+			processor.Close(shard)
 		}
 
 		t1 := time.Now()
