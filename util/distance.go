@@ -4,26 +4,41 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
 
-// matrix represents a 2 dimensional matrix.
+var matrixFreePool = sync.Pool{
+	New: func() interface{} {
+		return &matrix{}
+	},
+}
+
+// matrix represents a 2 dimensional matrix of size nRow x nCol.
 type matrix struct {
 	nRow, nCol int
 	data       []int // row-major nRow*nCol array.
 }
 
-// matrix returns an n x m matrix.
-func newMatrix(n, m int) (x matrix) {
-	return matrix{
-		nRow: n,
-		nCol: m,
-		data: make([]int, n*m),
+// Reset resets all values in matrix to be 0.
+func (m *matrix) Reset() {
+	for i := 0; i < m.nRow*m.nCol; i++ {
+		m.data[i] = 0
+	}
+}
+
+// Resize resizes matrix to be of size nRow x nCol.
+func (m *matrix) Resize(nRow, nCol int) {
+	m.nRow = nRow
+	m.nCol = nCol
+	if len(m.data) < nRow*nCol {
+		m.data = make([]int, nRow*nCol)
+		return
 	}
 }
 
 // String returns a string representation of a matrix.
 // TODO(ayip): this could be implemented using text/tabwriter.
-func (m matrix) String() (r string) {
+func (m *matrix) String() (r string) {
 	maxLength := 0
 	for _, d := range m.data {
 		if l := len(strconv.Itoa(d)); l > maxLength {
@@ -65,7 +80,8 @@ const (
 // operations is a slice of operation types.
 type operations []operation
 
-// contains checks whether the slice contains any operations in a given operation slice.
+// contains checks whether the slice contains any operations in a given
+// operation slice.
 func (o operations) contains(given operations) bool {
 	for _, x := range given {
 		for _, y := range o {
@@ -79,7 +95,7 @@ func (o operations) contains(given operations) bool {
 
 // computeRow computes cells in a Levenshtein matrix for a given row specified
 // by i up to the column specified by 'col'.
-func (m matrix) computeRow(i, col int, r1, r2 []byte) {
+func (m *matrix) computeRow(i, col int, r1, r2 []byte) {
 	for j := 0; j <= col; j++ {
 		m.computeCell(i, j, r1, r2)
 	}
@@ -87,14 +103,14 @@ func (m matrix) computeRow(i, col int, r1, r2 []byte) {
 
 // computeCol computes cells in a Levenshtein matrix for a given column
 // specified by j up to the row specified by 'row'.
-func (m matrix) computeCol(j, row int, r1, r2 []byte) {
+func (m *matrix) computeCol(j, row int, r1, r2 []byte) {
 	for i := 0; i <= row; i++ {
 		m.computeCell(i, j, r1, r2)
 	}
 }
 
 // computeCell computes the cell (i, j) in a Levenshtein matrix.
-func (m matrix) computeCell(i, j int, r1, r2 []byte) operations {
+func (m *matrix) computeCell(i, j int, r1, r2 []byte) operations {
 	if i == 0 {
 		m.data[i*m.nCol+j] = j
 		return operations{}
@@ -137,30 +153,40 @@ func (m matrix) computeCell(i, j int, r1, r2 []byte) operations {
 	return r
 }
 
-// Levenshtein computes the Levenshtein distance between two barcodes. The
-// returned value - distance - is the number of insertions, deletions, and
-// substitutions it takes to transform one barcode (s1) into another (s2). Each
-// step in the transformation "costs" one distance point. Because a fixed
-// number of barcode bases are always sequenced, bases downstream of the
-// barcode will be read in the event of a deletion in the barcode sequence. To
-// account for this situation, we take in the sequence downstream of both
-// barcodes (a1 and a2).  Note that s1 and s2 must have the same length.
-//
-// TODO(ayip): we can optimize this for memory allocations by creating
-// a reusable object that contains the working state for each
-// invocation of Levenshtein().
+// Levenshtein computes the Levenshtein distance between two barcodes, or the
+// number of insertions, deletions, and substitutions it takes to transform one
+// barcode (s1) into another (s2). Each step in the transformation "costs" one
+// distance point. Because a fixed number of barcode bases are always
+// sequenced, bases downstream of the barcode will be read in the event of a
+// deletion in the barcode sequence. To account for this situation, we take in
+// the sequence downstream of both barcodes (a1 and a2).  Note that s1 and s2
+// must have the same length.
 func Levenshtein(s1, s2, a1, a2 string) (distance int) {
 	if len(s1) != len(s2) {
 		panic(fmt.Sprintf("s1 and s2 must have equal length: '%s', '%s'", s1, s2))
 	}
+
+	m := matrixFreePool.Get().(*matrix)
+	if m == nil {
+		panic("failed to get matrix")
+	}
+	m.Resize(len(s1)+len(a1)+1, len(s2)+len(a2)+1)
+	m.Reset()
+
+	d := levenshteinDistance(s1, s2, a1, a2, m)
+	matrixFreePool.Put(m)
+	return d
+}
+
+// levenshteinDistance is a helper function that computes the levenshtein
+// distance.
+func levenshteinDistance(s1, s2, a1, a2 string, m *matrix) (distance int) {
 
 	r1 := []byte(s1)
 	r2 := []byte(s2)
 
 	rows := len(r1)
 	cols := len(r2)
-
-	m := newMatrix(rows+len(a1)+1, cols+len(a2)+1)
 
 	i := 1
 	iEnd := rows
