@@ -11,9 +11,9 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/grailbio/base/backgroundcontext"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
-	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	"github.com/grailbio/hts/bam"
 	"github.com/grailbio/hts/bgzf"
@@ -358,7 +358,7 @@ func GetPositionBasedShards(header *sam.Header, shardSize int, padding int, incl
 // .gbai index.
 func GetByteBasedShards(bamPath, baiPath string, bytesPerShard int64, minBases, padding int, includeUnmapped bool) (shards []Shard, err error) {
 	// TODO(saito) pass the context explicitly.
-	ctx := vcontext.Background()
+	ctx := backgroundcontext.Get()
 	var bamIn file.File
 	bamIn, err = file.Open(ctx, bamPath)
 	if err != nil {

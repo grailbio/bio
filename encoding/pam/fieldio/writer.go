@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/grailbio/base/backgroundcontext"
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
@@ -13,7 +14,6 @@ import (
 	"github.com/grailbio/base/recordio/recordioiov"
 	"github.com/grailbio/base/syncqueue"
 	grailunsafe "github.com/grailbio/base/unsafe"
-	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/pam/pamutil"
@@ -372,7 +372,7 @@ func (fw *Writer) Close() {
 		if err := fw.rio.Finish(); err != nil {
 			fw.err.Set(err)
 		}
-		if err := fw.out.Close(vcontext.Background()); err != nil {
+		if err := fw.out.Close(backgroundcontext.Get()); err != nil {
 			fw.err.Set(errors.E(err, fmt.Sprintf("fieldio close %s", fw.out.Name())))
 		}
 	}
@@ -392,7 +392,7 @@ func NewWriter(path, label string, transformers []string, bufFreePool *WriteBufP
 	}
 	fw.NewBuf()
 	// Create a recordio file
-	ctx := vcontext.Background()
+	ctx := backgroundcontext.Get()
 	out, err := file.Create(ctx, path, opts)
 	if err != nil {
 		fw.err.Set(errors.E(err, fmt.Sprintf("fieldio newwriter %s", path)))

@@ -3,8 +3,8 @@ package pamutil
 import (
 	"fmt"
 
+	"github.com/grailbio/base/backgroundcontext"
 	"github.com/grailbio/base/file"
-	"github.com/grailbio/base/vcontext"
 	"github.com/grailbio/bio/biopb"
 	gbam "github.com/grailbio/bio/encoding/bam"
 )
@@ -94,7 +94,7 @@ func ValidateCoordRange(r *biopb.CoordRange) error {
 // Remove deletes the files in the given PAM directory.  It returns an error if
 // some of the existing files fails to delete.
 func Remove(dir string) error {
-	ctx := vcontext.Background()
+	ctx := backgroundcontext.Get()
 	err := file.RemoveAll(ctx, dir)
 	file.Remove(ctx, dir) // nolint: errcheck
 	return err
