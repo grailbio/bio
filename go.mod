@@ -9,7 +9,7 @@ require (
 	github.com/gogo/protobuf v1.2.1
 	github.com/golang/snappy v0.0.0-20170215233205-553a64147049
 	github.com/grailbio/base v0.0.6
-	github.com/grailbio/hts v1.0.2-0.20190706085210-19e4c811606e
+	github.com/grailbio/hts v1.0.2-0.20200303061016-030e6b9f995e
 	github.com/grailbio/testutil v0.0.3
 	github.com/klauspost/compress v1.8.6
 	github.com/minio/highwayhash v0.0.0-20190112144901-fc990dfafa15

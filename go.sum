@@ -153,6 +153,8 @@ github.com/grailbio/hts v1.0.2-0.20190706084809-bf19d2c5433e h1:eFBjRJqYeP/en6cD
 github.com/grailbio/hts v1.0.2-0.20190706084809-bf19d2c5433e/go.mod h1:bbYjTiyY2fCIdAVzMDcmvzeOhuBlM2mMsDkQD/S9IQ8=
 github.com/grailbio/hts v1.0.2-0.20190706085210-19e4c811606e h1:oQqLfuw6DEQyjb2awYUqBjXiK3B/RHSvvbqmTuuc32M=
 github.com/grailbio/hts v1.0.2-0.20190706085210-19e4c811606e/go.mod h1:Ob4/YnlZDEwKbOBqaWKeulB6d5TWPPPj2TlwmLh7Eig=
+github.com/grailbio/hts v1.0.2-0.20200303061016-030e6b9f995e h1:abye2h4gUXx35r6pSh8TjJFZlemQRdDWLIZb4BdUak4=
+github.com/grailbio/hts v1.0.2-0.20200303061016-030e6b9f995e/go.mod h1:Ob4/YnlZDEwKbOBqaWKeulB6d5TWPPPj2TlwmLh7Eig=
 github.com/grailbio/testutil v0.0.0-20190109212408-dbe52faee1b0/go.mod h1:eufccQYHRmdAUarmhHgulqZUFWQ7YhHohLFQ/cLRSUY=
 github.com/grailbio/testutil v0.0.0-20190127023142-d3ae812e9a0e h1:/PsT86gbUV/7Zr023Bo5l7VzO5IF+zheouYiDs34j1w=
 github.com/grailbio/testutil v0.0.0-20190127023142-d3ae812e9a0e/go.mod h1:2qNoyDzypzYqR8rwIQFnqcL7tZM9iGck0oN9+T1jzbE=
