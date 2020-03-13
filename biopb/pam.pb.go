@@ -10,6 +10,7 @@ import (
 	proto "github.com/gogo/protobuf/proto"
 	io "io"
 	math "math"
+	math_bits "math/bits"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -21,7 +22,7 @@ var _ = math.Inf
 // is compatible with the proto package it is being compiled against.
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
-const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
+const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type PAMBlockHeader struct {
 	Offset     uint32 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
@@ -42,7 +43,7 @@ func (m *PAMBlockHeader) XXX_Marshal(b []byte, deterministic bool) ([]byte, erro
 		return xxx_messageInfo_PAMBlockHeader.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +97,7 @@ func (m *PAMBlockIndexEntry) XXX_Marshal(b []byte, deterministic bool) ([]byte, 
 		return xxx_messageInfo_PAMBlockIndexEntry.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +165,7 @@ func (m *PAMShardIndex) XXX_Marshal(b []byte, deterministic bool) ([]byte, error
 		return xxx_messageInfo_PAMShardIndex.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +233,7 @@ func (m *PAMFieldIndex) XXX_Marshal(b []byte, deterministic bool) ([]byte, error
 		return xxx_messageInfo_PAMFieldIndex.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalTo(b)
+		n, err := m.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
@@ -324,7 +325,7 @@ var fileDescriptor_5a127e22b7343957 = []byte{
 func (m *PAMBlockHeader) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -332,27 +333,32 @@ func (m *PAMBlockHeader) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *PAMBlockHeader) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PAMBlockHeader) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if m.Offset != 0 {
-		dAtA[i] = 0x10
-		i++
-		i = encodeVarintPam(dAtA, i, uint64(m.Offset))
-	}
 	if m.BlobOffset != 0 {
-		dAtA[i] = 0x18
-		i++
 		i = encodeVarintPam(dAtA, i, uint64(m.BlobOffset))
+		i--
+		dAtA[i] = 0x18
 	}
-	return i, nil
+	if m.Offset != 0 {
+		i = encodeVarintPam(dAtA, i, uint64(m.Offset))
+		i--
+		dAtA[i] = 0x10
+	}
+	return len(dAtA) - i, nil
 }
 
 func (m *PAMBlockIndexEntry) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -360,43 +366,52 @@ func (m *PAMBlockIndexEntry) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *PAMBlockIndexEntry) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PAMBlockIndexEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if m.FileOffset != 0 {
-		dAtA[i] = 0x8
-		i++
-		i = encodeVarintPam(dAtA, i, uint64(m.FileOffset))
+	{
+		size, err := m.EndAddr.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintPam(dAtA, i, uint64(size))
 	}
-	if m.NumRecords != 0 {
-		dAtA[i] = 0x18
-		i++
-		i = encodeVarintPam(dAtA, i, uint64(m.NumRecords))
-	}
-	dAtA[i] = 0x22
-	i++
-	i = encodeVarintPam(dAtA, i, uint64(m.StartAddr.Size()))
-	n1, err := m.StartAddr.MarshalTo(dAtA[i:])
-	if err != nil {
-		return 0, err
-	}
-	i += n1
+	i--
 	dAtA[i] = 0x2a
-	i++
-	i = encodeVarintPam(dAtA, i, uint64(m.EndAddr.Size()))
-	n2, err := m.EndAddr.MarshalTo(dAtA[i:])
-	if err != nil {
-		return 0, err
+	{
+		size, err := m.StartAddr.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintPam(dAtA, i, uint64(size))
 	}
-	i += n2
-	return i, nil
+	i--
+	dAtA[i] = 0x22
+	if m.NumRecords != 0 {
+		i = encodeVarintPam(dAtA, i, uint64(m.NumRecords))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.FileOffset != 0 {
+		i = encodeVarintPam(dAtA, i, uint64(m.FileOffset))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
 }
 
 func (m *PAMShardIndex) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -404,43 +419,52 @@ func (m *PAMShardIndex) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *PAMShardIndex) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PAMShardIndex) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if m.Magic != 0 {
-		dAtA[i] = 0x9
-		i++
-		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(m.Magic))
-		i += 8
-	}
-	if len(m.Version) > 0 {
-		dAtA[i] = 0x1a
-		i++
-		i = encodeVarintPam(dAtA, i, uint64(len(m.Version)))
-		i += copy(dAtA[i:], m.Version)
-	}
-	dAtA[i] = 0x22
-	i++
-	i = encodeVarintPam(dAtA, i, uint64(m.Range.Size()))
-	n3, err := m.Range.MarshalTo(dAtA[i:])
-	if err != nil {
-		return 0, err
-	}
-	i += n3
 	if len(m.EncodedBamHeader) > 0 {
-		dAtA[i] = 0x7a
-		i++
+		i -= len(m.EncodedBamHeader)
+		copy(dAtA[i:], m.EncodedBamHeader)
 		i = encodeVarintPam(dAtA, i, uint64(len(m.EncodedBamHeader)))
-		i += copy(dAtA[i:], m.EncodedBamHeader)
+		i--
+		dAtA[i] = 0x7a
 	}
-	return i, nil
+	{
+		size, err := m.Range.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintPam(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x22
+	if len(m.Version) > 0 {
+		i -= len(m.Version)
+		copy(dAtA[i:], m.Version)
+		i = encodeVarintPam(dAtA, i, uint64(len(m.Version)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.Magic != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(m.Magic))
+		i--
+		dAtA[i] = 0x9
+	}
+	return len(dAtA) - i, nil
 }
 
 func (m *PAMFieldIndex) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
@@ -448,52 +472,62 @@ func (m *PAMFieldIndex) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *PAMFieldIndex) MarshalTo(dAtA []byte) (int, error) {
-	var i int
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PAMFieldIndex) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if m.Magic != 0 {
-		dAtA[i] = 0x9
-		i++
-		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(m.Magic))
-		i += 8
-	}
-	if len(m.Version) > 0 {
-		dAtA[i] = 0x1a
-		i++
-		i = encodeVarintPam(dAtA, i, uint64(len(m.Version)))
-		i += copy(dAtA[i:], m.Version)
-	}
-	if m.Field != 0 {
-		dAtA[i] = 0x20
-		i++
-		i = encodeVarintPam(dAtA, i, uint64(m.Field))
-	}
 	if len(m.Blocks) > 0 {
-		for _, msg := range m.Blocks {
-			dAtA[i] = 0x82
-			i++
-			dAtA[i] = 0x1
-			i++
-			i = encodeVarintPam(dAtA, i, uint64(msg.Size()))
-			n, err := msg.MarshalTo(dAtA[i:])
-			if err != nil {
-				return 0, err
+		for iNdEx := len(m.Blocks) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Blocks[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintPam(dAtA, i, uint64(size))
 			}
-			i += n
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x82
 		}
 	}
-	return i, nil
+	if m.Field != 0 {
+		i = encodeVarintPam(dAtA, i, uint64(m.Field))
+		i--
+		dAtA[i] = 0x20
+	}
+	if len(m.Version) > 0 {
+		i -= len(m.Version)
+		copy(dAtA[i:], m.Version)
+		i = encodeVarintPam(dAtA, i, uint64(len(m.Version)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.Magic != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(m.Magic))
+		i--
+		dAtA[i] = 0x9
+	}
+	return len(dAtA) - i, nil
 }
 
 func encodeVarintPam(dAtA []byte, offset int, v uint64) int {
+	offset -= sovPam(v)
+	base := offset
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
 	dAtA[offset] = uint8(v)
-	return offset + 1
+	return base
 }
 func (m *PAMBlockHeader) Size() (n int) {
 	if m == nil {
@@ -577,14 +611,7 @@ func (m *PAMFieldIndex) Size() (n int) {
 }
 
 func sovPam(x uint64) (n int) {
-	for {
-		n++
-		x >>= 7
-		if x == 0 {
-			break
-		}
-	}
-	return n
+	return (math_bits.Len64(x|1) + 6) / 7
 }
 func sozPam(x uint64) (n int) {
 	return sovPam(uint64((x << 1) ^ uint64((int64(x) >> 63))))
