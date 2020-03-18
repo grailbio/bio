@@ -22,7 +22,7 @@ var fastaIndex string
 
 func init() {
 	fastaData = `>seq1
-ACGTA
+AcGTA
 CGTAC
 GT
 >seq2 A viral sequence
@@ -41,12 +41,12 @@ func TestOps(t *testing.T) {
 	}
 	impls := []impl{
 		{"unidx", func() fasta.Fasta {
-			fa, err := fasta.New(strings.NewReader(fastaData))
+			fa, err := fasta.New(strings.NewReader(fastaData), fasta.OptClean)
 			assert.NoError(t, err)
 			return fa
 		}},
 		{"idx", func() fasta.Fasta {
-			fa, err := fasta.NewIndexed(strings.NewReader(fastaData), strings.NewReader(fastaIndex))
+			fa, err := fasta.NewIndexed(strings.NewReader(fastaData), strings.NewReader(fastaIndex), fasta.OptClean)
 			assert.NoError(t, err)
 			return fa
 		}},
@@ -226,14 +226,14 @@ var (
 //   goos: linux
 //   goarch: amd64
 //   pkg: github.com/grailbio/bio/encoding/fasta
-//   BenchmarkRead/unidx/init-16            1        9049540512 ns/op        21848170984 B/op        32723979 allocs/op
-//   BenchmarkRead/unidx/read_all-16                      765           1562061 ns/op          723850 B/op      20064 allocs/op
-//   BenchmarkRead/unidx/read_rand-16                 3007225               400 ns/op             128 B/op          4 allocs/op
-//   BenchmarkRead/idx/init-16                            120           9942909 ns/op         2574225 B/op      15210 allocs/op
-//   BenchmarkRead/idx/read_all-16                          1        5768869336 ns/op        3771462680 B/op    25700 allocs/op
-//   BenchmarkRead/idx/read_rand-16                    264326              4453 ns/op             968 B/op          4 allocs/op
+//   BenchmarkRead/unidx/init-16            1        9285597629 ns/op        21848127712 B/op        32723733 allocs/op
+//   BenchmarkRead/unidx/read_all-16                      763           1560333 ns/op          723851 B/op      20064 allocs/op
+//   BenchmarkRead/unidx/read_rand-16                 2925188               408 ns/op             128 B/op          4 allocs/op
+//   BenchmarkRead/idx/init-16                            121           9656116 ns/op         2575314 B/op      15212 allocs/op
+//   BenchmarkRead/idx/read_all-16                          1        8822692112 ns/op        3771464752 B/op    25703 allocs/op
+//   BenchmarkRead/idx/read_rand-16                    228588              5114 ns/op             970 B/op          4 allocs/op
 //   PASS
-//   ok      github.com/grailbio/bio/encoding/fasta  23.599s
+//   ok      github.com/grailbio/bio/encoding/fasta  29.222s
 func BenchmarkRead(b *testing.B) {
 	if *pathFlag == "" {
 		b.Fatal("-path not set")
@@ -250,7 +250,7 @@ func BenchmarkRead(b *testing.B) {
 		impl{"unidx", func() fasta.Fasta {
 			in, err := file.Open(ctx, *pathFlag)
 			assert.NoError(b, err)
-			fa, err := fasta.New(in.Reader(ctx))
+			fa, err := fasta.New(in.Reader(ctx), fasta.OptClean)
 			assert.NoError(b, err)
 			return fa
 		}},
@@ -259,7 +259,7 @@ func BenchmarkRead(b *testing.B) {
 			assert.NoError(b, err)
 			idxIn, err := file.Open(ctx, *idxPathFlag)
 			assert.NoError(b, err)
-			fa, err := fasta.NewIndexed(in.Reader(ctx), idxIn.Reader(ctx))
+			fa, err := fasta.NewIndexed(in.Reader(ctx), idxIn.Reader(ctx), fasta.OptClean)
 			assert.NoError(b, err)
 			return fa
 		}},

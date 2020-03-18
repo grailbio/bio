@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/grailbio/bio/biosimd"
 )
 
 type indexEntry struct {
@@ -19,6 +21,7 @@ type indexEntry struct {
 type indexedFasta struct {
 	seqs      map[string]indexEntry
 	seqNames  []string // returned by SeqNames()
+	opts      opts
 	reader    io.ReadSeeker
 	bufOff    int64
 	buf       []byte // caches file contents starting at bufOff.
@@ -28,8 +31,8 @@ type indexedFasta struct {
 
 // NewIndexed creates a new Fasta that can perform efficient random lookups
 // using the provided index, without reading the data into memory.
-func NewIndexed(fasta io.ReadSeeker, index io.Reader) (Fasta, error) {
-	f := &indexedFasta{seqs: make(map[string]indexEntry), reader: fasta}
+func NewIndexed(fasta io.ReadSeeker, index io.Reader, opts ...Opt) (Fasta, error) {
+	f := &indexedFasta{seqs: make(map[string]indexEntry), reader: fasta, opts: makeOpts(opts...)}
 	scanner := bufio.NewScanner(index)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
@@ -165,6 +168,11 @@ func (f *indexedFasta) Get(seqName string, start uint64, end uint64) (string, er
 			linePos = 0
 		}
 	}
+
+	if f.opts.Clean {
+		biosimd.CleanASCIISeqInplace(f.resultBuf)
+	}
+
 	return string(f.resultBuf), nil
 }
 

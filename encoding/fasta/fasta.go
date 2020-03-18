@@ -21,6 +21,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/grailbio/base/unsafe"
+	"github.com/grailbio/bio/biosimd"
 	"github.com/pkg/errors"
 )
 
@@ -50,6 +52,25 @@ type Fasta interface {
 	SeqNames() []string
 }
 
+type opts struct {
+	Clean bool
+}
+
+// Opt is an optional argument to New, NewIndexed.
+type Opt func(*opts)
+
+// OptClean specifies returned FASTA sequences should be cleaned as described in
+// biosimd.CleanASCIISeq*.
+func OptClean(o *opts) { o.Clean = true }
+
+func makeOpts(userOpts ...Opt) opts {
+	var parsedOpts opts
+	for _, userOpt := range userOpts {
+		userOpt(&parsedOpts)
+	}
+	return parsedOpts
+}
+
 type fasta struct {
 	seqs     map[string]string
 	seqNames []string
@@ -57,7 +78,8 @@ type fasta struct {
 
 // New creates a new Fasta that holds all the FASTA data from the given reader
 // in memory.
-func New(r io.Reader) (Fasta, error) {
+func New(r io.Reader, opts ...Opt) (Fasta, error) {
+	parsedOpts := makeOpts(opts...)
 	f := &fasta{seqs: make(map[string]string)}
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(nil, bufferInitSize)
@@ -88,6 +110,11 @@ func New(r io.Reader) (Fasta, error) {
 	f.seqs[seqName] = seq.String()
 	f.seqNames = append(f.seqNames, seqName)
 	seq.Reset()
+	if parsedOpts.Clean {
+		for seqName := range f.seqs {
+			biosimd.CleanASCIISeqInplace(unsafe.StringToBytes(f.seqs[seqName]))
+		}
+	}
 	return f, nil
 }
 
