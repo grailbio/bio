@@ -16,9 +16,9 @@ package fasta
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 
 	"github.com/grailbio/base/unsafe"
@@ -27,14 +27,9 @@ import (
 )
 
 const (
-	bufferInitSize = 1024 * 1024 * 300 // 300 MB
+	mib            = 1024 * 1024
+	bufferInitSize = 300 * mib
 )
-
-// Index files consist of one tab-separated line per sequence in the associated
-// FASTA file.  The format is: "<sequence name>\t<length>\t<byte
-// offset>\t<bases per line>\t<bytes per line>".
-// For example: "chr3\t12345\t9000\t80\t81".
-var indexRegExp = regexp.MustCompile(`(\S+)\t(\d+)\t(\d+)\t(\d+)\t(\d+)`)
 
 // Fasta represents FASTA-formatted data, consisting of a set of named
 // sequences.
@@ -54,6 +49,7 @@ type Fasta interface {
 
 type opts struct {
 	Clean bool
+	Index []byte
 }
 
 // Opt is an optional argument to New, NewIndexed.
@@ -62,6 +58,17 @@ type Opt func(*opts)
 // OptClean specifies returned FASTA sequences should be cleaned as described in
 // biosimd.CleanASCIISeq*.
 func OptClean(o *opts) { o.Clean = true }
+
+// OptIndex makes New read FASTA file with a provided index, like NewIndexed.
+// Unlike NewIndexed, New with OptIndex is optimized for reading all sequences
+// in the FASTA file rather than a small, random subset. Callers that plan to
+// read many or all FASTA sequences should use this (though as always, profile
+// in your application).
+func OptIndex(index []byte) Opt {
+	return func(o *opts) {
+		o.Index = index
+	}
+}
 
 func makeOpts(userOpts ...Opt) opts {
 	var parsedOpts opts
@@ -77,9 +84,20 @@ type fasta struct {
 }
 
 // New creates a new Fasta that holds all the FASTA data from the given reader
-// in memory.
+// in memory. Pass OptIndex, if possible, to read much faster.
 func New(r io.Reader, opts ...Opt) (Fasta, error) {
 	parsedOpts := makeOpts(opts...)
+	if len(parsedOpts.Index) == 0 {
+		return newEagerUnindexed(r, parsedOpts)
+	}
+	index, err := parseIndex(bytes.NewReader(parsedOpts.Index))
+	if err != nil {
+		return nil, err
+	}
+	return newEagerIndexed(r, index, parsedOpts)
+}
+
+func newEagerUnindexed(r io.Reader, parsedOpts opts) (Fasta, error) {
 	f := &fasta{seqs: make(map[string]string)}
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(nil, bufferInitSize)

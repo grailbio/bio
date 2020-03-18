@@ -4,19 +4,28 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strconv"
 	"sync"
 
+	"github.com/grailbio/base/must"
 	"github.com/grailbio/bio/biosimd"
 )
 
 type indexEntry struct {
+	name      string
 	length    uint64
 	offset    uint64
 	lineBase  uint64
 	lineWidth uint64
 }
+
+// Index files consist of one tab-separated line per sequence in the associated
+// FASTA file.  The format is: "<sequence name>\t<length>\t<byte
+// offset>\t<bases per line>\t<bytes per line>".
+// For example: "chr3\t12345\t9000\t80\t81".
+var indexRegExp = regexp.MustCompile(`(\S+)\t(\d+)\t(\d+)\t(\d+)\t(\d+)`)
 
 type indexedFasta struct {
 	seqs      map[string]indexEntry
@@ -31,27 +40,59 @@ type indexedFasta struct {
 
 // NewIndexed creates a new Fasta that can perform efficient random lookups
 // using the provided index, without reading the data into memory.
+//
+// Note: Callers that expect to read many or all of the FASTA file sequences
+// should use New(..., OptIndex(...)) instead.
 func NewIndexed(fasta io.ReadSeeker, index io.Reader, opts ...Opt) (Fasta, error) {
-	f := &indexedFasta{seqs: make(map[string]indexEntry), reader: fasta, opts: makeOpts(opts...)}
-	scanner := bufio.NewScanner(index)
+	entries, err := parseIndex(index)
+	if err != nil {
+		return nil, err
+	}
+	return newLazyIndexed(fasta, entries, makeOpts(opts...))
+}
+
+func newLazyIndexed(fasta io.ReadSeeker, index []indexEntry, parsedOpts opts) (Fasta, error) {
+	f := indexedFasta{
+		seqs:   make(map[string]indexEntry),
+		reader: fasta,
+		opts:   parsedOpts,
+	}
+	for _, entry := range index {
+		f.seqs[entry.name] = entry
+	}
+	f.seqNames = make([]string, 0, len(f.seqs))
+	for seqName := range f.seqs {
+		f.seqNames = append(f.seqNames, seqName)
+	}
+	sort.SliceStable(f.seqNames, func(i, j int) bool {
+		return f.seqs[f.seqNames[i]].offset < f.seqs[f.seqNames[j]].offset
+	})
+	return &f, nil
+}
+
+func parseIndex(r io.Reader) ([]indexEntry, error) {
+	scanner := bufio.NewScanner(r)
 	scanner.Split(bufio.ScanLines)
+	var entries []indexEntry
 	for scanner.Scan() {
 		matches := indexRegExp.FindStringSubmatch(scanner.Text())
 		if len(matches) != 6 {
 			return nil, fmt.Errorf("Invalid index line: %s", scanner.Text())
 		}
 		ent := indexEntry{}
-		ent.length, _ = strconv.ParseUint(matches[2], 10, 64)
-		ent.offset, _ = strconv.ParseUint(matches[3], 10, 64)
-		ent.lineBase, _ = strconv.ParseUint(matches[4], 10, 64)
-		ent.lineWidth, _ = strconv.ParseUint(matches[5], 10, 64)
-		f.seqs[matches[1]] = ent
-		f.seqNames = append(f.seqNames, matches[1])
+		ent.name = matches[1]
+		var err error
+		ent.length, err = strconv.ParseUint(matches[2], 10, 64)
+		must.Nil(err)
+		ent.offset, err = strconv.ParseUint(matches[3], 10, 64)
+		must.Nil(err)
+		ent.lineBase, err = strconv.ParseUint(matches[4], 10, 64)
+		must.Nil(err)
+		ent.lineWidth, err = strconv.ParseUint(matches[5], 10, 64)
+		must.Nil(err)
+		entries = append(entries, ent)
 	}
-	sort.SliceStable(f.seqNames, func(i, j int) bool {
-		return f.seqs[f.seqNames[i]].offset < f.seqs[f.seqNames[j]].offset
-	})
-	return f, nil
+	return entries, nil
 }
 
 // FaiToReferenceLengths reads in a fasta fai file and returns a map of
