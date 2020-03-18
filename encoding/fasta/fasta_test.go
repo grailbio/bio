@@ -21,113 +21,97 @@ var fastaData string
 var fastaIndex string
 
 func init() {
-	fastaData = ">seq1\n" + "ACGTA\nCGTAC\nGT\n" + ">seq2 A viral sequence\n" + "ACGT\n" + "ACGT\n"
-	fastaIndex = "seq1\t12\t6\t5\t6\n" + "seq2\t8\t44\t4\t5\n"
+	fastaData = `>seq1
+ACGTA
+CGTAC
+GT
+>seq2 A viral sequence
+ACGT
+ACGT
+`
+	fastaIndex = `seq1	12	6	5	6
+seq2	8	44	4	5
+`
 }
 
-func TestGet(t *testing.T) {
-	tests := []struct {
-		seq   string
-		start uint64
-		end   uint64
-		want  string
-		err   error
-	}{
-		{"seq1", 1, 2, "C", nil},
-		{"seq1", 1, 6, "CGTAC", nil},
-		{"seq1", 0, 12, "ACGTACGTACGT", nil},
-		{"seq1", 10, 12, "GT", nil},
-		{"seq2", 0, 8, "ACGTACGT", nil},
-		{"seq2", 2, 5, "GTA", nil},
-		{"seq0", 0, 1, "", fmt.Errorf("sequence not found in index: seq0")},
-		{"seq1", 10, 13, "", fmt.Errorf("end is past end of sequence seq1: 12")},
-		{"seq1", 4, 3, "", fmt.Errorf("start must be less than end")},
+func TestOps(t *testing.T) {
+	type impl struct {
+		name string
+		fa   func() fasta.Fasta
 	}
-	unindexed, err := fasta.New(strings.NewReader(fastaData))
-	if err != nil {
-		t.Errorf("couldn't create Fasta: %v", err)
+	impls := []impl{
+		{"unidx", func() fasta.Fasta {
+			fa, err := fasta.New(strings.NewReader(fastaData))
+			assert.NoError(t, err)
+			return fa
+		}},
+		{"idx", func() fasta.Fasta {
+			fa, err := fasta.NewIndexed(strings.NewReader(fastaData), strings.NewReader(fastaIndex))
+			assert.NoError(t, err)
+			return fa
+		}},
 	}
-	indexed, err := fasta.NewIndexed(strings.NewReader(fastaData), strings.NewReader(fastaIndex))
-	if err != nil {
-		t.Errorf("couldn't read index: %v", err)
-	}
-	for _, tt := range tests {
-		got, err := unindexed.Get(tt.seq, tt.start, tt.end)
-		if (err == nil && tt.err != nil) || (err != nil && tt.err == nil) {
-			t.Errorf("unexpected error: want %v, got %v", tt.err, err)
-		}
-		if got != tt.want {
-			t.Errorf("unexpected sequence: want %s, got %s", tt.want, got)
-		}
-
-		got, err = indexed.Get(tt.seq, tt.start, tt.end)
-		if (err == nil && tt.err != nil) || (err != nil && tt.err == nil) {
-			t.Errorf("unexpected error: want %v, got %v", tt.err, err)
-		}
-		if got != tt.want {
-			t.Errorf("unexpected sequence: want %s, got %s", tt.want, got)
-		}
-	}
-}
-
-func TestLength(t *testing.T) {
-	tests := []struct {
-		seq  string
-		want uint64
-		err  error
-	}{
-		{"seq1", 12, nil},
-		{"seq2", 8, nil},
-		{"seq0", 0, fmt.Errorf("sequence not found in index: seq0")},
-	}
-	unindexed, err := fasta.New(strings.NewReader(fastaData))
-	if err != nil {
-		t.Errorf("couldn't create Fasta: %v", err)
-	}
-	indexed, err := fasta.NewIndexed(strings.NewReader(fastaData), strings.NewReader(fastaIndex))
-	if err != nil {
-		t.Errorf("couldn't read index: %v", err)
-	}
-	for _, tt := range tests {
-		got, err := unindexed.Len(tt.seq)
-		if (err == nil && tt.err != nil) || (err != nil && tt.err == nil) {
-			t.Errorf("unexpected error: want %v, got %v", tt.err, err)
-		}
-		if got != tt.want {
-			t.Errorf("unexpected length: want %v, got %v", tt.want, got)
-		}
-
-		got, err = indexed.Len(tt.seq)
-		if (err == nil && tt.err != nil) || (err != nil && tt.err == nil) {
-			t.Errorf("unexpected error: want %v, got %v", tt.err, err)
-		}
-		if got != tt.want {
-			t.Errorf("unexpected length: want %v, got %v", tt.want, got)
-		}
-	}
-}
-
-func TestSeqNames(t *testing.T) {
-	unindexed, err := fasta.New(strings.NewReader(fastaData))
-	if err != nil {
-		t.Errorf("couldn't create Fasta: %v", err)
-	}
-	indexed, err := fasta.NewIndexed(strings.NewReader(fastaData), strings.NewReader(fastaIndex))
-	if err != nil {
-		t.Errorf("couldn't read index: %v", err)
-	}
-	want := sort.StringSlice([]string{"seq1", "seq2"})
-	want.Sort()
-	got := sort.StringSlice(unindexed.SeqNames())
-	got.Sort()
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-
-	got = sort.StringSlice(indexed.SeqNames())
-	got.Sort()
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+	for _, impl := range impls {
+		fa := impl.fa()
+		t.Run(impl.name, func(t *testing.T) {
+			t.Run("Get", func(t *testing.T) {
+				tests := []struct {
+					seq   string
+					start uint64
+					end   uint64
+					want  string
+					err   error
+				}{
+					{"seq1", 1, 2, "C", nil},
+					{"seq1", 1, 6, "CGTAC", nil},
+					{"seq1", 0, 12, "ACGTACGTACGT", nil},
+					{"seq1", 10, 12, "GT", nil},
+					{"seq2", 0, 8, "ACGTACGT", nil},
+					{"seq2", 2, 5, "GTA", nil},
+					{"seq0", 0, 1, "", fmt.Errorf("sequence not found in index: seq0")},
+					{"seq1", 10, 13, "", fmt.Errorf("end is past end of sequence seq1: 12")},
+					{"seq1", 4, 3, "", fmt.Errorf("start must be less than end")},
+				}
+				for _, tt := range tests {
+					got, err := fa.Get(tt.seq, tt.start, tt.end)
+					if (err == nil && tt.err != nil) || (err != nil && tt.err == nil) {
+						t.Errorf("unexpected error: want %v, got %v", tt.err, err)
+					}
+					if got != tt.want {
+						t.Errorf("unexpected sequence: want %s, got %s", tt.want, got)
+					}
+				}
+			})
+			t.Run("Length", func(t *testing.T) {
+				tests := []struct {
+					seq  string
+					want uint64
+					err  error
+				}{
+					{"seq1", 12, nil},
+					{"seq2", 8, nil},
+					{"seq0", 0, fmt.Errorf("sequence not found in index: seq0")},
+				}
+				for _, tt := range tests {
+					got, err := fa.Len(tt.seq)
+					if (err == nil && tt.err != nil) || (err != nil && tt.err == nil) {
+						t.Errorf("unexpected error: want %v, got %v", tt.err, err)
+					}
+					if got != tt.want {
+						t.Errorf("unexpected length: want %v, got %v", tt.want, got)
+					}
+				}
+			})
+			t.Run("SeqNames", func(t *testing.T) {
+				want := sort.StringSlice([]string{"seq1", "seq2"})
+				want.Sort()
+				got := sort.StringSlice(fa.SeqNames())
+				got.Sort()
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			})
+		})
 	}
 }
 
@@ -166,8 +150,6 @@ func TestFastaFaiToReferenceLengths(t *testing.T) {
 			if val, ok := result[reference]; ok {
 				if val != length {
 					t.Errorf("error reading fasta index: got %d, want %d", val, length)
-				} else {
-					fmt.Printf("read fasta index: got %d, want %d\n", val, length)
 				}
 			}
 		}
@@ -236,46 +218,93 @@ E1	5	13	5	5
 var (
 	pathFlag    = flag.String("path", "", "FASTA file used by benchmarks")
 	idxPathFlag = flag.String("index-path", "", "FASTA index file used by benchmarks")
-	shuffleFlag = flag.Bool("shuffle", false, "Read sequences in random order")
 )
 
+// On an AWS EC2 m5d.4xlarge where /tmp resides on local NVME SSD:
+//
+//   $ go test github.com/grailbio/bio/encoding/fasta -bench BenchmarkRead -benchmem -path /tmp/hg19.fa -index-path /tmp/hg19.fa.fai
+//   goos: linux
+//   goarch: amd64
+//   pkg: github.com/grailbio/bio/encoding/fasta
+//   BenchmarkRead/unidx/init-16            1        9049540512 ns/op        21848170984 B/op        32723979 allocs/op
+//   BenchmarkRead/unidx/read_all-16                      765           1562061 ns/op          723850 B/op      20064 allocs/op
+//   BenchmarkRead/unidx/read_rand-16                 3007225               400 ns/op             128 B/op          4 allocs/op
+//   BenchmarkRead/idx/init-16                            120           9942909 ns/op         2574225 B/op      15210 allocs/op
+//   BenchmarkRead/idx/read_all-16                          1        5768869336 ns/op        3771462680 B/op    25700 allocs/op
+//   BenchmarkRead/idx/read_rand-16                    264326              4453 ns/op             968 B/op          4 allocs/op
+//   PASS
+//   ok      github.com/grailbio/bio/encoding/fasta  23.599s
 func BenchmarkRead(b *testing.B) {
 	if *pathFlag == "" {
-		b.Skip("--path not set")
+		b.Fatal("-path not set")
 	}
-	for i := 0; i < b.N; i++ {
-		ctx := vcontext.Background()
-		in, err := file.Open(ctx, *pathFlag)
-		assert.NoError(b, err)
-
-		var (
-			fin   fasta.Fasta
-			idxIn file.File
-		)
-		if *idxPathFlag != "" {
-			idxIn, err = file.Open(ctx, *idxPathFlag)
+	if *idxPathFlag == "" {
+		b.Fatal("-index-path not set")
+	}
+	ctx := vcontext.Background()
+	type impl struct {
+		name string
+		fa   func() fasta.Fasta
+	}
+	impls := []impl{
+		impl{"unidx", func() fasta.Fasta {
+			in, err := file.Open(ctx, *pathFlag)
 			assert.NoError(b, err)
-			fin, err = fasta.NewIndexed(in.Reader(ctx), idxIn.Reader(ctx))
+			fa, err := fasta.New(in.Reader(ctx))
 			assert.NoError(b, err)
-		} else {
-			fin, err = fasta.New(in.Reader(ctx))
+			return fa
+		}},
+		impl{"idx", func() fasta.Fasta {
+			in, err := file.Open(ctx, *pathFlag)
 			assert.NoError(b, err)
-		}
-		seqNames := append([]string{}, fin.SeqNames()...)
-		if *shuffleFlag {
-			rand.Shuffle(len(seqNames), func(i, j int) {
-				seqNames[i], seqNames[j] = seqNames[j], seqNames[i]
+			idxIn, err := file.Open(ctx, *idxPathFlag)
+			assert.NoError(b, err)
+			fa, err := fasta.NewIndexed(in.Reader(ctx), idxIn.Reader(ctx))
+			assert.NoError(b, err)
+			return fa
+		}},
+	}
+	for _, impl := range impls {
+		impl := impl
+		var fa fasta.Fasta
+		b.Run(impl.name, func(b *testing.B) {
+			b.Run("init", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					fa = impl.fa()
+				}
 			})
-		}
-		for _, seq := range seqNames {
-			n, err := fin.Len(seq)
-			assert.NoError(b, err)
-			_, err = fin.Get(seq, 0, n)
-			assert.NoError(b, err)
-		}
-		if idxIn != nil {
-			assert.NoError(b, idxIn.Close(ctx))
-		}
-		assert.NoError(b, in.Close(ctx))
+			b.Run("read_all", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					var totalSeqLength int64
+					seqNames := append([]string{}, fa.SeqNames()...)
+					for _, seqName := range seqNames {
+						n, err := fa.Len(seqName)
+						assert.NoError(b, err)
+						seq, err := fa.Get(seqName, 0, n)
+						assert.NoError(b, err)
+						totalSeqLength += int64(len(seq))
+					}
+					assert.GT(b, totalSeqLength, int64(0))
+				}
+			})
+			b.Run("read_rand", func(b *testing.B) {
+				seqNames := append([]string{}, fa.SeqNames()...)
+				var totalSeqLength int64
+				for i := 0; i < b.N; i++ {
+					seqName := seqNames[rand.Intn(len(seqNames))]
+					seqLen, err := fa.Len(seqName)
+					assert.NoError(b, err)
+					readLen := rand.Intn(int(seqLen)-1) + 1
+					if readLen > 1000 {
+						readLen = 1000
+					}
+					readStart := rand.Intn(int(seqLen) - readLen)
+					seq, err := fa.Get(seqName, uint64(readStart), uint64(readStart+readLen))
+					assert.NoError(b, err)
+					totalSeqLength += int64(len(seq))
+				}
+				assert.GT(b, totalSeqLength, int64(0))
+			})
+		})
 	}
 }
