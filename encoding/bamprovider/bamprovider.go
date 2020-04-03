@@ -228,6 +228,14 @@ func (b *BAMProvider) allocateIterator() *bamIterator {
 
 // GenerateShards implements the Provider interface.
 func (b *BAMProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, error) {
+	// Not strictly necessary (we don't attempt coordinate splitting for BAMs),
+	// but it's best for this usage error to be independent of whether the file
+	// is actually a BAM or PAM.
+	// (could add this to fakeprovider too?)
+	if (opts.SplitMappedCoords || opts.SplitUnmappedCoords) && (opts.Padding != 0) {
+		return nil, fmt.Errorf("GenerateShards: nonzero Padding cannot be specified with Split*Coords")
+	}
+
 	header, err := b.GetHeader()
 	if err != nil {
 		return nil, err

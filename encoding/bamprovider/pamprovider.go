@@ -105,6 +105,19 @@ func (p *PAMProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, err
 	if opts.Strategy != Automatic && opts.Strategy != ByteBased {
 		return nil, fmt.Errorf("GenerateShards: strategy %v not supported", opts.Strategy)
 	}
+	if (opts.SplitMappedCoords || opts.SplitUnmappedCoords) && (opts.Padding != 0) {
+		// We might want to support this: an operation which doesn't care about
+		// distant mates could be parallelized by making each goroutine responsible
+		// for the read-pairs where the first read lands inside a given shard
+		// slice, and the shards might be more even if SplitMappedCoords is
+		// specified.
+		// However, this requires the caller to have access to each read's Seq
+		// value within the mapped position; as of this writing, we don't expose
+		// it.  And it's plausible that practically all padding use cases are best
+		// handled without coordinate-splitting.  So just prohibit it unless/until
+		// we run into a performance problem that this solves.
+		return nil, fmt.Errorf("GenerateShards: nonzero Padding cannot be specified with Split*Coords")
+	}
 	header, err := p.GetHeader()
 	if err != nil {
 		return nil, err
@@ -157,6 +170,8 @@ func (p *PAMProvider) GetFileShards() ([]gbam.Shard, error) {
 // NewIterator implements Provider.GetIndexedReader.
 func (p *PAMProvider) NewIterator(shard gbam.Shard) Iterator {
 	opts := p.Opts
+	// This assumes that either padding is zero and/or Split*Coords isn't
+	// specified.
 	opts.Range.Start = biopb.Coord{int32(shard.StartRef.ID()), int32(shard.PaddedStart()), int32(shard.StartSeq)}
 	opts.Range.Limit = biopb.Coord{int32(shard.EndRef.ID()), int32(shard.PaddedEnd()), int32(shard.EndSeq)}
 	return &pamIterator{
