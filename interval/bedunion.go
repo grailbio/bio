@@ -47,8 +47,8 @@ type NewBEDOpts struct {
 // structs include simpler inversion code, and reuse of standard []int32 binary
 // and similar search algorithms (which the compiler is more likely to optimize
 // well).  Since it's a broadly useful data structure, we expose it with the
-// EndpointIndex type and the BEDUnion.OverlapByID() and
-// BEDUnion.EndpointsByID() methods below.
+// EndpointIndex type and the BEDUnion.OverlapByID(), .IntersectionByID(), and
+// .EndpointsByID() methods below.
 //
 // However, we define this type to leave open the possibility of changing the
 // internal representation in the future.  In the rest of this file, []PosType
@@ -297,6 +297,27 @@ func (u *BEDUnion) OverlapByID(refID int, startPos, limitPos PosType) []PosType 
 	resultStart := u.lastEndpointIdx.Begin()
 	resultEnd := (ExpsearchPosType(u.lastRefIntervals, limitPos, u.lastEndpointIdx) + 1).Begin()
 	return u.lastRefIntervals[resultStart:resultEnd]
+}
+
+// IntersectionByID is similar to OverlapByID, except that the intersection
+// between [startPos, limitPos) and the BEDUnion is returned (so the first
+// and/or the last interval may be truncated).  The return value must be
+// treated as read-only.
+func (u *BEDUnion) IntersectionByID(refID int, startPos, limitPos PosType) []PosType {
+	result := u.OverlapByID(refID, startPos, limitPos)
+	if (len(result) == 0) || ((result[0] >= startPos) && (result[len(result)-1] <= limitPos)) {
+		return result
+	}
+	// Can't just alias an internal slice, since we must truncate one of the
+	// intervals.
+	truncatedResult := append([]PosType(nil), result...)
+	if truncatedResult[0] < startPos {
+		truncatedResult[0] = startPos
+	}
+	if truncatedResult[len(truncatedResult)-1] > limitPos {
+		truncatedResult[len(truncatedResult)-1] = limitPos
+	}
+	return truncatedResult
 }
 
 // EndpointsByID returns the sorted interval-endpoint slice for the reference

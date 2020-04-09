@@ -220,7 +220,123 @@ func TestIntersectsByID(t *testing.T) {
 		for _, ii := range tt.insts {
 			result := bedUnion.IntersectsByID(ii.refID, ii.startPos, ii.limitPos)
 			if result != ii.want {
-				t.Errorf("Unexpected result for test case %v", ii.want, result)
+				t.Errorf("Wanted: %v  Got: %v", ii.want, result)
+			}
+		}
+	}
+}
+
+type OverlapAndIntersectionByIDTestInstance struct {
+	refID            int
+	startPos         PosType
+	limitPos         PosType
+	wantOverlap      []PosType
+	wantIntersection []PosType
+}
+
+func posSliceEqual(s1, s2 []PosType) bool {
+	if len(s1) != len(s2) {
+		return false
+	}
+	for i := range s1 {
+		if s1[i] != s2[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestOverlapAndIntersectionByID(t *testing.T) {
+	tests := []struct {
+		pathname string
+		insts    []OverlapAndIntersectionByIDTestInstance
+	}{
+		{
+			pathname: "testdata/test1.bed",
+			insts: []OverlapAndIntersectionByIDTestInstance{
+				{
+					startPos:         2488103,
+					limitPos:         2488104,
+					wantOverlap:      nil,
+					wantIntersection: nil,
+				},
+				{
+					startPos:         2488103,
+					limitPos:         2488105,
+					wantOverlap:      []PosType{2488104, 2488172},
+					wantIntersection: []PosType{2488104, 2488105},
+				},
+				{
+					startPos:         2488103,
+					limitPos:         2488172,
+					wantOverlap:      []PosType{2488104, 2488172},
+					wantIntersection: []PosType{2488104, 2488172},
+				},
+				{
+					startPos:         2488103,
+					limitPos:         2488173,
+					wantOverlap:      []PosType{2488104, 2488172},
+					wantIntersection: []PosType{2488104, 2488172},
+				},
+				{
+					startPos:         2488104,
+					limitPos:         2488105,
+					wantOverlap:      []PosType{2488104, 2488172},
+					wantIntersection: []PosType{2488104, 2488105},
+				},
+				{
+					startPos:         2488172,
+					limitPos:         2488173,
+					wantOverlap:      nil,
+					wantIntersection: nil,
+				},
+				{
+					startPos:         2488104,
+					limitPos:         2489200,
+					wantOverlap:      []PosType{2488104, 2488172, 2489165, 2489273},
+					wantIntersection: []PosType{2488104, 2488172, 2489165, 2489200},
+				},
+				{
+					startPos:         2488104,
+					limitPos:         2489300,
+					wantOverlap:      []PosType{2488104, 2488172, 2489165, 2489273},
+					wantIntersection: []PosType{2488104, 2488172, 2489165, 2489273},
+				},
+				{
+					startPos:         2488105,
+					limitPos:         2489200,
+					wantOverlap:      []PosType{2488104, 2488172, 2489165, 2489273},
+					wantIntersection: []PosType{2488105, 2488172, 2489165, 2489200},
+				},
+				{
+					startPos:         2488105,
+					limitPos:         2489300,
+					wantOverlap:      []PosType{2488104, 2488172, 2489165, 2489273},
+					wantIntersection: []PosType{2488105, 2488172, 2489165, 2489273},
+				},
+			},
+		},
+	}
+	ref1, _ := sam.NewReference("chr1", "", "", 249250621, nil, nil)
+	ref2, _ := sam.NewReference("chr2", "", "", 243199373, nil, nil)
+	samHeader, _ := sam.NewHeader(nil, []*sam.Reference{ref1, ref2})
+	opts := NewBEDOpts{
+		SAMHeader: samHeader,
+	}
+	for _, tt := range tests {
+		bedUnion, err := NewBEDUnionFromPath(
+			tt.pathname,
+			opts,
+		)
+		assert.NoError(t, err)
+		for _, ii := range tt.insts {
+			overlapResult := bedUnion.OverlapByID(ii.refID, ii.startPos, ii.limitPos)
+			if !posSliceEqual(overlapResult, ii.wantOverlap) {
+				t.Errorf("Wanted: %v  Got: %v", ii.wantOverlap, overlapResult)
+			}
+			intersectionResult := bedUnion.IntersectionByID(ii.refID, ii.startPos, ii.limitPos)
+			if !posSliceEqual(intersectionResult, ii.wantIntersection) {
+				t.Errorf("Wanted: %v  Got: %v", ii.wantIntersection, intersectionResult)
 			}
 		}
 	}
