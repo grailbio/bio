@@ -27,28 +27,28 @@ import (
 	"github.com/grailbio/base/grail"
 	"github.com/grailbio/base/log"
 	"github.com/grailbio/base/vcontext"
-	"github.com/grailbio/bio/cmd/bio-pileup/snp"
+	"github.com/grailbio/bio/pileup/snp"
 )
 
 var (
-	bedPath      = flag.String("bed", "", "Input BED path; this xor -region required")
-	region       = flag.String("region", "", "Restrict pileup computation to the specified region. Format as <contig ID>:<1-based first pos>-<last pos>, <contig ID>:<1-based pos>, or just <contig ID>; this xor -bed required")
-	bamIndexPath = flag.String("index", "", "Input BAM index path. Defaults to bampath + .bai")
-	clip         = flag.Int("clip", 0, "Number of bases on end of each read to treat as minimum-quality")
-	cols         = flag.String("cols", "", "Output TSV column sets. #CHROM/POS/REF(/ALT) are always present. Currently supported optional sets are 'dpref', 'dpalt', 'enddists', 'quals', 'fraglens', 'strands', 'highq', and 'lowq'; default is \"dpref,highq,lowq\"")
-	flagExclude  = flag.Int("flag-exclude", 0xf00, "Reads with a FLAG bit intersecting this value are skipped")
+	bedPath      = flag.String("bed", snp.DefaultOpts.BedPath, "Input BED path; this xor -region required")
+	region       = flag.String("region", snp.DefaultOpts.Region, "Restrict pileup computation to the specified region. Format as <contig ID>:<1-based first pos>-<last pos>, <contig ID>:<1-based pos>, or just <contig ID>; this xor -bed required")
+	bamIndexPath = flag.String("index", snp.DefaultOpts.BamIndexPath, "Input BAM index path. Defaults to bampath + .bai")
+	clip         = flag.Int("clip", snp.DefaultOpts.Clip, "Number of bases on end of each read to treat as minimum-quality")
+	cols         = flag.String("cols", snp.DefaultOpts.Cols, "Output TSV column sets. #CHROM/POS/REF(/ALT) are always present. Currently supported optional sets are 'dpref', 'dpalt', 'enddists', 'quals', 'fraglens', 'strands', 'highq', and 'lowq'; default is \"dpref,highq,lowq\"")
+	flagExclude  = flag.Int("flag-exclude", snp.DefaultOpts.FlagExclude, "Reads with a FLAG bit intersecting this value are skipped")
 	format       = flag.String("format", "tsv", "Output format; 'basestrand-rio', 'basestrand-tsv', 'basestrand-tsv-bgz', 'tsv', and 'tsv-bgz' supported")
-	mapq         = flag.Int("mapq", 60, "Reads with MAPQ below this level are skipped")
-	maxReadLen   = flag.Int("max-read-len", 500, "Upper bound on individual read length")
-	maxReadSpan  = flag.Int("max-read-span", 511, "Upper bound on size of reference-genome region a read maps to")
-	minBagDepth  = flag.Int("min-bag-depth", 0, "Lower bound on bag depth (DS aux tag value")
-	minBaseQual  = flag.Int("min-base-qual", 0, "Lower bound on base quality in a single read")
+	mapq         = flag.Int("mapq", snp.DefaultOpts.Mapq, "Reads with MAPQ below this level are skipped")
+	maxReadLen   = flag.Int("max-read-len", snp.DefaultOpts.MaxReadLen, "Upper bound on individual read length")
+	maxReadSpan  = flag.Int("max-read-span", snp.DefaultOpts.MaxReadSpan, "Upper bound on size of reference-genome region a read maps to")
+	minBagDepth  = flag.Int("min-bag-depth", snp.DefaultOpts.MinBagDepth, "Lower bound on bag depth (DS aux tag value")
+	minBaseQual  = flag.Int("min-base-qual", snp.DefaultOpts.MinBaseQual, "Lower bound on base quality in a single read")
 	outPrefix    = flag.String("out", "bio-pileup", "Output path prefix")
 	parallelism  = flag.Int("parallelism", 0, "Maximum number of simultaneous (local) pileup jobs to launch; 0 = runtime.NumCPU()")
-	perStrand    = flag.Bool("per-strand", false, "Generate two pairs of output files, one for each strand")
-	removeSq     = flag.Bool("remove-sq", false, "Remove sequencing duplicates (no DL aux tag with value > 1)")
-	stitch       = flag.Bool("stitch", false, "Stitch read-pairs")
-	tempDir      = flag.String("temp-dir", "", "Directory to write temporary files to (default os.TempDir())")
+	perStrand    = flag.Bool("per-strand", snp.DefaultOpts.PerStrand, "Generate two pairs of output files, one for each strand")
+	removeSq     = flag.Bool("remove-sq", snp.DefaultOpts.RemoveSq, "Remove sequencing duplicates (no DL aux tag with value > 1)")
+	stitch       = flag.Bool("stitch", snp.DefaultOpts.Stitch, "Stitch read-pairs")
+	tempDir      = flag.String("temp-dir", snp.DefaultOpts.TempDir, "Directory to write temporary files to (default os.TempDir())")
 )
 
 func bioPileupUsage() {
@@ -91,7 +91,7 @@ func main() {
 		Stitch:       *stitch,
 		TempDir:      *tempDir,
 	}
-	if err := snp.Pileup(ctx, positionalArgs[0], positionalArgs[1], *format, *outPrefix, &opts); err != nil {
+	if err := snp.Pileup(ctx, positionalArgs[0], positionalArgs[1], *format, *outPrefix, &opts, nil); err != nil {
 		log.Panicf("%v", err)
 	}
 	log.Debug.Printf("exiting")

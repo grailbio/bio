@@ -13,4 +13,5 @@
 - [cmd/bio-pamtool](https://github.com/grailbio/bio/tree/master/cmd/bio-pamtool): "samtool" like tool for PAM and BAM.
 - [cmd/bio-bam-sort](https://github.com/grailbio/bio/tree/master/cmd/bio-bam-sort): Tool for sorting and merging aligner outputs into PAM or BAM.
 - [cmd/bio-bam-gindex](https://github.com/grailbio/bio/tree/master/cmd/bio-bam-gindex): Alternate index for faster seeking into BAM files.
+- [cmd/bio-pileup](https://github.com/grailbio/bio/tree/master/cmd/bio-pileup): Tool to support variant calling on PAM or BAM.
 - [biosimd](https://godoc.org/github.com/grailbio/bio/biosimd): Fast reverse-complement, pack/unpack from BAM seq[] format, etc.

@@ -14,29 +14,16 @@
 package snp
 
 import (
-	"context"
+	"github.com/grailbio/base/recordio/recordiozstd"
+	"github.com/grailbio/bio/pileup"
 )
 
-type Opts struct {
-	// Commandline options.
-	BedPath      string
-	Region       string
-	BamIndexPath string
-	Clip         int
-	Cols         string
-	FlagExclude  int
-	Mapq         int
-	MaxReadLen   int
-	MaxReadSpan  int
-	MinBagDepth  int
-	MinBaseQual  int
-	Parallelism  int
-	PerStrand    bool
-	RemoveSq     bool
-	Stitch       bool
-	TempDir      string
-}
+// PosType is the integer type used to represent genomic positions.
+type PosType = pileup.PosType
 
-func Pileup(ctx context.Context, xampath, fapath, format, outPrefix string, opts *Opts) (err error) {
-	return
+// PosTypeMax is the maximum value that can be represented by a PosType.
+const PosTypeMax = pileup.PosTypeMax
+
+func init() {
+	recordiozstd.Init()
 }

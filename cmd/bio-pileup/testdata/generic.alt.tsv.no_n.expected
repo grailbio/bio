@@ -1,0 +1,6 @@
+#CHROM	POS	REF	ALT	alt_depth_tier1
+chr2_subset	114145	G	A	1
+chr2_subset	114169	C	A	1
+chr2_subset	114695	C	T	1
+chr2_subset	114974	C	T	1
+chr2_subset	115035	C	T	1

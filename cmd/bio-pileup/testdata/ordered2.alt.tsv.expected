@@ -1,0 +1,7 @@
+#CHROM	POS	REF	ALT	5P_DISTS	3P_DISTS	STRANDS
+chr2_subset	114145	G	A	140,126	8,24	-,-
+chr2_subset	114145	G	N	.	.	.
+chr2_subset	114169	C	A	126	24	+
+chr2_subset	114695	C	T	106,28	44,122	+,+
+chr2_subset	114974	C	T	125	25	-
+chr2_subset	115035	C	T	3	146	-
