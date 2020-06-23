@@ -7,15 +7,14 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"reflect"
-	"unsafe"
-
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/grailbio/base/errors"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/log"
+	"github.com/grailbio/base/morebufio"
 	"github.com/grailbio/base/recordio"
 	"github.com/grailbio/base/traverse"
 	gunsafe "github.com/grailbio/base/unsafe"
@@ -29,7 +28,6 @@ import (
 type Reader struct {
 	label  string                     // for vlogging only.
 	in     file.File                  // For reading the data file.
-	rin    io.ReadSeeker              // in.Reader
 	rio    recordio.Scanner           // recordio wrapper for "in".
 	index  biopb.PAMFieldIndex        // Contents of *<fieldname>.index file.
 	blocks []biopb.PAMBlockIndexEntry // Subset of index.Blocks that intersect requestedRange.
@@ -40,12 +38,31 @@ type Reader struct {
 	addrGenerator gbam.CoordGenerator // Computes biopb.Coord.Seq. Used only when coordField=true.
 }
 
+type readerOpts struct {
+	bufSize int
+}
+
+// ReaderOpt is an option to pass to NewReader.
+type ReaderOpt func(*readerOpts)
+
+// BufSize constructs a ReaderOpt for using a buffered reader to read the underlying file.
+// Size 0 disables buffer.
+func BufSize(size int) ReaderOpt {
+	return func(opts *readerOpts) {
+		opts.bufSize = size
+	}
+}
+
 // NewReader creates a new Reader that reads from the given path. Label is shown
 // in log messages. coordField should be true if the file stores the genomic
 // coordinate. Setting setting coordField=true enables the codepath that
 // computes biopb.Coord.Seq values. If no file is found for this field, return
 // value is nil, nil.
-func NewReader(ctx context.Context, path, label string, coordField bool, fileOpts file.Opts, errp *errors.Once) (*Reader, error) {
+func NewReader(ctx context.Context, path, label string, coordField bool, fileOpts file.Opts, errp *errors.Once, opts ...ReaderOpt) (*Reader, error) {
+	var ropts readerOpts
+	for _, opt := range opts {
+		opt(&ropts)
+	}
 	fr := &Reader{
 		coordField: coordField,
 		label:      label,
@@ -59,8 +76,11 @@ func NewReader(ctx context.Context, path, label string, coordField bool, fileOpt
 		return fr, errors.E(err, fmt.Sprintf("fieldio open %s: %s", path, label))
 	}
 	fr.in = in
-	fr.rin = fr.in.Reader(ctx)
-	fr.rio = recordio.NewScanner(fr.rin, recordio.ScannerOpts{})
+	frReader := fr.in.Reader(ctx)
+	if ropts.bufSize > 0 {
+		frReader = morebufio.NewReadSeekerSize(frReader, ropts.bufSize)
+	}
+	fr.rio = recordio.NewScanner(frReader, recordio.ScannerOpts{})
 	fr.addrGenerator = gbam.NewCoordGenerator()
 	trailer := fr.rio.Trailer()
 	if len(trailer) == 0 {
