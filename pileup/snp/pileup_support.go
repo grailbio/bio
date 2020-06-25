@@ -24,7 +24,7 @@ import (
 // peripheral enough that they'd probably decrease pileup.go's overall
 // readability if placed there.
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
@@ -92,9 +92,9 @@ func writeEmptyEntries(w *recordio.Writer, rCtx *refContext, flushEnd PosType, w
 	var end PosType
 	for writePosScanner.Scan(&start, &end, flushEnd) {
 		for pos := start; pos != end; pos++ {
-			(*w).Append(&pileupRow{
-				refID: uint32(refID),
-				pos:   uint32(pos),
+			(*w).Append(&PileupRow{
+				RefID: uint32(refID),
+				Pos:   uint32(pos),
 			})
 		}
 	}

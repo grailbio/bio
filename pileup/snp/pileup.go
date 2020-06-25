@@ -176,7 +176,7 @@ type alignedPos struct {
 }
 
 type pileupMutable struct {
-	resultRingBuffer []pileupPayload // main ring buffer
+	resultRingBuffer []PileupPayload // main ring buffer
 	seq8Buf          []byte          // preallocated buffer to simplify stitchedPileStragglerFirstreads
 	alignedBaseBufs  [2][]alignedPos // preallocated buffers for alignRelevantBases
 	firstReads       firstreadSNPTable
@@ -187,7 +187,7 @@ type pileupMutable struct {
 
 func newPileupMutable(nCirc PosType, maxReadLen int, stitch bool, w *os.File) (pm pileupMutable) {
 	pm = pileupMutable{
-		resultRingBuffer: make([]pileupPayload, nCirc),
+		resultRingBuffer: make([]PileupPayload, nCirc),
 		seq8Buf:          make([]byte, 0, maxReadLen),
 		alignedBaseBufs: [2][]alignedPos{
 			make([]alignedPos, 0, maxReadLen),
@@ -200,7 +200,7 @@ func newPileupMutable(nCirc PosType, maxReadLen int, stitch bool, w *os.File) (p
 	}
 	if w != nil {
 		pm.w = recordio.NewWriter(w, recordio.WriterOpts{
-			Marshal:      marshalPileupRow,
+			Marshal:      MarshalPileupRow,
 			Transformers: []string{"zstd 1"},
 		})
 	}
@@ -221,11 +221,11 @@ type pileupContext struct {
 // addBase performs a pileup update that only requires count-increments.
 func (pm *pileupMutable) addBase(circPos, posInRead, isMinus PosType, seq, qual []byte, minBaseQual byte) {
 	row := &pm.resultRingBuffer[circPos]
-	row.depth++
+	row.Depth++
 	base := pileup.Seq8ToEnumTable[seq[posInRead]]
 	// Always count Ns, to preserve tsv-snp2 compatibility.
 	if (qual[posInRead] >= minBaseQual) || (base == pileup.BaseX) {
-		row.counts[base][isMinus]++
+		row.Counts[base][isMinus]++
 	}
 }
 
@@ -233,17 +233,17 @@ func (pm *pileupMutable) addBase(circPos, posInRead, isMinus PosType, seq, qual 
 // per-read stats.
 func (pm *pileupMutable) appendBase(circPos, posInRead, isMinus PosType, seq, qual []byte, minBaseQual, strandByte byte) {
 	row := &pm.resultRingBuffer[circPos]
-	row.depth++
+	row.Depth++
 	base := pileup.Seq8ToEnumTable[seq[posInRead]]
 	if base == pileup.BaseX {
-		row.counts[base][isMinus]++
+		row.Counts[base][isMinus]++
 	} else if qual[posInRead] >= minBaseQual {
-		row.counts[base][isMinus]++
-		row.perRead[base] = append(row.perRead[base], perReadFeatures{
-			dist5p:  uint16(posInRead),
-			fraglen: uint16(len(qual)),
-			qual:    qual[posInRead],
-			strand:  strandByte,
+		row.Counts[base][isMinus]++
+		row.PerRead[base] = append(row.PerRead[base], PerReadFeatures{
+			Dist5p:  uint16(posInRead),
+			Fraglen: uint16(len(qual)),
+			Qual:    qual[posInRead],
+			Strand:  strandByte,
 		})
 	}
 }
@@ -407,7 +407,7 @@ func (pm *pileupMutable) addReadPair(reads []readSNP, isMinus PosType, pCtx *pil
 		posInRef1 := abb1[idx1].posInRef
 		if posInRef0 == posInRef1 {
 			row := &pm.resultRingBuffer[posInRef0&mask]
-			row.depth++
+			row.Depth++
 			posInRead0 := abb0[idx0].posInRead
 			curSeq0 := seq0[posInRead0] // 'Seq0' instead of 'Base0' since this still uses BAM encoding
 			posInRead1 := abb1[idx1].posInRead
@@ -416,14 +416,14 @@ func (pm *pileupMutable) addReadPair(reads []readSNP, isMinus PosType, pCtx *pil
 				base := pileup.Seq8ToEnumTable[curSeq0]
 				if !perReadNeeded {
 					if pCtx.qpt.lookup2(qual0[posInRead0], qual1[posInRead1]) || (base == pileup.BaseX) {
-						row.counts[base][isMinus]++
+						row.Counts[base][isMinus]++
 					}
 				} else {
 					// dist5p/fraglen are a bit complicated in this case.  Punt for now.
 					panic("stitched per-read features not yet supported")
 				}
 			} else {
-				row.counts[pileup.BaseX][isMinus]++
+				row.Counts[pileup.BaseX][isMinus]++
 			}
 			idx0++
 			idx1++
@@ -517,53 +517,53 @@ func (pm *pileupMutable) flushToInternal(rCtx *refContext, perReadNeeded bool, w
 	for pm.writePosScanner.Scan(&start, &end, writeEnd) {
 		for pos := start; pos != end; pos++ {
 			row := &pm.resultRingBuffer[pos&mask]
-			if row.depth == 0 {
+			if row.Depth == 0 {
 				// It isn't strictly necessary to separate out this case, but it's a
 				// significant performance win when zero-depth is common.
-				pm.w.Append(&pileupRow{
-					refID: uint32(refID),
-					pos:   uint32(pos),
+				pm.w.Append(&PileupRow{
+					RefID: uint32(refID),
+					Pos:   uint32(pos),
 				})
 			} else {
-				fieldsPresent := uint32(fieldCounts)
+				fieldsPresent := uint32(FieldCounts)
 				if !perReadNeeded {
-					pm.w.Append(&pileupRow{
-						fieldsPresent: fieldsPresent,
-						refID:         uint32(refID),
-						pos:           uint32(pos),
-						payload:       *row,
+					pm.w.Append(&PileupRow{
+						FieldsPresent: fieldsPresent,
+						RefID:         uint32(refID),
+						Pos:           uint32(pos),
+						Payload:       *row,
 					})
 				} else {
-					fieldsPresent := fieldCounts
+					fieldsPresent := FieldCounts
 					// perRead contains regular slices instead of just arrays, so we need
 					// to deep-copy it before clearing the ring-buffer copy.
-					var perReadCopy [pileup.NBase][]perReadFeatures
+					var perReadCopy [pileup.NBase][]PerReadFeatures
 					for i := 0; i < pileup.NBase; i++ {
-						if len(row.perRead[i]) != 0 {
-							fieldsPresent |= fieldPerReadA << uint(i)
-							perReadCopy[i] = append([]perReadFeatures(nil), row.perRead[i]...)
+						if len(row.PerRead[i]) != 0 {
+							fieldsPresent |= FieldPerReadA << uint(i)
+							perReadCopy[i] = append([]PerReadFeatures(nil), row.PerRead[i]...)
 						}
 					}
-					pm.w.Append(&pileupRow{
-						fieldsPresent: uint32(fieldsPresent),
-						refID:         uint32(refID),
-						pos:           uint32(pos),
-						payload: pileupPayload{
-							depth:   row.depth,
-							counts:  row.counts,
-							perRead: perReadCopy,
+					pm.w.Append(&PileupRow{
+						FieldsPresent: uint32(fieldsPresent),
+						RefID:         uint32(refID),
+						Pos:           uint32(pos),
+						Payload: PileupPayload{
+							Depth:   row.Depth,
+							Counts:  row.Counts,
+							PerRead: perReadCopy,
 						},
 					})
-					for i := range row.perRead {
-						row.perRead[i] = row.perRead[i][:0]
+					for i := range row.PerRead {
+						row.PerRead[i] = row.PerRead[i][:0]
 					}
 				}
-				for i := range row.counts {
-					for j := range row.counts[i] {
-						row.counts[i][j] = 0
+				for i := range row.Counts {
+					for j := range row.Counts[i] {
+						row.Counts[i][j] = 0
 					}
 				}
-				row.depth = 0
+				row.Depth = 0
 			}
 		}
 	}
@@ -814,7 +814,7 @@ func pileupSNPMain(ctx context.Context, opts *pileupSNPOpts, strandReq pileup.St
 		return
 	}
 	nShard := len(opts.shards)
-	parallelism := min(opts.parallelism, nShard)
+	parallelism := minInt(opts.parallelism, nShard)
 
 	// When we aren't stitching, it is always safe to flush final pileup results
 	// for all positions before the current read-start; we only need to keep
@@ -953,15 +953,15 @@ func pileupSNPMain(ctx context.Context, opts *pileupSNPOpts, strandReq pileup.St
 	}
 	switch opts.format {
 	case formatTSV:
-		err = convertPileupRowsToTSV(ctx, tmpFiles, mainPath, opts.colBitset, false, opts.parallelism, refNames, opts.refSeqs)
+		err = ConvertPileupRowsToTSV(ctx, tmpFiles, mainPath, opts.colBitset, false, opts.parallelism, refNames, opts.refSeqs)
 	case formatTSVBgz:
-		err = convertPileupRowsToTSV(ctx, tmpFiles, mainPath, opts.colBitset, true, opts.parallelism, refNames, opts.refSeqs)
+		err = ConvertPileupRowsToTSV(ctx, tmpFiles, mainPath, opts.colBitset, true, opts.parallelism, refNames, opts.refSeqs)
 	case formatBasestrandRio:
-		err = convertPileupRowsToBasestrandRio(ctx, tmpFiles, mainPath, refNames)
+		err = ConvertPileupRowsToBasestrandRio(ctx, tmpFiles, mainPath, refNames)
 	case formatBasestrandTSV:
-		err = convertPileupRowsToBasestrandTSV(ctx, tmpFiles, mainPath, opts.colBitset, false, opts.parallelism, refNames, opts.refSeqs)
+		err = ConvertPileupRowsToBasestrandTSV(ctx, tmpFiles, mainPath, opts.colBitset, false, opts.parallelism, refNames, opts.refSeqs)
 	case formatBasestrandTSVBgz:
-		err = convertPileupRowsToBasestrandTSV(ctx, tmpFiles, mainPath, opts.colBitset, true, opts.parallelism, refNames, opts.refSeqs)
+		err = ConvertPileupRowsToBasestrandTSV(ctx, tmpFiles, mainPath, opts.colBitset, true, opts.parallelism, refNames, opts.refSeqs)
 	}
 	return
 }

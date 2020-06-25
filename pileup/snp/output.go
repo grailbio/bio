@@ -39,7 +39,7 @@ func writeChromPosRef(tsvw *tsv.Writer, refName string, pos PosType, refChar byt
 	tsvw.WriteByte(refChar)
 }
 
-func convertPileupRowsToTSV(ctx context.Context, tmpFiles []*os.File, mainPath string, colBitset int, bgzip bool, parallelism int, refNames []string, refSeqs [][]byte) (err error) {
+func ConvertPileupRowsToTSV(ctx context.Context, tmpFiles []*os.File, mainPath string, colBitset int, bgzip bool, parallelism int, refNames []string, refSeqs [][]byte) (err error) {
 	refPath := mainPath + ".ref.tsv"
 	if bgzip {
 		refPath = refPath + ".gz"
@@ -140,68 +140,68 @@ func convertPileupRowsToTSV(ctx context.Context, tmpFiles []*os.File, mainPath s
 		scanner := recordio.NewScanner(f, recordio.ScannerOpts{
 			Unmarshal: unmarshalPileupRow,
 		})
-		// Possible todo: parallelize pileupRow -> final-output-format rendering.
+		// Possible todo: parallelize PileupRow -> final-output-format rendering.
 		// This intermediate-recordio design causes wall-clock time for the entire
 		// run to increase by up to ~35% over the old
 		// intermediate-TSVs-which-can-be-concatenated design.  (The design change
 		// was still made because, if performance is an issue, you should be
 		// requesting recordio final output instead of TSV anyway.)
 		for scanner.Scan() {
-			pr := scanner.Get().(*pileupRow)
-			refID := pr.refID
+			pr := scanner.Get().(*PileupRow)
+			refID := pr.RefID
 			if refID != lastRefID {
 				curRefName = refNames[refID]
 				curRefSeq8 = refSeqs[refID]
 				lastRefID = refID
 			}
-			pos := pr.pos
+			pos := pr.Pos
 			refBase8 := curRefSeq8[pos]
 			refChar := pileup.Seq8ToASCIITable[refBase8]
 			writeChromPosRef(refTSV, curRefName, PosType(pos), refChar)
 			refBase := PosType(pileup.Seq8ToEnumTable[refBase8])
 			if (colBitset & colBitDpRef) != 0 {
-				refTSV.WriteUint32(pr.payload.depth)
+				refTSV.WriteUint32(pr.Payload.Depth)
 			}
 			if perReadStats {
 				if refBase == PosType(pileup.BaseX) {
 					refTSV.WritePartialBytes(emptyPerReadStats)
 				} else {
-					refFeatures := pr.payload.perRead[refBase]
+					refFeatures := pr.Payload.PerRead[refBase]
 					if len(refFeatures) == 0 {
 						refTSV.WritePartialBytes(emptyPerReadStats)
 					} else {
 						if (colBitset & colBitEndDists) != 0 {
 							for _, f := range refFeatures {
-								refTSV.WriteCsvUint32(uint32(f.dist5p))
+								refTSV.WriteCsvUint32(uint32(f.Dist5p))
 							}
 							refTSV.EndCsv()
 							for _, f := range refFeatures {
-								refTSV.WriteCsvUint32(uint32(f.fraglen - 1 - f.dist5p))
+								refTSV.WriteCsvUint32(uint32(f.Fraglen - 1 - f.Dist5p))
 							}
 							refTSV.EndCsv()
 						}
 						if (colBitset & colBitQuals) != 0 {
 							for _, f := range refFeatures {
-								refTSV.WriteCsvUint32(uint32(f.qual))
+								refTSV.WriteCsvUint32(uint32(f.Qual))
 							}
 							refTSV.EndCsv()
 						}
 						if (colBitset & colBitFraglens) != 0 {
 							for _, f := range refFeatures {
-								refTSV.WriteCsvUint32(uint32(f.fraglen))
+								refTSV.WriteCsvUint32(uint32(f.Fraglen))
 							}
 							refTSV.EndCsv()
 						}
 						if (colBitset & colBitStrands) != 0 {
 							for _, f := range refFeatures {
-								refTSV.WriteCsvByte(pileup.StrandTypeToASCIITable[f.strand])
+								refTSV.WriteCsvByte(pileup.StrandTypeToASCIITable[f.Strand])
 							}
 							refTSV.EndCsv()
 						}
 					}
 				}
 			}
-			counts := &pr.payload.counts
+			counts := &pr.Payload.Counts
 			if (colBitset & colBitHighQ) != 0 {
 				refTSV.WriteUint32(counts[refBase][0] + counts[refBase][1])
 			}
@@ -225,38 +225,38 @@ func convertPileupRowsToTSV(ctx context.Context, tmpFiles []*os.File, mainPath s
 					writeChromPosRef(altTSV, curRefName, PosType(pos), refChar)
 					altTSV.WriteByte(pileup.EnumToASCIITable[altBase])
 					if (colBitset & colBitDpAlt) != 0 {
-						altTSV.WriteUint32(pr.payload.depth)
+						altTSV.WriteUint32(pr.Payload.Depth)
 					}
 					if perReadStats {
 						if altBase == PosType(pileup.BaseX) {
 							altTSV.WritePartialBytes(emptyPerReadStats)
 						} else {
-							altFeatures := pr.payload.perRead[altBase]
+							altFeatures := pr.Payload.PerRead[altBase]
 							if (colBitset & colBitEndDists) != 0 {
 								for _, f := range altFeatures {
-									altTSV.WriteCsvUint32(uint32(f.dist5p))
+									altTSV.WriteCsvUint32(uint32(f.Dist5p))
 								}
 								altTSV.EndCsv()
 								for _, f := range altFeatures {
-									altTSV.WriteCsvUint32(uint32(f.fraglen - 1 - f.dist5p))
+									altTSV.WriteCsvUint32(uint32(f.Fraglen - 1 - f.Dist5p))
 								}
 								altTSV.EndCsv()
 							}
 							if (colBitset & colBitQuals) != 0 {
 								for _, f := range altFeatures {
-									altTSV.WriteCsvUint32(uint32(f.qual))
+									altTSV.WriteCsvUint32(uint32(f.Qual))
 								}
 								altTSV.EndCsv()
 							}
 							if (colBitset & colBitFraglens) != 0 {
 								for _, f := range altFeatures {
-									altTSV.WriteCsvUint32(uint32(f.fraglen))
+									altTSV.WriteCsvUint32(uint32(f.Fraglen))
 								}
 								altTSV.EndCsv()
 							}
 							if (colBitset & colBitStrands) != 0 {
 								for _, f := range altFeatures {
-									altTSV.WriteCsvByte(pileup.StrandTypeToASCIITable[f.strand])
+									altTSV.WriteCsvByte(pileup.StrandTypeToASCIITable[f.Strand])
 								}
 								altTSV.EndCsv()
 							}
@@ -292,14 +292,14 @@ func convertPileupRowsToTSV(ctx context.Context, tmpFiles []*os.File, mainPath s
 		return
 	}
 	if bgzip {
-		log.Printf("convertPileupRowsToTSV: done, final results written to %s.{ref,alt}.tsv.gz", mainPath)
+		log.Printf("ConvertPileupRowsToTSV: done, final results written to %s.{ref,alt}.tsv.gz", mainPath)
 	} else {
-		log.Printf("convertPileupRowsToTSV: done, final results written to %s.{ref,alt}.tsv", mainPath)
+		log.Printf("ConvertPileupRowsToTSV: done, final results written to %s.{ref,alt}.tsv", mainPath)
 	}
 	return
 }
 
-func convertPileupRowsToBasestrandRio(ctx context.Context, tmpFiles []*os.File, mainPath string, refNames []string) (err error) {
+func ConvertPileupRowsToBasestrandRio(ctx context.Context, tmpFiles []*os.File, mainPath string, refNames []string) (err error) {
 	var dst file.File
 	if dst, err = file.Create(ctx, mainPath+".basestrand.rio"); err != nil {
 		return
@@ -323,11 +323,11 @@ func convertPileupRowsToBasestrandRio(ctx context.Context, tmpFiles []*os.File, 
 			Unmarshal: unmarshalPileupRow,
 		})
 		for scanner.Scan() {
-			pr := scanner.Get().(*pileupRow)
-			counts := &pr.payload.counts
+			pr := scanner.Get().(*PileupRow)
+			counts := &pr.Payload.Counts
 			recordWriter.Append(&BaseStrandPile{
-				RefID: pr.refID,
-				Pos:   pr.pos,
+				RefID: pr.RefID,
+				Pos:   pr.Pos,
 				Counts: [4][2]uint32{
 					counts[0],
 					counts[1],
@@ -352,7 +352,7 @@ func convertPileupRowsToBasestrandRio(ctx context.Context, tmpFiles []*os.File, 
 	if err = recordWriter.Finish(); err != nil {
 		return
 	}
-	log.Printf("convertPileupRowsToBasestrandRio: done, final results written to %s.basestrand.rio", mainPath)
+	log.Printf("ConvertPileupRowsToBasestrandRio: done, final results written to %s.basestrand.rio", mainPath)
 	return
 }
 
@@ -373,7 +373,7 @@ func flushPlusAndMinusBuf(w *tsv.Writer, plusBufPtr, minusBufPtr *[]byte) {
 	}
 }
 
-func convertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, mainPath string, colBitset int, bgzip bool, parallelism int, refNames []string, refSeqs [][]byte) (err error) {
+func ConvertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, mainPath string, colBitset int, bgzip bool, parallelism int, refNames []string, refSeqs [][]byte) (err error) {
 	fullPath := mainPath + ".basestrand.tsv"
 	if bgzip {
 		fullPath = fullPath + ".gz"
@@ -435,27 +435,27 @@ func convertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, 
 			Unmarshal: unmarshalPileupRow,
 		})
 		for scanner.Scan() {
-			pr := scanner.Get().(*pileupRow)
-			refID := pr.refID
+			pr := scanner.Get().(*PileupRow)
+			refID := pr.RefID
 			if refID != lastRefID {
 				curRefName = refNames[refID]
 				curRefSeq8 = refSeqs[refID]
 				lastRefID = refID
 			}
-			pos := pr.pos
+			pos := pr.Pos
 			refBase8 := curRefSeq8[pos]
 			refChar := pileup.Seq8ToASCIITable[refBase8]
 			writeChromPosRef(w, curRefName, PosType(pos), refChar)
-			for _, perStrandCounts := range pr.payload.counts[:4] {
+			for _, perStrandCounts := range pr.Payload.Counts[:4] {
 				for _, c := range perStrandCounts {
 					w.WriteUint32(c)
 				}
 			}
 			if perReadStats {
-				if pr.payload.depth == 0 {
+				if pr.Payload.Depth == 0 {
 					w.WritePartialBytes(emptyPerReadStats)
 				} else {
-					curPerRead := &pr.payload.perRead
+					curPerRead := &pr.Payload.PerRead
 					// Note that this code would be simpler if we added a strand
 					// dimension to perRead.  But that has the drawback of significantly
 					// increasing the base size of pileupPayload everywhere, just for a
@@ -466,8 +466,8 @@ func convertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, 
 								w.WriteString(".\t.")
 							} else {
 								for _, f := range baseFeatures {
-									curDist5p := uint64(f.dist5p)
-									if f.strand == byte(pileup.StrandFwd) {
+									curDist5p := uint64(f.Dist5p)
+									if f.Strand == byte(pileup.StrandFwd) {
 										plusBuf = strconv.AppendUint(plusBuf, curDist5p, 10)
 										plusBuf = append(plusBuf, ',')
 									} else {
@@ -483,8 +483,8 @@ func convertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, 
 								w.WriteString(".\t.")
 							} else {
 								for _, f := range baseFeatures {
-									curDist3p := uint64(f.fraglen - 1 - f.dist5p)
-									if f.strand == byte(pileup.StrandFwd) {
+									curDist3p := uint64(f.Fraglen - 1 - f.Dist5p)
+									if f.Strand == byte(pileup.StrandFwd) {
 										plusBuf = strconv.AppendUint(plusBuf, curDist3p, 10)
 										plusBuf = append(plusBuf, ',')
 									} else {
@@ -502,8 +502,8 @@ func convertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, 
 								w.WriteString(".\t.")
 							} else {
 								for _, f := range baseFeatures {
-									curQual := uint64(f.qual)
-									if f.strand == byte(pileup.StrandFwd) {
+									curQual := uint64(f.Qual)
+									if f.Strand == byte(pileup.StrandFwd) {
 										plusBuf = strconv.AppendUint(plusBuf, curQual, 10)
 										plusBuf = append(plusBuf, ',')
 									} else {
@@ -521,8 +521,8 @@ func convertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, 
 								w.WriteString(".\t.")
 							} else {
 								for _, f := range baseFeatures {
-									curFraglen := uint64(f.fraglen)
-									if f.strand == byte(pileup.StrandFwd) {
+									curFraglen := uint64(f.Fraglen)
+									if f.Strand == byte(pileup.StrandFwd) {
 										plusBuf = strconv.AppendUint(plusBuf, curFraglen, 10)
 										plusBuf = append(plusBuf, ',')
 									} else {
@@ -540,7 +540,7 @@ func convertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, 
 								w.WriteString(".\t.")
 							} else {
 								for _, f := range baseFeatures {
-									if f.strand == byte(pileup.StrandFwd) {
+									if f.Strand == byte(pileup.StrandFwd) {
 										plusBuf = append(plusBuf, "+,"...)
 									} else {
 										minusBuf = append(minusBuf, "-,"...)
@@ -570,6 +570,6 @@ func convertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, 
 	if err = w.Flush(); err != nil {
 		return
 	}
-	log.Printf("convertPileupRowsToBasestrandTSV: done, final results written to %s", fullPath)
+	log.Printf("ConvertPileupRowsToBasestrandTSV: done, final results written to %s", fullPath)
 	return
 }
