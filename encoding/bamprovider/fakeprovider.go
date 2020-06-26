@@ -55,6 +55,7 @@ func (b *fakeProvider) GenerateShards(opts GenerateShardsOpts) ([]gbam.Shard, er
 		Start:    0,
 		EndRef:   nil,
 		End:      0,
+		Padding:  opts.Padding,
 	}}
 
 	if !opts.IncludeUnmapped {

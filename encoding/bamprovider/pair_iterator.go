@@ -54,7 +54,8 @@ type PairIterator struct {
 //
 // The pairs in the BAM file will be randomly sharded across the PairIterators
 // created by this function. Pairs are returned in an unspecified order, even
-// within one PairIterator.
+// within one PairIterator. (Use BoundedPairIterator instead if you want
+// deterministic behavior and do not need to process distant mates.)
 //
 // Each PairIterator is thread-compatible. It is recommended to create one
 // goroutine for each iterator.
