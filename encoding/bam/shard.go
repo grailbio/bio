@@ -527,6 +527,9 @@ func gbaiByteBasedShards(ctx context.Context, header *sam.Header, gbaiPath strin
 	shards = []Shard{}
 	prevRefID := int32(-1)
 	prevRefPos := int32(-1)
+	prevEntryRefID := int32(-1)
+	prevEntryRefPos := int32(-1)
+	curShardBases := 0
 	prevFilePos := uint64(0)
 	lastRefID := int32(-1)
 	for i, entry := range *index {
@@ -537,9 +540,25 @@ func gbaiByteBasedShards(ctx context.Context, header *sam.Header, gbaiPath strin
 			prevRefID = entry.RefID
 			prevRefPos = 0
 			prevFilePos = entry.VOffset >> 16
+			prevEntryRefID = prevRefID
+			prevEntryRefPos = 0
 			continue
 		}
-		if (entry.Pos-prevRefPos) >= int32(minBases) &&
+		if entry.RefID >= 0 {
+			if entry.RefID > prevEntryRefID {
+				prevEntryRef := header.Refs()[prevEntryRefID]
+				curShardBases += prevEntryRef.Len() - int(prevEntryRefPos)
+				for refID := prevEntryRefID + 1; refID < entry.RefID; refID++ {
+					ref := header.Refs()[refID]
+					curShardBases += ref.Len()
+				}
+				prevEntryRefPos = 0
+			}
+			curShardBases += int(entry.Pos - prevEntryRefPos)
+			prevEntryRefID = entry.RefID
+			prevEntryRefPos = entry.Pos
+		}
+		if curShardBases >= minBases &&
 			(entry.VOffset>>16)-prevFilePos >= uint64(bytesPerShard) {
 			shards = append(shards, Shard{
 				StartRef: header.Refs()[prevRefID],
@@ -552,6 +571,7 @@ func gbaiByteBasedShards(ctx context.Context, header *sam.Header, gbaiPath strin
 			prevRefID = entry.RefID
 			prevRefPos = entry.Pos
 			prevFilePos = entry.VOffset >> 16
+			curShardBases = 0
 		}
 	}
 	if prevRefID != -1 {
