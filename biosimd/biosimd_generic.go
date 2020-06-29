@@ -395,6 +395,20 @@ var asciiToSeq8Table = [...]byte{
 	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
 	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15}
 
+// ASCIIToSeq8Inplace converts the characters of main[pos] as follows:
+//   'A'/'a' -> 1
+//   'C'/'c' -> 2
+//   'G'/'g' -> 4
+//   'T'/'t' -> 8
+//   anything else -> 15
+func ASCIIToSeq8Inplace(main []byte) {
+	// This is good for unvalidated .fa loading when you're fine with treating
+	// all non-ACGT characters as N.
+	for pos, origByte := range main {
+		main[pos] = asciiToSeq8Table[origByte]
+	}
+}
+
 // ASCIIToSeq8 sets dst[pos] as follows:
 //   src[pos] == 'A'/'a': dst[pos] == 1
 //   src[pos] == 'C'/'c': dst[pos] == 2
@@ -403,8 +417,6 @@ var asciiToSeq8Table = [...]byte{
 //   src[pos] == anything else: dst[pos] == 15
 // It panics if len(dst) != len(src).
 func ASCIIToSeq8(dst, src []byte) {
-	// This is good for unvalidated .fa loading when you're fine with treating
-	// all non-ACGT characters as N.
 	nByte := len(src)
 	if len(dst) != nByte {
 		panic("ASCIIToSeq8() requires len(src) == len(dst).")

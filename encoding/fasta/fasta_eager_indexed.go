@@ -56,8 +56,10 @@ func newEagerIndexed(fastaR io.Reader, index []indexEntry, parsedOpts opts) (Fas
 		}
 	}
 
-	if parsedOpts.Clean {
+	if parsedOpts.Enc == CleanASCII {
 		biosimd.CleanASCIISeqInplace(entire)
+	} else if parsedOpts.Enc == Seq8 {
+		biosimd.ASCIIToSeq8Inplace(entire)
 	}
 
 	fa := fasta{

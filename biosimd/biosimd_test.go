@@ -524,6 +524,14 @@ func TestASCIIToSeq8(t *testing.T) {
 		if main2Arr[sliceEnd] != sentinel {
 			t.Fatal("ASCIIToSeq8 clobbered an extra byte.")
 		}
+		copy(main2Slice, srcSlice)
+		biosimd.ASCIIToSeq8Inplace(main2Slice)
+		if !bytes.Equal(main1Slice, main2Slice) {
+			t.Fatal("Mismatched ASCIIToSeq8Inplace result.")
+		}
+		if main2Arr[sliceEnd] != sentinel {
+			t.Fatal("ASCIIToSeq8Inplace clobbered an extra byte.")
+		}
 	}
 }
 

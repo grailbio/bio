@@ -64,7 +64,7 @@ func unpackAndReplaceSeqSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nSrcByte int
 func unpackAndReplaceSeqOddSSSE3Asm(dst, src, tablePtr unsafe.Pointer, nSrcFullByte int)
 
 //go:noescape
-func cleanASCIISeqInplaceSSSE3Asm(ascii8 unsafe.Pointer, nByte int)
+func acgtnSubstSSSE3Asm(ascii8 unsafe.Pointer, acgnSubstTablePtr *NibbleLookupTable, nByte, nXorT int)
 
 //go:noescape
 func cleanASCIISeqNoCapitalizeInplaceSSSE3Asm(ascii8 unsafe.Pointer, nByte int)
@@ -343,6 +343,12 @@ var cleanASCIISeqTable = [...]byte{
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N',
 	'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'}
 
+// No, the missing 't' in 'acgn' is not a typo.  The asm function works by
+// first handling A/C/G/N correctly since they have the same high 4 bits, and
+// then patches in Ts afterward.
+var acgnSubstTable16 = MakeNibbleLookupTable([16]byte{
+	'N', 'A', 'N', 'C', 'N', 'N', 'N', 'G', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'})
+
 // CleanASCIISeqInplace capitalizes 'a'/'c'/'g'/'t', and replaces everything
 // non-ACGT with 'N'.
 func CleanASCIISeqInplace(ascii8 []byte) {
@@ -354,7 +360,7 @@ func CleanASCIISeqInplace(ascii8 []byte) {
 		return
 	}
 	ascii8Header := (*reflect.SliceHeader)(unsafe.Pointer(&ascii8))
-	cleanASCIISeqInplaceSSSE3Asm(unsafe.Pointer(ascii8Header.Data), nByte)
+	acgtnSubstSSSE3Asm(unsafe.Pointer(ascii8Header.Data), &acgnSubstTable16, nByte, int('N'^'T'))
 }
 
 var cleanASCIISeqNoCapitalizeTable = [...]byte{
@@ -480,6 +486,30 @@ var asciiToSeq8Table = [...]byte{
 	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
 	15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15}
 
+var acgnSeq8SubstTable16 = MakeNibbleLookupTable([16]byte{
+	15, 1, 15, 2, 15, 15, 15, 4, 15, 15, 15, 15, 15, 15, 15, 15})
+
+// ASCIIToSeq8Inplace converts the characters of main[pos] as follows:
+//   'A'/'a' -> 1
+//   'C'/'c' -> 2
+//   'G'/'g' -> 4
+//   'T'/'t' -> 8
+//   anything else -> 15
+func ASCIIToSeq8Inplace(main []byte) {
+	// This is good for unvalidated .fa loading when you're fine with treating
+	// all non-ACGT characters as N.
+	nByte := len(main)
+	if nByte < 16 {
+		for pos, origByte := range main {
+			main[pos] = asciiToSeq8Table[origByte]
+		}
+		return
+	}
+	mainHeader := (*reflect.SliceHeader)(unsafe.Pointer(&main))
+	// [N code] xor [T code] = 8 xor 15 = 7.
+	acgtnSubstSSSE3Asm(unsafe.Pointer(mainHeader.Data), &acgnSeq8SubstTable16, nByte, 7)
+}
+
 // ASCIIToSeq8 sets dst[pos] as follows:
 //   src[pos] == 'A'/'a': dst[pos] == 1
 //   src[pos] == 'C'/'c': dst[pos] == 2
@@ -488,8 +518,6 @@ var asciiToSeq8Table = [...]byte{
 //   src[pos] == anything else: dst[pos] == 15
 // It panics if len(dst) != len(src).
 func ASCIIToSeq8(dst, src []byte) {
-	// This is good for unvalidated .fa loading when you're fine with treating
-	// all non-ACGT characters as N.
 	nByte := len(src)
 	if len(dst) != nByte {
 		panic("ASCIIToSeq8() requires len(src) == len(dst).")

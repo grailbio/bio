@@ -16,9 +16,6 @@
         DATA ·GatherOddHigh<>+0x08(SB)/8, $0x0f0d0b0907050301
         GLOBL ·GatherOddHigh<>(SB), 24, $16
 
-        DATA ·CleanNoTTable<>+0x00(SB)/8, $0x474e4e4e434e414e
-        DATA ·CleanNoTTable<>+0x08(SB)/8, $0x4e4e4e4e4e4e4e4e
-        GLOBL ·CleanNoTTable<>(SB), 24, $16
         DATA ·Capitalizer<>+0x00(SB)/8, $0xdfdfdfdfdfdfdfdf
         DATA ·Capitalizer<>+0x08(SB)/8, $0xdfdfdfdfdfdfdfdf
         GLOBL ·Capitalizer<>(SB), 24, $16
@@ -28,9 +25,6 @@
         DATA ·AllT<>+0x00(SB)/8, $0x5454545454545454
         DATA ·AllT<>+0x08(SB)/8, $0x5454545454545454
         GLOBL ·AllT<>(SB), 24, $16
-        DATA ·AllNXorT<>+0x00(SB)/8, $0x1a1a1a1a1a1a1a1a
-        DATA ·AllNXorT<>+0x08(SB)/8, $0x1a1a1a1a1a1a1a1a
-        GLOBL ·AllNXorT<>(SB), 24, $16
 
         DATA ·ASCIIToSeq8NoTTable<>+0x00(SB)/8, $0x040f0f0f020f010f
         DATA ·ASCIIToSeq8NoTTable<>+0x08(SB)/8, $0x0f0f0f0f0f0f0f0f
@@ -55,6 +49,7 @@
         DATA ·Gather2bit<>+0x00(SB)/8, $0x0e0a06020c080400
         DATA ·Gather2bit<>+0x08(SB)/8, $0xffffffffffffffff
         GLOBL ·Gather2bit<>(SB), 24, $16
+
 
 TEXT ·unpackSeqSSE2Asm(SB),4,$0-24
         // Based on packedNibbleLookupSSSE3Asm() in base/simd/simd_amd64.s.
@@ -103,6 +98,7 @@ unpackSeqSSE2Final:
         MOVOU   X1, (R8)
         RET
 
+
 TEXT ·unpackSeqOddSSE2Asm(SB),4,$0-24
         // DI = pointer to current src[] element.
         // R8 = pointer to current dst[] element.
@@ -150,6 +146,7 @@ unpackSeqOddSSE2Loop:
         MOVOU   X3, 16(AX)
         RET
 
+
 TEXT ·packSeqSSE41Asm(SB),4,$0-24
         // DI = pointer to current src[] element.
         // R8 = pointer to current dst[] element.
@@ -194,6 +191,7 @@ packSeqSSE41Final:
         PSHUFB  X0, X2
         PEXTRQ  $0, X2, (R8)
         RET
+
 
 TEXT ·packSeqOddSSSE3Asm(SB),4,$0-24
         // DI = pointer to current src[] element.
@@ -245,6 +243,7 @@ packSeqOddSSSE3Loop:
         POR     X3, X2
         MOVOU   X2, (R9)
         RET
+
 
 TEXT ·unpackAndReplaceSeqSSSE3Asm(SB),4,$0-32
         // Identical to packedNibbleLookupSSSE3Asm, except with even/odd
@@ -302,6 +301,7 @@ unpackAndReplaceSeqSSSE3Final:
         PUNPCKLBW       X4, X5
         MOVOU   X5, (R8)
         RET
+
 
 TEXT ·unpackAndReplaceSeqOddSSSE3Asm(SB),4,$0-32
         // Identical to packedNibbleLookupOddSSSE3Asm, except with even/odd
@@ -362,24 +362,30 @@ unpackAndReplaceSeqOddSSSE3Loop:
         MOVOU   X3, 16(AX)
         RET
 
-TEXT ·cleanASCIISeqInplaceSSSE3Asm(SB),4,$0-16
+
+TEXT ·acgtnSubstSSSE3Asm(SB),4,$0-32
         MOVQ    ascii8+0(FP), SI
-        MOVQ    nByte+8(FP), AX
+        MOVQ    acgnSubstTablePtr+8(FP), BX
+        MOVQ    nByte+16(FP), AX
+        MOVQ    nXorT+24(FP), X5
 
         MOVOU   ·Capitalizer<>(SB), X0
         MOVOU   ·AllT<>(SB), X1
         MOVOU   ·Mask0f0f<>(SB), X2
         MOVOU   ·All64<>(SB), X3
-        MOVOU   ·CleanNoTTable<>(SB), X4
-        MOVOU   ·AllNXorT<>(SB), X5
+        MOVOU   (BX), X4
+
+        PXOR    X6, X6
+        PSHUFB  X6, X5
+        // All bytes of X5 are now equal to the low byte of nXorT.
 
         // set DI to 32 bytes before end of ascii8[].
         LEAQ    -32(SI)(AX*1), DI
 
         CMPQ    DI, SI
-        JLE     cleanASCIISeqInplaceSSSE3Finish
+        JLE     acgtnSubstSSSE3Finish
 
-cleanASCIISeqInplaceSSSE3Loop:
+acgtnSubstSSSE3Loop:
         MOVOU   (SI), X6
         // Capitalize.
         PAND    X0, X6
@@ -401,9 +407,9 @@ cleanASCIISeqInplaceSSSE3Loop:
         MOVOU   X9, (SI)
         ADDQ    $16, SI
         CMPQ    DI, SI
-        JG      cleanASCIISeqInplaceSSSE3Loop
+        JG      acgtnSubstSSSE3Loop
 
-cleanASCIISeqInplaceSSSE3Finish:
+acgtnSubstSSSE3Finish:
         // These loads usually overlap, so they must both occur before the
         // first write-back.
         ADDQ    $16, DI
@@ -438,9 +444,10 @@ cleanASCIISeqInplaceSSSE3Finish:
         MOVOU   X4, (DI)
         RET
 
+
 TEXT ·cleanASCIISeqNoCapitalizeInplaceSSSE3Asm(SB),4,$0-16
-        // A bit different from cleanASCIISeqNoCapitalizeInplaceSSSE3Asm due to
-        // how we preserve capitalization.
+        // A bit different from acgtnSubstSSSE3Asm due to how we preserve
+        // capitalization.
         MOVQ    ascii8+0(FP), SI
         MOVQ    nByte+8(FP), AX
 
@@ -533,6 +540,7 @@ cleanASCIISeqNoCapitalizeInplaceSSSE3Finish:
         MOVOU   X11, (DI)
         RET
 
+
 TEXT ·isNonACGTPresentSSE41Asm(SB),4,$0-32
         MOVQ    ascii8+0(FP), SI
         MOVQ    nonTTablePtr+8(FP), AX
@@ -586,8 +594,87 @@ isNonACGTPresentSSE41Found:
         MOVQ    $1, ret+24(FP)
         RET
 
+
+TEXT ·asciiToSeq8InplaceSSSE3Asm(SB),4,$0-16
+        // Very similar to cleanASCIISeqInplaceSSSE3Asm.
+        MOVQ    main+0(FP), SI
+        MOVQ    nByte+8(FP), AX
+
+        MOVOU   ·Capitalizer<>(SB), X0
+        MOVOU   ·AllT<>(SB), X1
+        MOVOU   ·Mask0f0f<>(SB), X2
+        MOVOU   ·All64<>(SB), X3
+        MOVOU   ·ASCIIToSeq8NoTTable<>(SB), X4
+        MOVOU   ·ASCIIToSeq8NXorT<>(SB), X5
+
+        // set DI to 32 bytes before end of main[].
+        LEAQ    -32(SI)(AX*1), DI
+
+        CMPQ    DI, SI
+        JLE     asciiToSeq8InplaceSSSE3Finish
+
+asciiToSeq8InplaceSSSE3Loop:
+        MOVOU   (SI), X6
+        // Capitalize.
+        PAND    X0, X6
+        // Check for 'T's, save positions to X7.
+        MOVO    X1, X7
+        PCMPEQB X6, X7
+        PAND    X5, X7
+        // Check for high bits == 0x40.
+        MOVO    X2, X8
+        PANDN   X6, X8
+        PCMPEQB X3, X8
+        // X8 now describes which non-T bases are potentially valid.
+        PAND    X8, X6
+        // Set everything other than A/C/G to N's code.
+        MOVO    X4, X9
+        PSHUFB  X6, X9
+        // Xor the Ts back in, save result.
+        PXOR    X7, X9
+        MOVOU   X9, (SI)
+        ADDQ    $16, SI
+        CMPQ    DI, SI
+        JG      asciiToSeq8InplaceSSSE3Loop
+
+asciiToSeq8InplaceSSSE3Finish:
+        // These loads usually overlap, so they must both occur before the
+        // first write-back.
+        ADDQ    $16, DI
+        MOVOU   (SI), X6
+        MOVOU   (DI), X10
+        // Capitalize.
+        PAND    X0, X6
+        PAND    X0, X10
+        // Check for 'T's, save positions to X7/X1.
+        MOVO    X1, X7
+        PCMPEQB X6, X7
+        PCMPEQB X10, X1
+        PAND    X5, X7
+        PAND    X5, X1
+        // Check for high bits == 0x40.
+        MOVO    X2, X8
+        PANDN   X6, X8
+        PANDN   X10, X2
+        PCMPEQB X3, X8
+        PCMPEQB X3, X2
+        // X8/X2 now describe which non-T bases are potentially valid.
+        PAND    X8, X6
+        PAND    X2, X10
+        // Set everything other than A/C/G to N's code.
+        MOVO    X4, X9
+        PSHUFB  X6, X9
+        PSHUFB  X10, X4
+        // Xor the Ts back in, save result.
+        PXOR    X7, X9
+        PXOR    X1, X4
+        MOVOU   X9, (SI)
+        MOVOU   X4, (DI)
+        RET
+
+
 TEXT ·asciiToSeq8SSSE3Asm(SB),4,$0-24
-        // Main loop is similar to that of cleanASCIISeqInplaceSSSE3Asm.
+        // Very similar to acgtnSubstSSSE3Asm.
         MOVQ    dst+0(FP), R8
         MOVQ    src+8(FP), DI
         MOVQ    nByte+16(FP), R9
@@ -619,7 +706,7 @@ asciiToSeq8SSSE3Loop:
         PCMPEQB X3, X8
         // X8 now describes which non-T bases are potentially valid.
         PAND    X8, X6
-        // Set everything other than A/C/G to N.
+        // Set everything other than A/C/G to N's code.
         MOVO    X4, X9
         PSHUFB  X6, X9
         // Xor the Ts back in, save result.
@@ -642,6 +729,7 @@ asciiToSeq8SSSE3Loop:
         PXOR    X1, X4
         MOVOU   X4, (R9)
         RET
+
 
 TEXT ·asciiTo2bitSSE41Asm(SB),4,$0-24
         // DI = pointer to current src[] element.

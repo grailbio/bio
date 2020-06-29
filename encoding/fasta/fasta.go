@@ -19,9 +19,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"strings"
 
-	"github.com/grailbio/base/unsafe"
 	"github.com/grailbio/bio/biosimd"
 	"github.com/pkg/errors"
 )
@@ -47,17 +45,51 @@ type Fasta interface {
 	SeqNames() []string
 }
 
+type Encoding byte
+
+const (
+	// RawASCII encoding preserves the original bytes, including case.
+	RawASCII Encoding = iota
+	// CleanASCII encoding capitalizes all lowercase 'a'/'c'/'g'/'t', and
+	// converts all non-ACGT characters to 'N'.
+	CleanASCII
+	// Seq8 encoding is 'A'/'a' = 1, 'C'/'c' = 2, 'G'/'g' = 4, 'T'/'t' = 8,
+	// anything else = 15.  This plays well with BAM/PAM files.
+	Seq8
+	// TODO(cchang): Add 'Base5' encoding, where 'A'/'a' = 0, 'C'/'c' = 1,
+	// 'G'/'g' = 2, 'T'/'t' = 3, anything else = 4.
+	EncodingLimit
+)
+
 type opts struct {
-	Clean bool
+	Enc   Encoding
 	Index []byte
 }
 
 // Opt is an optional argument to New, NewIndexed.
 type Opt func(*opts)
 
-// OptClean specifies returned FASTA sequences should be cleaned as described in
-// biosimd.CleanASCIISeq*.
-func OptClean(o *opts) { o.Clean = true }
+// OptClean specifies returned FASTA sequences should be cleaned as described
+// in biosimd.CleanASCIISeq*.  It is equivalent to OptEncoding(CleanASCII).
+func OptClean(o *opts) {
+	if o.Enc != RawASCII {
+		panic("fasta.OptClean: multiple encodings specified")
+	}
+	o.Enc = CleanASCII
+}
+
+// OptEncoding specifies the encoding of the in-memory FASTA sequences.
+func OptEncoding(e Encoding) Opt {
+	return func(o *opts) {
+		if o.Enc != RawASCII {
+			panic("fasta.OptEncoding: multiple encodings specified")
+		}
+		if o.Enc >= EncodingLimit {
+			panic("fasta.OptEncoding: invalid encoding value")
+		}
+		o.Enc = e
+	}
+}
 
 // OptIndex makes New read FASTA file with a provided index, like NewIndexed.
 // Unlike NewIndexed, New with OptIndex is optimized for reading all sequences
@@ -102,37 +134,43 @@ func newEagerUnindexed(r io.Reader, parsedOpts opts) (Fasta, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(nil, bufferInitSize)
 	var seqName string
-	var seq strings.Builder
+	// We don't use strings.Builder here, since that would force us to perform
+	// unsafe string -> []byte -> string conversions at the end.
+	seqBuf := make([]byte, 0, bufferInitSize)
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
 		if line[0] == '>' { // Start a new sequence.
-			if seq.Len() != 0 { // We need to store the previous sequence first.
+			if len(seqBuf) != 0 { // We need to store the previous sequence first.
 				if seqName == "" {
 					return nil, errors.Errorf("malformed FASTA file")
 				}
-				f.seqs[seqName] = seq.String()
+				if parsedOpts.Enc == CleanASCII {
+					biosimd.CleanASCIISeqInplace(seqBuf)
+				} else if parsedOpts.Enc == Seq8 {
+					biosimd.ASCIIToSeq8Inplace(seqBuf)
+				}
+				f.seqs[seqName] = string(seqBuf)
 				f.seqNames = append(f.seqNames, seqName)
-				seq.Reset()
+				seqBuf = seqBuf[:0]
 			}
-			seqName = strings.Split(line[1:], " ")[0]
+			seqName = string(bytes.SplitN(line[1:], []byte{' '}, 2)[0])
 		} else {
-			seq.WriteString(line)
+			seqBuf = append(seqBuf, line...)
 		}
 	}
 	if scanner.Err() != nil {
 		return nil, errors.Wrap(scanner.Err(), "couldn't read FASTA data")
 	}
-	f.seqs[seqName] = seq.String()
-	f.seqNames = append(f.seqNames, seqName)
-	seq.Reset()
-	if parsedOpts.Clean {
-		for seqName := range f.seqs {
-			biosimd.CleanASCIISeqInplace(unsafe.StringToBytes(f.seqs[seqName]))
-		}
+	if parsedOpts.Enc == CleanASCII {
+		biosimd.CleanASCIISeqInplace(seqBuf)
+	} else if parsedOpts.Enc == Seq8 {
+		biosimd.ASCIIToSeq8Inplace(seqBuf)
 	}
+	f.seqs[seqName] = string(seqBuf)
+	f.seqNames = append(f.seqNames, seqName)
 	return f, nil
 }
 

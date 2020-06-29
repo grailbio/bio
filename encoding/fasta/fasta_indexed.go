@@ -210,8 +210,10 @@ func (f *indexedFasta) Get(seqName string, start uint64, end uint64) (string, er
 		}
 	}
 
-	if f.opts.Clean {
+	if f.opts.Enc == CleanASCII {
 		biosimd.CleanASCIISeqInplace(f.resultBuf)
+	} else if f.opts.Enc == Seq8 {
+		biosimd.ASCIIToSeq8Inplace(f.resultBuf)
 	}
 
 	return string(f.resultBuf), nil
