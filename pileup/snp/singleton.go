@@ -15,6 +15,7 @@ package snp
 
 import (
 	"github.com/grailbio/base/recordio/recordiozstd"
+	"github.com/grailbio/bio/encoding/fasta"
 	"github.com/grailbio/bio/pileup"
 )
 
@@ -23,6 +24,11 @@ type PosType = pileup.PosType
 
 // PosTypeMax is the maximum value that can be represented by a PosType.
 const PosTypeMax = pileup.PosTypeMax
+
+// FaEncoding is the fasta in-memory encoding expected by snp.Pileup().
+// (Seq8 is actually worse than both ASCII and Base5 for this SNP-pileup, but
+// it simplifies future extension to indels.)
+const FaEncoding = fasta.Seq8
 
 func init() {
 	recordiozstd.Init()

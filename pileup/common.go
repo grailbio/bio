@@ -14,19 +14,16 @@
 package pileup
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
+	"github.com/grailbio/base/compress"
 	"github.com/grailbio/base/file"
-	"github.com/grailbio/base/fileio"
-	gunsafe "github.com/grailbio/base/unsafe"
-	"github.com/grailbio/bio/biosimd"
+	"github.com/grailbio/base/log"
+	"github.com/grailbio/bio/encoding/fasta"
 	"github.com/grailbio/bio/interval"
 	"github.com/grailbio/hts/sam"
-	"github.com/klauspost/compress/gzip"
 )
 
 // Common pileup components.
@@ -168,14 +165,8 @@ func ParseCols(colsParam string, colNameMap map[string]int, defaultColBitset int
 	return colBitset, nil
 }
 
-// LoadFa loads a .fa file, and currently translates the contents to
-// A=1/C=2/G=4/T=8/other=15 encoding ("seq8") to facilitate efficient
-// comparisons against BAM/PAM Seq data.
-// An option may be added in the future for conversion to
-// A=0/C=1/G=2/T=3/other=4 enum encoding; that may be better for some purposes.
-// TODO(cchang): Use grailbio/bio/encoding/fasta instead, updating that package
-// as needed.
-func LoadFa(ctx context.Context, fapath string, maxline int, headerRefs []*sam.Reference) (refSeqs [][]byte, err error) {
+// LoadFa is a thin wrapper around fasta.New().
+func LoadFa(ctx context.Context, fapath string, enc fasta.Encoding) (fa fasta.Fasta, err error) {
 	var infile file.File
 	if infile, err = file.Open(ctx, fapath); err != nil {
 		return
@@ -185,74 +176,50 @@ func LoadFa(ctx context.Context, fapath string, maxline int, headerRefs []*sam.R
 			err = e
 		}
 	}()
-	reader := io.Reader(infile.Reader(ctx))
-	switch fileio.DetermineType(fapath) {
-	case fileio.Gzip:
-		if reader, err = gzip.NewReader(reader); err != nil {
-			return
+	reader, _ := compress.NewReader(infile.Reader(ctx))
+	defer func() {
+		if e := reader.Close(); e != nil && err == nil {
+			err = e
 		}
-	}
-	scanner := bufio.NewScanner(reader)
-	// Provide a way to accept .fa files which put an entire reference on a
-	// single line.
-	startSize := bufio.MaxScanTokenSize
-	if startSize > maxline {
-		startSize = maxline
-	}
-	buf := make([]byte, startSize, maxline)
-	scanner.Buffer(buf, maxline)
-
-	bamRefMap := make(map[string]int)
-	for i, curRef := range headerRefs {
-		name := curRef.Name()
-		bamRefMap[name] = i
-		// possible todo: tolerate '1' vs. 'chr1', etc.
-	}
-	refSeqs = make([][]byte, len(headerRefs))
-
-	lineIdx := 0
-	refIdx := 0
-	keepRef := false
-	refSeq := []byte{}
-	refPos := 0
-	for scanner.Scan() {
-		lineIdx++
-		curLine := scanner.Bytes()
-		nByte := len(curLine)
-		if nByte == 0 {
-			continue
-		}
-		if curLine[0] == '>' {
-			if keepRef {
-				if refPos != len(refSeq) {
-					err = fmt.Errorf("loadFa: inconsistent lengths for contig %s (%d in .bam header, %d in .fa)", headerRefs[refIdx].Name(), len(refSeq), refPos)
-					return
-				}
-				refSeqs[refIdx] = refSeq
-			}
-			refIdx, keepRef = bamRefMap[gunsafe.BytesToString(curLine[1:])]
-			if keepRef {
-				newRef := headerRefs[refIdx]
-				refSeq = make([]byte, newRef.Len())
-				refPos = 0
-			}
-			continue
-		}
-		if !keepRef {
-			continue
-		}
-		biosimd.ASCIIToSeq8(refSeq[refPos:refPos+nByte], curLine)
-		refPos += nByte
-	}
-	if err = scanner.Err(); err != nil {
+	}()
+	if fa, err = fasta.New(reader, fasta.OptEncoding(enc)); err != nil {
 		return
 	}
-	if keepRef {
-		if refPos != len(refSeq) {
-			err = fmt.Errorf("loadFa: inconsistent lengths for ref %s (%d in .bam header, %d in .fa)", headerRefs[refIdx].Name(), len(refSeq), refPos)
-			return
-		}
-		refSeqs[refIdx] = refSeq
-	}
 	return
+}
+
+// FaToStringSlice returns the data in fa as a []string, using the reference
+// order in headerRefs[].  It performs reference-length consistency checks
+// between headerRefs and fa in the process.
+func FaToStringSlice(fa fasta.Fasta, headerRefs []*sam.Reference) ([]string, error) {
+	nXamRef := len(headerRefs)
+	refSeqs := make([]string, nXamRef)
+	nMissingFromFa := 0
+	for i, curRef := range headerRefs {
+		refName := curRef.Name()
+		refLen, e := fa.Len(refName)
+		if e != nil {
+			// Temporarily tolerate this since a few tests harmlessly trigger it.
+			// TODO(cchang): upgrade this to a regular error at the first good
+			// opportunity.
+			nMissingFromFa++
+			continue
+		}
+		if refLen != uint64(curRef.Len()) {
+			return nil, fmt.Errorf("pileup.FaToStringSlice: inconsistent lengths for contig %s (%d in BAM/PAM header, %d in .fa)", refName, curRef.Len(), refLen)
+		}
+		refSeq, err := fa.Get(refName, 0, refLen)
+		if err != nil {
+			return nil, err
+		}
+		refSeqs[i] = refSeq
+	}
+	if nMissingFromFa != 0 {
+		log.Printf("pileup.FaToStringSlice: warning: %d reference(s) present in BAM/PAM header but missing from .fa", nMissingFromFa)
+	}
+	nMissingFromXam := len(fa.SeqNames()) + nMissingFromFa - nXamRef
+	if nMissingFromXam != 0 {
+		log.Printf("pileup.FaToStringSlice: warning: %d reference(s) present in .fa but missing from BAM/PAM header", nMissingFromXam)
+	}
+	return refSeqs, nil
 }

@@ -109,7 +109,7 @@ func (pm *pileupMutable) nCirc() PosType {
 	return PosType(len(pm.resultRingBuffer))
 }
 
-func (pm *pileupMutable) flushEmptyContigs(rCtx *refContext, refSeqs [][]byte, bedPart *interval.BEDUnion, perReadNeeded bool, refIdx, refIdxEnd int) (err error) {
+func (pm *pileupMutable) flushEmptyContigs(rCtx *refContext, bedPart *interval.BEDUnion, perReadNeeded bool, refIdx, refIdxEnd int) (err error) {
 	for ; refIdx < refIdxEnd; refIdx++ {
 		pm.endMax = 0
 		endpoints := bedPart.EndpointsByID(refIdx)

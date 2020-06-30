@@ -27,6 +27,7 @@ import (
 	"github.com/grailbio/bio/circular"
 	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
+	"github.com/grailbio/bio/encoding/fasta"
 	"github.com/grailbio/bio/interval"
 	"github.com/grailbio/bio/pileup"
 	"github.com/grailbio/hts/sam"
@@ -163,7 +164,7 @@ type refContext struct {
 	// against BAM/PAM Seq fields.
 	// (Might change internal representation to A=0/C=1/G=2/T=3/N=4; if this is
 	// done, the field will be renamed to refSeq5.)
-	refSeq8 []byte
+	refSeq8 string
 	// refID is the ID of the current reference.
 	refID int
 	// refName is the name of the current reference.
@@ -613,14 +614,14 @@ type pileupSNPOpts struct {
 	padding          int
 	parallelism      int
 	provider         bamprovider.Provider
-	refSeqs          [][]byte
+	refSeqs          []string
 	removeSq         bool
 	shards           []gbam.Shard
 	stitch           bool
 	tempDir          string
 }
 
-func (pm *pileupMutable) finishRef(refIdxEnd int, opts *pileupSNPOpts, rCtx *refContext, pCtx *pileupContext) (err error) {
+func (pm *pileupMutable) finishRef(refIdxEnd int, rCtx *refContext, pCtx *pileupContext) (err error) {
 	if rCtx.refID != -1 {
 		if err = pm.addOrphanReads(pCtx, PosTypeMax); err != nil {
 			return
@@ -631,14 +632,14 @@ func (pm *pileupMutable) finishRef(refIdxEnd int, opts *pileupSNPOpts, rCtx *ref
 	}
 	// Suppose that the previous read was on chr5 and the current read is on
 	// chr9.  This call writes the empty pileup entries for chr6..chr8.
-	if err = pm.flushEmptyContigs(rCtx, opts.refSeqs, &pCtx.bedPart, pCtx.perReadNeeded, rCtx.refID+1, refIdxEnd); err != nil {
+	if err = pm.flushEmptyContigs(rCtx, &pCtx.bedPart, pCtx.perReadNeeded, rCtx.refID+1, refIdxEnd); err != nil {
 		return
 	}
 	return
 }
 
-func (pm *pileupMutable) nextRef(rCtx *refContext, newRefID int, opts *pileupSNPOpts, pCtx *pileupContext) (err error) {
-	if err = pm.finishRef(newRefID, opts, rCtx, pCtx); err != nil {
+func (pm *pileupMutable) nextRef(rCtx *refContext, newRefID int, pCtx *pileupContext) (err error) {
+	if err = pm.finishRef(newRefID, rCtx, pCtx); err != nil {
 		return
 	}
 	pm.endMax = 0
@@ -731,7 +732,7 @@ func (pm *pileupMutable) processShard(shard gbam.Shard, opts *pileupSNPOpts, rCt
 		// 1. Note this read's start position, and flush as many previous positions
 		//    as possible.
 		if rCtx.refID != curRead.Ref.ID() {
-			if err = pm.nextRef(rCtx, curRead.Ref.ID(), opts, pCtx); err != nil {
+			if err = pm.nextRef(rCtx, curRead.Ref.ID(), pCtx); err != nil {
 				return
 			}
 		}
@@ -930,7 +931,7 @@ func pileupSNPMain(ctx context.Context, opts *pileupSNPOpts, strandReq pileup.St
 			psCtx.prevLimitPos = int(coordRange.Limit.Pos) + int(padding)
 		}
 		// Flush last entries, unless there were no entries at all.
-		if e := results.finishRef(len(headerRefs), opts, &rCtx, &pCtx); e != nil {
+		if e := results.finishRef(len(headerRefs), &rCtx, &pCtx); e != nil {
 			return e
 		}
 
@@ -966,7 +967,7 @@ func pileupSNPMain(ctx context.Context, opts *pileupSNPOpts, strandReq pileup.St
 	return
 }
 
-func Pileup(ctx context.Context, xampath, fapath, format, outPrefix string, rawOpts *Opts, refSeqs [][]byte) (err error) {
+func Pileup(ctx context.Context, xampath, fapath, format, outPrefix string, rawOpts *Opts, fa fasta.Fasta) (err error) {
 	// 1. Parse and validate command-line parameters
 	// 2. Read .bam header, BED, .fa
 	// 3. Construct disjoint shards with necessary padding
@@ -1103,12 +1104,13 @@ func Pileup(ctx context.Context, xampath, fapath, format, outPrefix string, rawO
 		}
 	}
 
-	if refSeqs == nil {
-		if opts.refSeqs, err = pileup.LoadFa(ctx, fapath, 250000000, headerRefs); err != nil {
+	if fa == nil {
+		if fa, err = pileup.LoadFa(ctx, fapath, FaEncoding); err != nil {
 			return
 		}
-	} else {
-		opts.refSeqs = refSeqs
+	}
+	if opts.refSeqs, err = pileup.FaToStringSlice(fa, headerRefs); err != nil {
+		return
 	}
 
 	opts.stitch = rawOpts.Stitch

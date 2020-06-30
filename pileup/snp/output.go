@@ -39,7 +39,7 @@ func writeChromPosRef(tsvw *tsv.Writer, refName string, pos PosType, refChar byt
 	tsvw.WriteByte(refChar)
 }
 
-func ConvertPileupRowsToTSV(ctx context.Context, tmpFiles []*os.File, mainPath string, colBitset int, bgzip bool, parallelism int, refNames []string, refSeqs [][]byte) (err error) {
+func ConvertPileupRowsToTSV(ctx context.Context, tmpFiles []*os.File, mainPath string, colBitset int, bgzip bool, parallelism int, refNames []string, refSeqs []string) (err error) {
 	refPath := mainPath + ".ref.tsv"
 	if bgzip {
 		refPath = refPath + ".gz"
@@ -373,7 +373,7 @@ func flushPlusAndMinusBuf(w *tsv.Writer, plusBufPtr, minusBufPtr *[]byte) {
 	}
 }
 
-func ConvertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, mainPath string, colBitset int, bgzip bool, parallelism int, refNames []string, refSeqs [][]byte) (err error) {
+func ConvertPileupRowsToBasestrandTSV(ctx context.Context, tmpFiles []*os.File, mainPath string, colBitset int, bgzip bool, parallelism int, refNames []string, refSeqs []string) (err error) {
 	fullPath := mainPath + ".basestrand.tsv"
 	if bgzip {
 		fullPath = fullPath + ".gz"
