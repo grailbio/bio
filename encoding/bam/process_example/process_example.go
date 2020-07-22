@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grailbio/base/grail"
+	gbam "github.com/grailbio/bio/encoding/bam"
 	"github.com/grailbio/bio/encoding/bamprovider"
 	"github.com/grailbio/hts/sam"
 	"v.io/x/lib/vlog"
@@ -65,7 +66,7 @@ type stats struct {
 	counts []counter // one per thread
 }
 
-func handleRecord(threadID int, r bamprovider.Pair, s *counter) {
+func handleRecord(threadID int, r gbam.Pair, s *counter) {
 	if r.Err != nil {
 		s.nerrs++
 		if failOnError {

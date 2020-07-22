@@ -19,11 +19,7 @@ type pairIteratorSharedState struct {
 
 // Pair encapsulates a pair of SAM records for a pair of reads, and whether
 // any error was encountered in retrieving them.
-type Pair struct {
-	R1  *sam.Record
-	R2  *sam.Record
-	Err error
-}
+type Pair = gbam.Pair
 
 // MissingMateError is a specific error that can be used when one or more mates
 // are missing.
