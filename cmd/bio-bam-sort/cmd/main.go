@@ -100,9 +100,9 @@ sorting and merging.
 
    The command reads a sequence of bam or sam records from input, sorts them,
    and produces file <output.sortshard> (note: this is NOT a BAM formatted file,
-   it is a shard file). If <input> is '-', records are read from stdin.  With
-   -sam flag, the records are assumed to be in SAM format. Else, it is assumed
-   to be in BAM format.
+   it is a shard file). If <input> is '-', records are read from stdin. If
+   -sam=false, records are assumed to be in the BAM format. Else, records are
+   assumed to be in SAM format.
 
 2. bio-bam-sort -bam <foo.bam> <input.sortshard...>
 
